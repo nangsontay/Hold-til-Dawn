@@ -102,6 +102,7 @@ public partial class Bots : RefCounted
 
     public static void Think(dynamic Sim, dynamic P, dynamic Slot, dynamic Dt)
     {
+        Bots.Equip(Sim, P);
         dynamic Post = Bots.Post(Sim, P, Slot);
         foreach (dynamic Tl in Gd.Iter(Sim.Tele))
         {
@@ -135,7 +136,7 @@ public partial class Bots : RefCounted
                 P.BotCd = 1.0f;
             }
         }
-        if (((P.Hp < (BANDAGE_AT * P.Maxhp)) && (P.Inv.Bandage > 0) && (P.Channel <= 0) && (FoeD > (3.0f * T))))
+        if (((P.Hp < (BANDAGE_AT * P.Maxhp)) && (Sim.Count(P, "bandage") > 0) && (P.Channel <= 0) && (FoeD > (3.0f * T))))
         {
             Sim.Action(P.Id, "bandage", 0);
         }
@@ -163,7 +164,7 @@ public partial class Bots : RefCounted
                 return;
             }
         }
-        if (((P.Role == 2) && (P.Inv.Wood > 0) && Gd.Truth(Bots.Repair(Sim, P, Dt))))
+        if (((P.Role == 2) && (Sim.Count(P, "wood") > 0) && Gd.Truth(Bots.Repair(Sim, P, Dt))))
         {
             return;
         }
@@ -343,27 +344,69 @@ public partial class Bots : RefCounted
 
     public static void Craft(dynamic Sim, dynamic P)
     {
-        // One useful recipe it can afford every half second: best weapon and armour first, then kits.
-        if ((P.BotCd > 0))
+        // One useful recipe it can afford: best weapon and armour first, then kits. Crafting takes 3 s.
+        if (((P.BotCd > 0) || (P.CraftIdx >= 0)))
         {
             return;
         }
         P.BotCd = 0.5f;
         bool Dead = Gd.Truth(Gd.Any(Gd.Values(Sim.Players), (Func<dynamic, dynamic>)((Q) => (Q.State == 2))));
-        foreach (dynamic Idx in Gd.Iter(new GArray(6, 7, 4, 5, 0, 2, 1, 3)))
+        int HasWeapon = ((Sim.Count(P, "metal_blade") > 0) ? 2 : ((Sim.Count(P, "stone_spear") > 0) ? 1 : 0));
+        foreach (dynamic Idx in Gd.Iter(new GArray(8, 9, 4, 5, 0, 2, 1, 3)))
         {
             dynamic R = Gd.At(GameSim.RECIPES, Idx);
-            if (((Gd.At(R, 2) > Sim.Unlock) || (Gd.Truth(Gd.At(R, 5)) && (P.Role != 2))))
+            string Makes = Gd.At(R, 3);
+            bool Useful = Makes switch
             {
-                continue;
-            }
-            bool Useful = Gd.Truth(Gd.At(new GDict { { "weapon", (Gd.At(R, 4) > P.Weapon) }, { "armour", (Gd.At(R, 4) > P.Armour) }, { "bandage", (P.Inv.Bandage < 2) }, { "revive", Dead }, { "base", (Sim.BaseHp <= (GameSim.BASE_HP - Gd.At(R, 4))) } }, Gd.At(R, 3)));
-            if ((!(Gd.Truth(Useful)) || Gd.Truth(Gd.Any(Gd.Keys(Gd.At(R, 1)), (Func<dynamic, dynamic>)((Res) => (Gd.At(P.Inv, Res) < Gd.At(Gd.At(R, 1), Res)))))))
+                "stone_spear" => (HasWeapon < 1),
+                "metal_blade" => (HasWeapon < 2),
+                "light_armour" => (Sim.ArmourTier(P) < 1),
+                "stone_armour" => (Sim.ArmourTier(P) < 2),
+                "metal_armour" => (Sim.ArmourTier(P) < 3),
+                "bandage" => (Sim.Count(P, "bandage") < 2),
+                "revive" => Dead,
+                "base" => (Sim.BaseHp <= (GameSim.BASE_HP - 100)),
+                _ => false,
+            };
+            if ((Useful && Sim.CanCraft(P, Gd.Int(Idx), false)))
             {
-                continue;
+                Sim.Craft(P, Idx);
+                return;
             }
-            Sim.Craft(P, Idx);
-            return;
+        }
+        Bots.Equip(Sim, P);
+    }
+
+    // Holds the strongest melee weapon it carries (blade, then spear), else an empty hand: bare hands hit
+    // harder than the hammer or the starter bow up close.
+    public static void Equip(dynamic Sim, dynamic P)
+    {
+        foreach (dynamic W in Gd.Iter(new GArray("metal_blade", "stone_spear")))
+        {
+            for (int I = 0; I < Gd.Size(P.Inv); I++)
+            {
+                dynamic S = Gd.At(P.Inv, I);
+                if (((S != null) && Gd.Equal(Gd.At(S, 0), W)))
+                {
+                    int Hand = I;
+                    if ((I >= GameSim.HOTBAR))
+                    {
+                        Hand = (GameSim.HOTBAR - 1);
+                        Sim.MoveSlot(P, new GArray("inv", I, "inv", Hand));
+                    }
+                    P.Sel = Hand;
+                    return;
+                }
+            }
+        }
+        foreach (dynamic I in Gd.Iter(GameSim.HOTBAR))
+        {
+            dynamic S = Gd.At(P.Inv, I);
+            if (((S == null) || (GameSim.KindOf(Gd.At(S, 0)) != "weapon")))
+            {
+                P.Sel = I;
+                return;
+            }
         }
     }
 

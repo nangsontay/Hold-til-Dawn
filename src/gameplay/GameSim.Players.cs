@@ -8,71 +8,137 @@ using HoldTilDawn;
 // Owner: Pham Minh Hieu. Player actions: movement credit, combat, gather/repair/revive, healing (MEC-01..13).
 public partial class GameSim : RefCounted
 {
-    public void Craft(dynamic P, dynamic Idx)
+    // Crafting takes CRAFT_TIME at the workbench (BAL-19); base repair runs at 20 HP/s (BAL-20).
+    public const float CRAFT_TIME = 3.0f;
+
+    public bool AtBench(dynamic P)
+    {
+        return Gd.Truth(((Gd.Contains(new GArray("day", "dusk"), Phase) && Gd.Truth(GameSim.InsideBase(P.Pos))) || ((Phase == "night") && Gd.Truth(P.Inside))));
+    }
+
+    // Checks every rule of MEC-10; Note() tells the player why not.
+    public bool CanCraft(dynamic P, int Idx, bool Tell = true)
     {
         if (((Idx < 0) || (Idx >= Gd.Size(RECIPES))))
         {
-            return;
+            return false;
         }
         dynamic R = Gd.At(RECIPES, Idx);
-        // ponytail: crafting is instant and day-only; GDD's 3 s craft time and Engineer night entry come later.
-        bool BenchOk = Gd.Truth(((Gd.Contains(new GArray("day", "dusk"), Phase) && Gd.Truth(GameSim.InsideBase(P.Pos))) || ((Phase == "night") && Gd.Truth(P.Inside))));
-        if (((P.State != 0) || !(Gd.Truth(BenchOk))))
+        string Why = "";
+        if (((P.State != 0) || !this.AtBench(P)))
         {
-            this.Note(P, "Craft at the workbench inside the base (by day; Engineer at night)");
-            return;
+            Why = "Craft at the workbench inside the base (by day; Engineer at night)";
         }
-        if ((Gd.At(R, 2) > Unlock))
+        else if ((Gd.At(R, 2) > Unlock))
         {
-            this.Note(P, Gd.Format("%s is locked", Gd.At(R, 0)));
-            return;
+            Why = Gd.Format("%s is locked", Gd.At(R, 0));
         }
-        if ((Gd.Truth(Gd.At(R, 5)) && (P.Role != 2)))
+        else if ((Gd.Truth(Gd.At(R, 5)) && (P.Role != 2)))
         {
-            this.Note(P, "Only an Engineer can do that");
-            return;
+            Why = "Only an Engineer can do that";
         }
-        foreach (dynamic Res in Gd.Iter(Gd.At(R, 1)))
+        else if (((Gd.At(R, 3) == "revive") && !Gd.Truth(Gd.Any(Gd.Values(Players), (Func<dynamic, dynamic>)((Q) => (Q.State == 2))))))
         {
-            if ((Gd.At(P.Inv, Res) < Gd.At(Gd.At(R, 1), Res)))
+            Why = "No dead teammate to revive";
+        }
+        else if (((Gd.At(R, 3) == "base") && (Phase == "night")))
+        {
+            Why = "The generator can only be repaired by day";
+        }
+        else if (((Gd.At(R, 3) == "base") && (BaseHp >= BASE_HP)))
+        {
+            Why = "The generator is at full HP";
+        }
+        else
+        {
+            foreach (dynamic Res in Gd.Iter(Gd.At(R, 1)))
             {
-                this.Note(P, Gd.Format("Not enough %s for %s", new GArray(Res, Gd.At(R, 0))));
-                return;
+                if ((this.Count(P, Res) < Gd.At(Gd.At(R, 1), Res)))
+                {
+                    Why = Gd.Format("Not enough %s for %s", new GArray(Res, Gd.At(R, 0)));
+                    break;
+                }
             }
         }
-        dynamic Dead = Gd.Filter(Gd.Values(Players), (Func<dynamic, dynamic>)((Q) => (Q.State == 2)));
-        if (((Gd.At(R, 3) == "revive") && Gd.Truth(Gd.IsEmpty(Dead))))
+        if (((Why != "") && Tell))
         {
-            this.Note(P, "No dead teammate to revive");
+            this.Note(P, Why);
+        }
+        return (Why == "");
+    }
+
+    public dynamic CraftDuration(int Idx)
+    {
+        dynamic R = Gd.At(RECIPES, Idx);
+        return ((Gd.At(R, 3) == "base") ? (dynamic)((Gd.At(R, 4) / 20.0f)) : CRAFT_TIME);
+    }
+
+    // Starts the craft channel; the cost is paid when it completes (TickCraft).
+    public void Craft(dynamic P, dynamic Idx)
+    {
+        if (((P.CraftIdx >= 0) || !this.CanCraft(P, Gd.Int(Idx))))
+        {
             return;
         }
+        P.CraftIdx = Gd.Int(Idx);
+        P.CraftT = 0.0f;
+    }
+
+    public void TickCraft(dynamic P, dynamic Dt)
+    {
+        if ((P.CraftIdx < 0))
+        {
+            return;
+        }
+        if (((P.State != 0) || !this.AtBench(P)))
+        {
+            P.CraftIdx = (-1);
+            return;
+        }
+        P.Activity = "craft";
+        P.CraftT += Dt;
+        if ((P.CraftT < this.CraftDuration(P.CraftIdx)))
+        {
+            return;
+        }
+        int Idx = Gd.Int(P.CraftIdx);
+        P.CraftIdx = (-1);
+        P.CraftT = 0.0f;
+        if (this.CanCraft(P, Idx))
+        {
+            this.FinishCraft(P, Idx);
+        }
+    }
+
+    public void FinishCraft(dynamic P, int Idx)
+    {
+        dynamic R = Gd.At(RECIPES, Idx);
         foreach (dynamic Res in Gd.Iter(Gd.At(R, 1)))
         {
-            P.Inv[Res] -= Gd.At(Gd.At(R, 1), Res);
+            this.Take(P, Res, Gd.At(Gd.At(R, 1), Res));
         }
-        if (Gd.Equal(Gd.At(R, 3), "armour"))
-        {
-            P.Armour = Gd.Maxi(P.Armour, Gd.At(R, 4));
-        }
-        else if (Gd.Equal(Gd.At(R, 3), "weapon"))
-        {
-            P.Weapon = Gd.Maxi(P.Weapon, Gd.At(R, 4));
-        }
-        else if (Gd.Equal(Gd.At(R, 3), "bandage"))
-        {
-            P.Inv.Bandage += 1;
-        }
-        else if (Gd.Equal(Gd.At(R, 3), "base"))
+        if (Gd.Equal(Gd.At(R, 3), "base"))
         {
             BaseHp = Gd.Minf(BASE_HP, (BaseHp + Gd.At(R, 4)));
         }
         else if (Gd.Equal(Gd.At(R, 3), "revive"))
         {
-            dynamic Q = Gd.At(Dead, 0);
+            // MEC-07: back at the door nearest to where they fell, with 50% HP
+            dynamic Q = Gd.At(Gd.Filter(Gd.Values(Players), (Func<dynamic, dynamic>)((Q) => (Q.State == 2))), 0);
             Q.State = 0;
             Q.Hp = (Q.Maxhp * 0.5f);
-            this.Teleport(Q, (Gd.At(DOOR_POS, 0) + (Gd.At(DOOR_DIR, 0) * T)));
+            Q.Invuln = 1.0f;
+            dynamic D = this.NearestDoor(Q.Pos);
+            this.Teleport(Q, (Gd.At(DOOR_POS, D) + (Gd.At(DOOR_DIR, D) * T)));
             this.Say(Gd.Format("%s is back (Revival kit)", Q.Name));
+        }
+        else
+        {
+            this.AddItem(P, Gd.At(R, 3), Gd.At(R, 4));
+            if (Gd.Equal(Gd.At(R, 3), "bow"))
+            {
+                this.AddItem(P, "arrow", 5);
+            }
         }
         this.Note(P, ("Crafted " + Gd.At(R, 0)));
     }
@@ -85,9 +151,11 @@ public partial class GameSim : RefCounted
         // 0 standing, 1 downed, 2 dead
         P.State = 0;
         P.Bleed = 0.0f;
-        P.Inv = new GDict { { "wood", 0 }, { "stone", 0 }, { "herb", 0 }, { "metal", 0 }, { "bandage", 0 } };
-        P.Weapon = 0;
+        this.GiveStartingKit(P);
+        P.Weapon = this.WeaponOf(P);
         P.Armour = 0;
+        P.CraftIdx = (-1);
+        P.CraftT = 0.0f;
         P.Flasks = ((P.Role == 1) ? (dynamic)(3) : 0);
         P.Invuln = 0.0f;
         P.AtkCd = 0.0f;
@@ -99,8 +167,11 @@ public partial class GameSim : RefCounted
         P.Aim = 0.0f;
         P.Atk = false;
         P.Inter = false;
+        // result screen stats (section 2.5): kills, damage dealt, revives, damage taken
         P.Kills = 0;
         P.Dmg = 0.0f;
+        P.Revives = 0;
+        P.Taken = 0.0f;
         // Engineer inside the base at night (MEC-15)
         P.Inside = false;
         P.Entry = 0.0f;
@@ -117,7 +188,10 @@ public partial class GameSim : RefCounted
         P.InputSequence = 0;
         // index of the resource node a bot is gathering
         P.BotNode = (-1);
-        this.Teleport(P, (Gd.MakeVector2(Rng.RandfRange((-2), 2), Rng.RandfRange((-2), 2)) * T));
+        // spawn beside the lighthouse, left or right: behind it the sprite hides you, and the gap between it and
+        // the workbench stools traps a body
+        float Side = ((Rng.Randf() < 0.5f) ? (-1.0f) : 1.0f);
+        this.Teleport(P, World.Resolve((Gd.MakeVector2((Side * Rng.RandfRange(2.5f, 4.0f)), Rng.RandfRange((-2.0f), 0.5f)) * T), (0.3f * T)));
     }
 
     public void TickPlayers(dynamic Dt)
@@ -130,6 +204,8 @@ public partial class GameSim : RefCounted
             P.AtkCd -= Dt;
             P.Swing -= Dt;
             P.NoteT -= Dt;
+            P.Weapon = this.WeaponOf(P);
+            P.Armour = this.ArmourTier(P);
             if ((P.State == 1))
             {
                 P.Bleed -= Dt;
@@ -154,14 +230,14 @@ public partial class GameSim : RefCounted
                 else
                 {
                     P.Channel -= Dt;
-                    if (((P.Channel <= 0) && (P.Inv.Bandage > 0)))
+                    if (((P.Channel <= 0) && this.Take(P, "bandage", 1)))
                     {
-                        P.Inv.Bandage -= 1;
                         P.Hp = Gd.Minf(P.Maxhp, (P.Hp + (30.0f * ((P.Role == 1) ? (dynamic)(1.5f) : 1.0f))));
                     }
                 }
             }
             this.TickEntry(P, Dt);
+            this.TickCraft(P, Dt);
             if (Gd.Truth(P.Inside))
             {
                 P.ReviveP = 0.0f;
@@ -224,40 +300,138 @@ public partial class GameSim : RefCounted
         }
     }
 
+    public const float ARROW_SPEED = 16.0f;  // tiles/s
+
+    // MEC-02 / MEC-03: a melee swing hits every enemy in the 90-degree arc once; a bow fires one arrow.
     public void Attack(dynamic P)
     {
-        P.AtkCd = (1.0f / (1.5f * ((P.Role == 0) ? (dynamic)(1.25f) : 1.0f)));
+        string W = P.Weapon;
+        dynamic St = WEAPON_STATS[W];
+        if ((Gd.Truth(Gd.At(St, 4)) && !this.Take(P, "arrow", 1)))
+        {
+            this.Note(P, "No arrows - craft 5 arrows from 1 wood");
+            P.AtkCd = 0.5f;
+            return;
+        }
+        // BAL-07: the Scout attacks 1.25x faster
+        P.AtkCd = (1.0f / (Gd.At(St, 1) * ((P.Role == 0) ? (dynamic)(1.25f) : 1.0f)));
         P.Swing = 0.25f;
         dynamic Dir = Vector2.FromAngle(P.Aim);
+        if (Gd.Truth(Gd.At(St, 3)))
+        {
+            Gd.Append(Arrows, new GDict { { "pos", (P.Pos + (Dir * (0.4f * T))) }, { "vel", ((Dir * ARROW_SPEED) * T) }, { "dmg", Gd.At(St, 0) }, { "left", ((Gd.At(St, 2) * T) - (0.4f * T)) }, { "owner", P.Id } });
+            return;
+        }
+        float Reach = Gd.Float((Gd.At(St, 2) * T));
         foreach (dynamic E in Gd.Iter(Enemies))
         {
             Vector2 D = (Vector2)((E.Pos - P.Pos));
-            if (((Gd.Length(D) <= ((1.5f * T) + E.R)) && ((Gd.Length(D) < (0.5f * T)) || (Dir.Dot(D.Normalized()) >= Gd.Cos((Mathf.Pi / 4)))) && Gd.Truth(this.LineClear(P.Pos, E.Pos))))
+            if (((Gd.Length(D) <= (Reach + E.R)) && ((Gd.Length(D) < (0.5f * T)) || (Dir.Dot(D.Normalized()) >= Gd.Cos((Mathf.Pi / 4)))) && Gd.Truth(this.LineClear(P.Pos, E.Pos))))
             {
-                this.Hit(E, Gd.At(WEAPON_DMG, P.Weapon), P);
+                this.Hit(E, Gd.At(St, 0), P);
             }
         }
         Enemies = Gd.Filter(Enemies, (Func<dynamic, dynamic>)((E) => (E.Hp > 0)));
     }
 
+    // Arrows fly toward the cursor, hit the first enemy on their way and stop at walls or at their range.
+    public void TickArrows(dynamic Dt)
+    {
+        foreach (dynamic A in Gd.Iter(Arrows))
+        {
+            Vector2 Start = (Vector2)(A.Pos);
+            float Step = Gd.Minf((Gd.Length(A.Vel) * Dt), A.Left);
+            Vector2 End = (Start + (A.Vel.Normalized() * Step));
+            dynamic First = this.ObstacleHit(Start, End, 2.0f);
+            dynamic Victim = null;
+            foreach (dynamic E in Gd.Iter(Enemies))
+            {
+                if (!this.Hittable(E))
+                {
+                    continue;
+                }
+                dynamic H = WorldGeometry.CircleHit(Start, End, E.Pos, (E.R + 2.0f));
+                if ((H < First))
+                {
+                    First = H;
+                    Victim = E;
+                }
+            }
+            A.Left -= Step;
+            A.Pos = ((First < float.PositiveInfinity) ? (dynamic)(Start.Lerp(End, First)) : End);
+            if ((First < float.PositiveInfinity))
+            {
+                A.Left = 0.0f;
+                dynamic Owner = Gd.Get(Players, A.Owner);
+                if (((Victim != null) && (Owner != null)))
+                {
+                    this.Hit(Victim, A.Dmg, Owner);
+                }
+            }
+        }
+        Arrows = Gd.Filter(Arrows, (Func<dynamic, dynamic>)((A) => (A.Left > 0)));
+        Enemies = Gd.Filter(Enemies, (Func<dynamic, dynamic>)((E) => (E.Hp > 0)));
+    }
+
+    // FML-09: threat is the damage a player dealt to this enemy in the last 5 s.
+    public float Threat(dynamic E, dynamic Pid)
+    {
+        float Sum = 0.0f;
+        foreach (dynamic H in Gd.Iter(E.Hits))
+        {
+            if ((Gd.Equal(Gd.At(H, 1), Pid) && ((Clock - Gd.At(H, 0)) <= 5.0f)))
+            {
+                Sum += Gd.Float(Gd.At(H, 2));
+            }
+        }
+        return Sum;
+    }
+
+    // Chase the top threat; switch only when a newcomer's threat beats the current target's by 20%.
+    public void Retarget(dynamic E)
+    {
+        E.Hits = Gd.Filter(E.Hits, (Func<dynamic, dynamic>)((H) => ((Clock - Gd.At(H, 0)) <= 5.0f)));
+        float Cur = this.Threat(E, E.Target);
+        foreach (dynamic H in Gd.Iter(E.Hits))
+        {
+            dynamic Pid = Gd.At(H, 1);
+            dynamic Q = Gd.Get(Players, Pid);
+            if (((Q != null) && (Q.State == 0) && (this.Threat(E, Pid) > (1.2f * Cur))))
+            {
+                E.Target = Pid;
+                Cur = this.Threat(E, Pid);
+            }
+        }
+    }
+
     public void Hit(dynamic E, dynamic Dmg, dynamic P)
     {
+        if (!this.Hittable(E))
+        {
+            return;
+        }
+        Dmg = this.BossDamageTaken(E, Dmg, P.Pos);
         E.Hp -= Dmg;
         E.Nodmg = 0.0f;
         P.Dmg += Dmg;
+        this.BossOnHit(E);
+        // Grunts and bosses retaliate unless locked on a door or tower; Wreckers never do (AGT-01..03).
         if ((((E.Type == GRUNT) || (E.Type == BOSS)) && ((E.State <= 1) || (E.State == 4))))
         {
-            // ponytail: threat is cumulative until the leash breaks, not a sliding 5 s window (FML-09).
-            E.Threat[P.Id] = (Gd.Get(E.Threat, P.Id, 0.0f) + Dmg);
+            Gd.Append(E.Hits, new GArray(Clock, P.Id, Dmg));
             if (((E.State == 0) || (E.State == 4)))
             {
-                E.State = 1;
-                E.Anchor = E.Pos;
-                E.Target = P.Id;
+                // BAL-35: a boss ignores new threat for 10 s after its leash broke
+                if ((Gd.Get(E, "calm", 0.0f) <= 0))
+                {
+                    E.State = 1;
+                    E.Anchor = E.Pos;
+                    E.Target = P.Id;
+                }
             }
-            else if ((Gd.At(E.Threat, P.Id) > (1.2f * Gd.Get(E.Threat, E.Target, 0.0f))))
+            else
             {
-                E.Target = P.Id;
+                this.Retarget(E);
             }
         }
         if ((E.Hp <= 0))
@@ -286,13 +460,20 @@ public partial class GameSim : RefCounted
                     Q.State = 0;
                     Q.Hp = (0.3f * Q.Maxhp);
                     Q.Invuln = 1.0f;
+                    P.Revives += 1;
                     this.Say(Gd.Format("%s revived %s", new GArray(P.Name, Q.Name)));
                 }
                 return;
             }
         }
         P.ReviveP = 0.0f;
-        if (((P.Role == 2) && !(Gd.Truth(GameSim.InsideBase(P.Pos)))))
+        if (this.PickUp(P))
+        {
+            P.Inter = false;
+            return;
+        }
+        // repairs need the Engineer's hammer (ITM-04) and wood (BAL-23)
+        if (((P.Role == 2) && !(Gd.Truth(GameSim.InsideBase(P.Pos))) && (this.Count(P, "hammer") > 0)))
         {
             foreach (dynamic I in Gd.Iter(3))
             {
@@ -300,7 +481,7 @@ public partial class GameSim : RefCounted
                 if ((P.Pos.DistanceTo(Dp) <= (1.5f * T)))
                 {
                     float Cap = Gd.Float((Gd.Truth(Gd.At(Broken, I)) ? (dynamic)((DOOR_HP * 0.3f)) : DOOR_HP));
-                    if (((Gd.Truth(Gd.At(Broken, I)) && Gd.Truth(this.EnemyInside())) || (Gd.At(DoorPause, I) > 0) || (Gd.At(Doors, I) >= Cap) || (P.Inv.Wood <= 0)))
+                    if (((Gd.Truth(Gd.At(Broken, I)) && Gd.Truth(this.EnemyInside())) || (Gd.At(DoorPause, I) > 0) || (Gd.At(Doors, I) >= Cap) || (this.Count(P, "wood") <= 0)))
                     {
                         return;
                     }
@@ -312,7 +493,7 @@ public partial class GameSim : RefCounted
                     if ((P.RepairAcc >= 10.0f))
                     {
                         P.RepairAcc -= 10.0f;
-                        P.Inv.Wood -= 1;
+                        this.Take(P, "wood", 1);
                     }
                     return;
                 }
@@ -322,7 +503,7 @@ public partial class GameSim : RefCounted
                 if (((Tw != null) && (P.Pos.DistanceTo(Tw.Pos) <= (1.5f * T))))
                 {
                     float Tcap = Gd.Float((Gd.Truth(Tw.Wrecked) ? (dynamic)((TOWER_HP * 0.3f)) : TOWER_HP));
-                    if (((Gd.Truth(Tw.Wrecked) && Gd.Truth(this.EnemyNear(Tw.Pos, TOWER_LIGHT))) || (Tw.Pause > 0) || (Tw.Hp >= Tcap) || (P.Inv.Wood <= 0)))
+                    if (((Gd.Truth(Tw.Wrecked) && Gd.Truth(this.EnemyNear(Tw.Pos, TOWER_LIGHT))) || (Tw.Pause > 0) || (Tw.Hp >= Tcap) || (this.Count(P, "wood") <= 0)))
                     {
                         return;
                     }
@@ -334,7 +515,7 @@ public partial class GameSim : RefCounted
                     if ((P.RepairAcc >= 10.0f))
                     {
                         P.RepairAcc -= 10.0f;
-                        P.Inv.Wood -= 1;
+                        this.Take(P, "wood", 1);
                     }
                     return;
                 }
@@ -344,6 +525,12 @@ public partial class GameSim : RefCounted
         {
             if (((Nd.Amount > 0) && (Nd.Pos.DistanceTo(P.Pos) <= (1.5f * T)) && Gd.Truth(this.LineClear(P.Pos, Nd.Pos, Nd.Pos))))
             {
+                if ((this.Room(P, Gd.At(RES, Nd.Type)) <= 0))
+                {
+                    this.Note(P, "Inventory full - store or drop something (Tab, G)");
+                    P.GatherAcc = 0.0f;
+                    return;
+                }
                 P.Activity = "gather";
                 P.ActivityTarget = Nd.Pos;
                 if (((P.GatherAcc > 0) && (P.Pos.DistanceTo(P.GatherPos) > 4.0f)))
@@ -359,7 +546,7 @@ public partial class GameSim : RefCounted
                 {
                     P.GatherAcc = 0.0f;
                     Nd.Amount -= 1;
-                    P.Inv[Gd.At(RES, Nd.Type)] += 1;
+                    GameSim.AddTo(P.Inv, Gd.At(RES, Nd.Type), 1);
                 }
                 return;
             }
@@ -370,17 +557,21 @@ public partial class GameSim : RefCounted
 
     public void Hurt(dynamic P, dynamic Dmg)
     {
-        // ponytail: an Engineer inside is untouchable; let breached enemies hit them if playtests ask.
-        if (((P.State != 0) || (P.Invuln > 0) || Gd.Truth(P.Inside)))
+        // An Engineer inside the base can be hit too, but only enemies that broke in can reach them.
+        if (((P.State != 0) || (P.Invuln > 0)))
         {
             return;
         }
         P.Entry = 0.0f;
-        P.Hp -= Gd.Maxf(1.0f, Gd.Roundf((Dmg * (1.0f - Gd.At(ARMOUR, P.Armour)))));
+        // FML-06: armour reduces the hit, never below 1 damage; BAL-13: 1 s invulnerability
+        float Taken = Gd.Maxf(1.0f, Gd.Roundf((Dmg * (1.0f - Gd.Minf(0.6f, Gd.At(ARMOUR, P.Armour))))));
+        P.Hp -= Taken;
+        P.Taken += Taken;
         P.Invuln = 1.0f;
         P.Channel = 0.0f;
         P.ReviveP = 0.0f;
         P.GatherAcc = 0.0f;
+        P.CraftIdx = (-1);
         if ((P.Hp <= 0))
         {
             P.Hp = 0.0f;

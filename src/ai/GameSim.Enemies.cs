@@ -71,7 +71,7 @@ public partial class GameSim : RefCounted
         AnySide ??= SPAWN_ALL_SIDES;
         dynamic S = Gd.At(ENEMY, Ty);
         dynamic G = Gd.Pow(1.1f, (K - 1));
-        dynamic E = new GDict { { "id", NextId }, { "type", Ty }, { "pos", this.SpawnPos(Door, DistTiles, AnySide) }, { "hp", ((Gd.At(S, 0) * G) * Gd.At(Gd.At(MODE_MUL, Mode), 1)) }, { "dmg", ((Gd.At(S, 1) * G) * Gd.At(Gd.At(MODE_MUL, Mode), 2)) }, { "spd", ((Gd.Minf(3.0f, (Gd.At(S, 2) * Gd.Pow(1.08f, (K - 1)))) * T) * ENEMY_SPEED_MUL) }, { "door", Door }, { "state", 0 }, { "cd", 0.0f }, { "threat", new GDict {  } }, { "target", 0 }, { "anchor", Vector2.Zero }, { "nodmg", 0.0f }, { "r", (((Ty == WRECKER) ? (dynamic)(0.625f) : 0.5f) * T) } };
+        dynamic E = new GDict { { "id", NextId }, { "type", Ty }, { "pos", this.SpawnPos(Door, DistTiles, AnySide) }, { "hp", ((Gd.At(S, 0) * G) * Gd.At(Gd.At(MODE_MUL, Mode), 1)) }, { "dmg", ((Gd.At(S, 1) * G) * Gd.At(Gd.At(MODE_MUL, Mode), 2)) }, { "spd", ((Gd.Minf(3.0f, (Gd.At(S, 2) * Gd.Pow(1.08f, (K - 1)))) * T) * ENEMY_SPEED_MUL) }, { "door", Door }, { "state", 0 }, { "cd", 0.0f }, { "hits", new GArray() }, { "target", 0 }, { "anchor", Vector2.Zero }, { "nodmg", 0.0f }, { "r", (((Ty == WRECKER) ? (dynamic)(0.625f) : 0.5f) * T) } };
         E.Pos = World.Resolve(E.Pos, E.R);
         E.Maxhp = E.Hp;
         NextId += 1;
@@ -83,19 +83,10 @@ public partial class GameSim : RefCounted
     {
         int Door = Gd.Int(Gd.At(Active, (Rng.Randi() % Gd.Size(Active))));
         dynamic E = this.Spawn(GRUNT, Door, 60.0f, false);
-        // BAL-34
+        // BAL-34: 60 tiles in front of its door; BAL-39: a Grunt's speed of this night
         E.Pos = (Gd.At(DOOR_POS, Door) + ((Gd.At(DOOR_DIR, Door) * 60.0f) * T)).LimitLength((ISLAND - (2 * T)));
-        dynamic M4 = ((K == 4) ? (dynamic)(1.21f) : 1.0f);
-        E.Type = BOSS;
-        E.Hp = ((((3900.0f * (1 + (0.8f * (Gd.Size(Players) - 1)))) / 3.4f) * ((K == 4) ? (dynamic)(1.5625f) : 1.0f)) * Gd.At(Gd.At(MODE_MUL, Mode), 1));
-        E.Maxhp = E.Hp;
-        // door damage per 4 s (BAL-37)
-        E.Dmg = ((60.0f * M4) * Gd.At(Gd.At(MODE_MUL, Mode), 2));
-        // BAL-38
-        E.Slam = ((40.0f * M4) * Gd.At(Gd.At(MODE_MUL, Mode), 2));
-        E.SlamCd = 3.0f;
-        E.R = (0.9f * T);
-        this.Say(Gd.Format("NOX-01 JUGGERNAUT is heading for door %s!", Gd.At(DOOR_NAMES, Door)));
+        this.SetupBoss(E, this.BossKindFor(K));
+        this.Say(Gd.Format("%s is heading for door %s!", new GArray(GameSim.BossTitle(E.Kind).ToUpper(), Gd.At(DOOR_NAMES, Door))));
     }
 
     public dynamic Boss()
@@ -112,12 +103,23 @@ public partial class GameSim : RefCounted
 
     public void TickEnemies(dynamic Dt)
     {
-        foreach (dynamic E in Gd.Iter(Enemies))
+        // a copy: a Broodmother's summons join the list during the loop
+        foreach (dynamic E in Gd.Iter(Gd.Duplicate(Enemies)))
         {
             Vector2 OldPos = (Vector2)(E.Pos);
             E.NavT = (Gd.Get(E, "nav_t", 0.0f) - Dt);
             E.Cd -= Dt;
             E.Nodmg += Dt;
+            if (((E.Type == BOSS) && this.TickBoss(E, Dt)))
+            {
+                continue;
+            }
+            // a Broodmother's summons vanish with it (BAL-43)
+            if ((Gd.Truth(Gd.Get(E, "summon", false)) && !Gd.Truth(Gd.Any(Enemies, (Func<dynamic, dynamic>)((X) => (Gd.Equal(X.Id, E.Owner) && (X.Hp > 0)))))))
+            {
+                E.Hp = 0.0f;
+                continue;
+            }
             if ((E.Type == SPITTER))
             {
                 this.TickSpitter(E, Dt);
@@ -137,17 +139,28 @@ public partial class GameSim : RefCounted
                 E.Target = Seen.Id;
                 E.Anchor = E.Pos;
                 E.Nodmg = 0.0f;
-                E.Threat[Seen.Id] = 1.0f;
             }
             dynamic TargetP = null;
+            E.Calm = (Gd.Get(E, "calm", 0.0f) - Dt);
             if ((E.State == 1))
             {
-                TargetP = Gd.Get(Players, E.Target);
-                if (((TargetP == null) || (TargetP.State != 0) || Gd.Truth(TargetP.Inside) || (E.Nodmg > 5.0f) || (E.Pos.DistanceTo(E.Anchor) > (12 * T))))
+                // FML-09: re-evaluate the top threat every 0.25 s
+                E.RetargetT = (Gd.Get(E, "retarget_t", 0.0f) - Dt);
+                if ((E.RetargetT <= 0))
                 {
-                    // roamers go back to wandering by day
+                    E.RetargetT = 0.25f;
+                    this.Retarget(E);
+                }
+                TargetP = Gd.Get(Players, E.Target);
+                if (((TargetP == null) || (TargetP.State != 0) || (Gd.Truth(TargetP.Inside) && !(Gd.Truth(this.AnyBreach()))) || (E.Nodmg > 5.0f) || (E.Pos.DistanceTo(E.Anchor) > (12 * T))))
+                {
+                    // roamers go back to wandering by day; a boss ignores new threat for 10 s (BAL-35)
                     E.State = (Gd.Truth(Gd.Has(E, "home")) ? (dynamic)(4) : 0);
-                    Gd.Clear(E.Threat);
+                    Gd.Clear(E.Hits);
+                    if ((E.Type == BOSS))
+                    {
+                        E.Calm = 10.0f;
+                    }
                     TargetP = null;
                     if ((E.State == 4))
                     {
@@ -223,13 +236,19 @@ public partial class GameSim : RefCounted
             if ((E.Type == BOSS))
             {
                 this.BossSlam(E, Dt);
+                if ((E.Pos.DistanceTo(OldPos) > 0.5f))
+                {
+                    E.Face = (E.Pos - OldPos).Angle();
+                }
             }
             E.Pos = this.MoveActor(OldPos, E.Pos, E.R);
             if (Gd.Truth(Outside))
             {
                 E.Pos = GameSim.PushOut(E.Pos, E.R);
             }
+            this.TickBlocked(E, OldPos, Arrived, Dt);
         }
+        Enemies = Gd.Filter(Enemies, (Func<dynamic, dynamic>)((E) => (E.Hp > 0)));
         this.Separate();
     }
 
@@ -238,6 +257,7 @@ public partial class GameSim : RefCounted
         bool Boss = Gd.Truth((E.Type == BOSS));
         if ((E.State == 1))
         {
+            // a boss hurts players only with its slam and signature move
             if (!(Gd.Truth(Boss)))
             {
                 if (Gd.Truth(this.LineClear(E.Pos, P.Pos)))
@@ -248,10 +268,21 @@ public partial class GameSim : RefCounted
             E.Cd = 2.0f;
             return;
         }
-        float D = Gd.Float((E.Dmg * ((E.Type == WRECKER) ? (dynamic)(2.0f) : 1.0f)));
+        if ((Boss && (!this.BossHitsDoors(E) || this.StartBlow(E))))
+        {
+            return;
+        }
+        this.DamageDoor(E, E.Dmg);
+        E.Cd = (Gd.Truth(Boss) ? (dynamic)(4.0f) : 2.0f);
+    }
+
+    // FML-07: a hit on an intact door also hurts the generator, more as the door degrades; through a broken
+    // door the damage goes to the generator in full. Wreckers deal double damage to doors and towers.
+    public void DamageDoor(dynamic E, dynamic Dmg)
+    {
+        float D = Gd.Float((Dmg * ((E.Type == WRECKER) ? (dynamic)(2.0f) : 1.0f)));
         if ((E.State == 3))
         {
-            // breach: beta = 1
             BaseHp -= D;
         }
         else
@@ -267,16 +298,43 @@ public partial class GameSim : RefCounted
                 this.Say(Gd.Format("Door %s broken - BREACH!", Gd.At(DOOR_NAMES, E.Door)));
             }
         }
+        // the result screen names the door where the generator took its last hit
+        LastDoor = E.Door;
         BaseHp = Gd.Maxf(0.0f, BaseHp);
-        E.Cd = (Gd.Truth(Boss) ? (dynamic)(4.0f) : 2.0f);
+    }
+
+    // MEC-11: an enemy that cannot get past a built wall for a second attacks it (as it would a door).
+    public void TickBlocked(dynamic E, Vector2 OldPos, dynamic Arrived, dynamic Dt)
+    {
+        bool Stuck = (!Gd.Truth(Arrived) && (E.Pos.DistanceTo(OldPos) < Gd.Maxf(((E.Spd * Dt) * 0.3f), 0.2f)));
+        E.StuckT = (Stuck ? (dynamic)((Gd.Get(E, "stuck_t", 0.0f) + Dt)) : 0.0f);
+        if (((E.StuckT < 1.0f) || (E.Cd > 0)))
+        {
+            return;
+        }
+        dynamic W = this.WallTouching(E.Pos, E.R);
+        if ((W != null))
+        {
+            this.DamageWall(E, W, E.Dmg);
+            E.Cd = ((E.Type == BOSS) ? (dynamic)(4.0f) : 2.0f);
+        }
     }
 
     public void TowerAttack(dynamic E, dynamic Tw)
     {
-        Tw.Hp = Gd.Maxf(0.0f, (Tw.Hp - (E.Dmg * ((E.Type == WRECKER) ? (dynamic)(2.0f) : 1.0f))));
+        if (((E.Type == BOSS) && (!this.BossHitsDoors(E) || this.StartBlow(E))))
+        {
+            return;
+        }
+        this.DamageTower(E, Tw, E.Dmg);
+        E.Cd = ((E.Type == BOSS) ? (dynamic)(4.0f) : 2.0f);
+    }
+
+    public void DamageTower(dynamic E, dynamic Tw, dynamic Dmg)
+    {
+        Tw.Hp = Gd.Maxf(0.0f, (Tw.Hp - (Dmg * ((E.Type == WRECKER) ? (dynamic)(2.0f) : 1.0f))));
         // FML-08: a hit blocks repair for 2 s
         Tw.Pause = 2.0f;
-        E.Cd = ((E.Type == BOSS) ? (dynamic)(4.0f) : 2.0f);
         if (((Tw.Hp <= 0) && !(Gd.Truth(Tw.Wrecked))))
         {
             Tw.Wrecked = true;
@@ -294,24 +352,6 @@ public partial class GameSim : RefCounted
             }
         }
         return false;
-    }
-
-    public void BossSlam(dynamic E, dynamic Dt)
-    {
-        E.SlamCd -= Dt;
-        if ((E.SlamCd > 0))
-        {
-            return;
-        }
-        foreach (dynamic P in Gd.Iter(Gd.Values(Players)))
-        {
-            if (((P.State == 0) && (P.Pos.DistanceTo(E.Pos) < (3 * T))))
-            {
-                Gd.Append(Tele, new GDict { { "pos", E.Pos }, { "r", (3 * T) }, { "t", 1.0f }, { "dmg", E.Slam } });
-                E.SlamCd = (6.0f * ((K == 4) ? (dynamic)(0.9f) : 1.0f));
-                return;
-            }
-        }
     }
 
     public void TickSpitter(dynamic E, dynamic Dt)
@@ -349,7 +389,8 @@ public partial class GameSim : RefCounted
         dynamic Bd = Radius;
         foreach (dynamic P in Gd.Iter(Gd.Values(Players)))
         {
-            if (((P.State == 0) && !(Gd.Truth(P.Inside))))
+            // an Engineer inside the base can only be reached through a broken door
+            if (((P.State == 0) && (!(Gd.Truth(P.Inside)) || Gd.Truth(this.AnyBreach()))))
             {
                 float D = Gd.Float(P.Pos.DistanceTo(Pos));
                 if (((D <= Bd) && Gd.Truth(this.LineClear(Pos, P.Pos))))
@@ -415,11 +456,17 @@ public partial class GameSim : RefCounted
         foreach (dynamic Tl in Gd.Iter(Tele))
         {
             Tl.TimeLeft -= Dt;
-            if ((Tl.TimeLeft <= 0))
+            if (((Tl.TimeLeft <= 0) && (Tl.Dmg > 0)))
             {
                 foreach (dynamic P in Gd.Iter(Gd.Values(Players)))
                 {
-                    if ((P.Pos.DistanceTo(Tl.Pos) <= Tl.R))
+                    Vector2 D = (Vector2)((P.Pos - Tl.Pos));
+                    bool In = (Gd.Length(D) <= Tl.R);
+                    if ((In && (Tl.Kind == "arc")))
+                    {
+                        In = (Mathf.Abs(Mathf.AngleDifference(Gd.Float(Tl.Ang), D.Angle())) <= (Tl.Spread / 2));
+                    }
+                    if (In)
                     {
                         this.Hurt(P, Tl.Dmg);
                     }

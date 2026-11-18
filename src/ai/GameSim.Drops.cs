@@ -14,6 +14,11 @@ public partial class GameSim : RefCounted
 
     public void Drop(dynamic E)
     {
+        // summoned Grunts drop nothing (BAL-43)
+        if (Gd.Truth(Gd.Get(E, "summon", false)))
+        {
+            return;
+        }
         if ((E.Type == BOSS))
         {
             this.AddDrop(E.Pos, "metal", 10);
@@ -36,17 +41,27 @@ public partial class GameSim : RefCounted
     {
         foreach (dynamic D in Gd.Iter(Drops))
         {
+            // items dropped by players never vanish and are picked up with E (GameSim.Inventory.cs)
+            if (Gd.Truth(Gd.Get(D, "player", false)))
+            {
+                continue;
+            }
             D.Ttl -= Dt;
             foreach (dynamic P in Gd.Iter(Gd.Values(Players)))
             {
-                if (((D.Ttl > 0) && (P.State == 0) && !(Gd.Truth(GameSim.InsideBase(P.Pos))) && (P.Pos.DistanceTo(D.Pos) <= (0.8f * T))))
+                // MEC-23: walk over it with free inventory space, never from inside the base
+                if (((D.Ttl > 0) && (P.State == 0) && !(Gd.Truth(GameSim.InsideBase(P.Pos))) && (P.Pos.DistanceTo(D.Pos) <= (0.8f * T)) && (this.Room(P, D.Item) > 0)))
                 {
-                    P.Inv[D.Item] += D.N;
-                    this.Note(P, Gd.Format("+%d %s", new GArray(D.N, D.Item)));
-                    D.Ttl = 0.0f;
+                    int Left = GameSim.AddTo(P.Inv, D.Item, Gd.Int(D.N));
+                    this.Note(P, Gd.Format("+%d %s", new GArray((D.N - Left), GameSim.ItemName(D.Item))));
+                    D.N = Left;
+                    if ((Left == 0))
+                    {
+                        D.Ttl = 0.0f;
+                    }
                 }
             }
         }
-        Drops = Gd.Filter(Drops, (Func<dynamic, dynamic>)((D) => (D.Ttl > 0)));
+        Drops = Gd.Filter(Drops, (Func<dynamic, dynamic>)((D) => (Gd.Truth(Gd.Get(D, "player", false)) || (D.Ttl > 0))));
     }
 }

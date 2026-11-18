@@ -33,14 +33,31 @@ public partial class GameSim : RefCounted
         return (-1);
     }
 
-    public void BuildTower(dynamic P)
+    public void BuildTower(dynamic P, dynamic At = null)
     {
+        Vector2 Spot = (Vector2)((At ?? P.Pos));
         if (((P.Role != 2) || (P.State != 0) || Gd.Truth(P.Inside)))
         {
             this.Note(P, "Only an Engineer can build towers");
             return;
         }
-        dynamic I = GameSim.TowerSlot(P.Pos);
+        if ((this.Count(P, "hammer") <= 0))
+        {
+            this.Note(P, "Building needs the Engineer's hammer");
+            return;
+        }
+        if ((Spot.DistanceTo(P.Pos) > (BUILD_REACH * T)))
+        {
+            this.Note(P, "Too far away to build there");
+            return;
+        }
+        // placed from the build menu at the cursor: the spot must be free (T places it at the Engineer's feet)
+        if (((At != null) && (Gd.Truth((this.World.Resolve(Spot, (0.7f * T)) != Spot)) || Gd.Truth(Gd.Any(Gd.Values(Players), (Func<dynamic, dynamic>)((Q) => (Q.Pos.DistanceTo(Spot) < (1.1f * T))))))))
+        {
+            this.Note(P, "Something is in the way");
+            return;
+        }
+        dynamic I = GameSim.TowerSlot(Spot);
         if ((I < 0))
         {
             this.Note(P, "Stand 3-8 tiles in front of a door to build a tower");
@@ -64,7 +81,7 @@ public partial class GameSim : RefCounted
             }
             foreach (dynamic Res in Gd.Iter(TOWER_COST))
             {
-                if ((Gd.At(P.Inv, Res) < Gd.At(TOWER_COST, Res)))
+                if ((this.Count(P, Res) < Gd.At(TOWER_COST, Res)))
                 {
                     this.Note(P, "A tower costs 10 wood + 5 metal");
                     return;
@@ -72,10 +89,10 @@ public partial class GameSim : RefCounted
             }
             foreach (dynamic Res in Gd.Iter(TOWER_COST))
             {
-                P.Inv[Res] -= Gd.At(TOWER_COST, Res);
+                this.Take(P, Res, Gd.At(TOWER_COST, Res));
             }
         }
-        this.PlaceTower(I, P.Pos);
+        this.PlaceTower(I, Spot);
         this.Note(P, Gd.Format("Tower built at door %s", Gd.At(DOOR_NAMES, I)));
     }
 

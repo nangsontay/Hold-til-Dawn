@@ -1,0 +1,53 @@
+{
+	"chars": {
+		"boss_bio_cannon": {
+			"anchor": [
+				24.0,
+				46
+			],
+			"size": 48
+		},
+		"boss_broodmother": {
+			"anchor": [
+				24.0,
+				46
+			],
+			"size": 48
+		},
+		"boss_burrower": {
+			"anchor": [
+				24.0,
+				46
+			],
+			"size": 48
+		},
+		"boss_gatebreaker": {
+			"anchor": [
+				24.0,
+				46
+			],
+			"size": 48
+		},
+		"boss_ironhide": {
+			"anchor": [
+				24.0,
+				46
+			],
+			"size": 48
+		},
+		"boss_juggernaut": {
+			"anchor": [
+				24.0,
+				46
+			],
+			"size": 48
+		},
+		"boss_phantom": {
+			"anchor": [
+				24.0,
+				46
+			],
+			"size": 48
+		}
+	}
+}

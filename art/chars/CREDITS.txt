@@ -11,3 +11,11 @@ No third-party asset and no AI image generator was used.
 AI disclosure: the pixel maps and the script were written by an AI coding assistant (Claude)
 from the team's GDD; declare them in GDD Appendix B as AI-made assets. The PNGs are plain
 1x pixel art: the team can repaint them in Aseprite / Piskel and the game uses the edited files.
+
+Bosses (boss_*.png, bosses.json)
+--------------------------------
+juggernaut, broodmother, bio_cannon, burrower, gatebreaker, phantom, ironhide (AGT-05..11):
+original 48x48 pixel art, same sheet layout as above (rows right, down, left, up; idle 2 + walk 4).
+Each is the NOX brute with the part that shows its move (horns, egg sacs, spore pods, claws,
+ram fist, hood and cloak, front plates). Made by tools/PixelBosses.cs from shaded shapes;
+same AI disclosure as above.

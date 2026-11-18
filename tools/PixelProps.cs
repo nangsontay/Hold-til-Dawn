@@ -35,6 +35,13 @@ public partial class PixelProps : Node
         this.Save(Out, "tower", this.Tower(false), Gd.MakeVector2(13, 57));
         this.Save(Out, "tower_wreck", this.Tower(true), Gd.MakeVector2(13, 57));
         this.Save(Out, "pad", this.Pad(), Gd.MakeVector2(128, 128));
+        // built walls (ITM-07, ITM-11): 3 x 1 tiles, anchor = centre of the footprint
+        foreach (bool Stone in new[] { false, true })
+        {
+            string Kind = (Stone ? "stone" : "wood");
+            this.Save(Out, ("wall_" + Kind + "_h"), this.Wall(Stone, false), Gd.MakeVector2(49, 31));
+            this.Save(Out, ("wall_" + Kind + "_v"), this.Wall(Stone, true), Gd.MakeVector2(17, 63));
+        }
         dynamic Fa = Gd.Static(typeof(FileAccess), "open", Gd.PathJoin(Out, "props.json"), Gd.EnumValue(typeof(FileAccess), "WRITE", 2));
         Fa.StoreString(Json.Stringify(Gd.ToVariant(Props), "\t"));
         Fa.Close();
@@ -185,6 +192,94 @@ public partial class PixelProps : Node
             Im.FillRect(Gd.MakeRect2I(12, 2, 1, 4), Gd.MakeColor("3A3F48"));
             Im.SetPixel(12, 1, Gd.At(RED, 0));
         }
+        this.Outline(Im);
+        return Im;
+    }
+
+    // A built wall seen from above at the game's 2.5D angle: a top face over a 14 px front face.
+    // Wood = a palisade of sharpened logs; stone = mortared blocks with a capstone row.
+    public Image Wall(bool Stone, bool Vert)
+    {
+        const int H = 14;
+        int Fw = (Vert ? 32 : 96);
+        int Fd = (Vert ? 96 : 32);
+        var Im = Image.CreateEmpty((Fw + 2), ((Fd + H) + 2), false, Image.Format.Rgba8);
+        var Top = new Rect2I(1, 1, Fw, Fd);
+        var Front = new Rect2I(1, (Fd + 1), Fw, H);
+        Color Light = (Stone ? new Color("A3A8B0") : new Color("C08A50"));
+        Color Mid = (Stone ? new Color("8A8F98") : new Color("A0703C"));
+        Color Dark = (Stone ? new Color("6A6F7C") : new Color("7A5634"));
+        Color Deep = (Stone ? new Color("4A4E58") : new Color("5A3E26"));
+        Im.FillRect(Top, Mid);
+        Im.FillRect(Front, Dark);
+        if (Stone)
+        {
+            // blocks on the top face and the front, offset every other row
+            for (int Y = Top.Position.Y; Y < Top.End.Y; Y += 8)
+            {
+                Im.FillRect(new Rect2I(Top.Position.X, Y, Fw, 1), Deep);
+                int Shift = ((((Y - Top.Position.Y) / 8) % 2) * 6);
+                for (int X = (Top.Position.X + Shift); X < Top.End.X; X += 12)
+                {
+                    Im.FillRect(new Rect2I(X, Y, 1, Math.Min(8, (Top.End.Y - Y))), Deep);
+                    Im.FillRect(new Rect2I((X + 1), (Y + 1), Math.Min(10, (Top.End.X - X - 1)), 1), Light);
+                }
+            }
+            for (int Y = Front.Position.Y; Y < Front.End.Y; Y += 7)
+            {
+                Im.FillRect(new Rect2I(Front.Position.X, Y, Fw, 1), Deep);
+                int Shift = ((((Y - Front.Position.Y) / 7) % 2) * 6);
+                for (int X = (Front.Position.X + Shift); X < Front.End.X; X += 12)
+                {
+                    Im.FillRect(new Rect2I(X, Y, 1, Math.Min(7, (Front.End.Y - Y))), Deep);
+                }
+            }
+        }
+        else
+        {
+            // log tops along the wall, logs on the front face
+            bool Across = !Vert;
+            int Len = (Across ? Fw : Fd);
+            for (int I = 0; I < Len; I += 8)
+            {
+                if (Across)
+                {
+                    Im.FillRect(new Rect2I((Top.Position.X + I), Top.Position.Y, 1, Fd), Deep);
+                    Im.FillRect(new Rect2I((Top.Position.X + I + 1), Top.Position.Y, 2, Fd), Light);
+                    Im.FillRect(new Rect2I((Front.Position.X + I), Front.Position.Y, 1, H), Deep);
+                    Im.FillRect(new Rect2I((Front.Position.X + I + 1), Front.Position.Y, 2, H), Mid);
+                }
+                else
+                {
+                    Im.FillRect(new Rect2I(Top.Position.X, (Top.Position.Y + I), Fw, 1), Deep);
+                    Im.FillRect(new Rect2I(Top.Position.X, (Top.Position.Y + I + 1), Fw, 2), Light);
+                }
+            }
+            // rope bands
+            for (int K = 1; K <= 2; K++)
+            {
+                if (Across)
+                {
+                    Im.FillRect(new Rect2I(Top.Position.X, (Top.Position.Y + ((Fd * K) / 3)), Fw, 2), new Color("D8C08A"));
+                }
+                else
+                {
+                    Im.FillRect(new Rect2I((Top.Position.X + ((Fw * K) / 3)), Top.Position.Y, 2, Fd), new Color("D8C08A"));
+                }
+            }
+            if (!Across)
+            {
+                for (int X = Front.Position.X; X < Front.End.X; X += 8)
+                {
+                    Im.FillRect(new Rect2I(X, Front.Position.Y, 1, H), Deep);
+                }
+            }
+        }
+        // light upper-left edges, dark lower-right edges
+        Im.FillRect(new Rect2I(Top.Position.X, Top.Position.Y, Fw, 1), Light.Lightened(0.15f));
+        Im.FillRect(new Rect2I(Top.Position.X, Top.Position.Y, 1, Fd), Light.Lightened(0.15f));
+        Im.FillRect(new Rect2I((Top.End.X - 1), Top.Position.Y, 1, Fd), Deep);
+        Im.FillRect(new Rect2I(Front.Position.X, Front.Position.Y, Fw, 1), Deep);
         this.Outline(Im);
         return Im;
     }

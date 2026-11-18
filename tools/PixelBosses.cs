@@ -1,0 +1,505 @@
+using Godot;
+using System;
+using System.Collections.Generic;
+
+// Pixel-art sprite sheets of the seven NOX bosses (AGT-05..11, table 4.2), in the same sheet layout as
+// tools/PixelChars.cs so the game animates them the same way: rows = right, down, left (mirrored), up;
+// columns = idle 0-1, walk 0-3. 48 x 48 px (a boss is 1.8 tiles across). Every boss is the same hulking NOX
+// brute drawn from shaded shapes, with the parts that show its move: Juggernaut horns (charge), Broodmother egg
+// sacs (summons), Bio-Cannon spore pods (volley), Burrower claws (burrow), Gatebreaker ram fist (door blow),
+// Phantom hood and cloak (cloak), Ironhide front plates (front armour; its back is bare, where it is weak).
+// Not part of the game. Run: godot --headless --path . tools/PixelBosses.tscn  (-- --out=<dir> to preview)
+// Writes art/chars/boss_<name>.png and art/chars/bosses.json. The PNGs can be repainted by hand.
+public partial class PixelBosses : Node
+{
+    const int S = 48;
+    static readonly Color Ink = new("141019");
+    static readonly Color Shade = new(0, 0, 0, 0.32f);
+    static readonly Color Clear = new(0, 0, 0, 0);
+
+    // [light, mid, dark]
+    static Color[] Tones(string L, string M, string D, float A = 1.0f)
+    {
+        return new[] { new Color(L) { A = A }, new Color(M) { A = A }, new Color(D) { A = A } };
+    }
+
+    class Boss
+    {
+        public string Name;
+        public Color[] Body;
+        public Color[] Part;
+        public Color Eye;
+        public float TorsoRx = 11, TorsoRy = 10, ShoulderR = 5, HeadR = 6;
+        public bool Legs = true;
+    }
+
+    static readonly Boss[] Bosses =
+    {
+        new() { Name = "juggernaut", Body = Tones("8E3E66", "6B2A4A", "47182F"), Part = Tones("F4F0DC", "D8D0B8", "9A927A"), Eye = new("FF5A5A"), ShoulderR = 6.5f },
+        new() { Name = "broodmother", Body = Tones("7E5294", "5A3670", "35204A"), Part = Tones("F0FFA0", "C8E05A", "7E9A2A"), Eye = new("F0FFA0"), TorsoRx = 13, TorsoRy = 11, HeadR = 5 },
+        new() { Name = "bio_cannon", Body = Tones("6E9460", "4E6E44", "2E4A2C"), Part = Tones("D8FFC0", "7BE36A", "3FA54E"), Eye = new("C8FFB0") },
+        new() { Name = "burrower", Body = Tones("B08858", "8A6640", "5A4028"), Part = Tones("F4F0DC", "D8D0B8", "9A927A"), Eye = new("1A1418"), HeadR = 5.5f },
+        new() { Name = "gatebreaker", Body = Tones("94604A", "6E4434", "46281E"), Part = Tones("D2DEEA", "8FA3B8", "5B6B7C"), Eye = new("FFB070"), ShoulderR = 6 },
+        new() { Name = "phantom", Body = Tones("E4DAFF", "B8A8E8", "7E6CB8", 0.82f), Part = Tones("9A88D0", "6E5CA8", "4A3C78", 0.9f), Eye = new("6FF0FF"), Legs = false, ShoulderR = 4 },
+        new() { Name = "ironhide", Body = Tones("6A7486", "4C5464", "2E3440"), Part = Tones("D8E4EE", "A8B8C8", "6A7A8C"), Eye = new("F2B544"), ShoulderR = 6 },
+    };
+
+    public override void _Ready()
+    {
+        string Out = "res://art/chars";
+        foreach (string A in OS.GetCmdlineUserArgs())
+        {
+            if (A.StartsWith("--out=", StringComparison.Ordinal))
+            {
+                Out = A[6..];
+            }
+        }
+        DirAccess.MakeDirRecursiveAbsolute(Out);
+        var Info = new Godot.Collections.Dictionary();
+        var Chars = new Godot.Collections.Dictionary();
+        string[] Views = { "side", "down", "side", "up" };
+        // idle: (bob, step) = (0,0), (1,0); walk: steps 0, +1, 0, -1
+        (int Bob, int Step)[] Frames = { (0, 0), (1, 0), (0, 0), (0, 1), (0, 0), (0, -1) };
+        foreach (var B in Bosses)
+        {
+            var Sheet = Image.CreateEmpty((S * 6), (S * 4), false, Image.Format.Rgba8);
+            for (int Row = 0; Row < 4; Row++)
+            {
+                for (int Col = 0; Col < 6; Col++)
+                {
+                    var F = Frames[Col];
+                    var Im = Finish(Draw(B, Views[Row], F.Bob, F.Step));
+                    if (Row == 2)
+                    {
+                        Im.FlipX();
+                    }
+                    Sheet.BlitRect(Im, new Rect2I(0, 0, S, S), new Vector2I((Col * S), (Row * S)));
+                }
+            }
+            string Key = "boss_" + B.Name;
+            Sheet.SavePng(Out.PathJoin(Key + ".png"));
+            Chars[Key] = new Godot.Collections.Dictionary { { "size", S }, { "anchor", new Godot.Collections.Array { (S / 2.0f), 46 } } };
+            GD.Print("drew ", Key);
+        }
+        Info["chars"] = Chars;
+        using var Fa = Godot.FileAccess.Open(Out.PathJoin("bosses.json"), Godot.FileAccess.ModeFlags.Write);
+        Fa.StoreString(Json.Stringify(Info, "\t"));
+        GetTree().Quit();
+    }
+
+    // --- one frame -----------------------------------------------------------------
+    static Image Draw(Boss B, string View, int Bob, int Step)
+    {
+        var Im = Image.CreateEmpty(S, S, false, Image.Format.Rgba8);
+        bool Side = (View == "side");
+        bool Front = (View == "down");
+        int Y = Bob;  // the upper body sinks a pixel on the idle breath
+        // legs (or the Phantom's cloak hem)
+        if (B.Legs)
+        {
+            if (Side)
+            {
+                Leg(Im, (19 - (2 * Step)), B.Body, 0);
+                Leg(Im, (25 + (2 * Step)), B.Body, 0);
+            }
+            else
+            {
+                Leg(Im, 16, B.Body, ((Step > 0) ? 2 : 0));
+                Leg(Im, 27, B.Body, ((Step < 0) ? 2 : 0));
+            }
+        }
+        // back arm on the side view
+        if (Side)
+        {
+            Arm(Im, 17, (22 + Y), B, Front, true);
+        }
+        // torso
+        float Tx = (Side ? 22 : 24);
+        if (B.Legs)
+        {
+            Ell(Im, Tx, (28 + Y), (Side ? (B.TorsoRx - 2) : B.TorsoRx), B.TorsoRy, B.Body);
+        }
+        else
+        {
+            Cloak(Im, Tx, Y, Step, B, Side);
+        }
+        // the parts that sit on the back are drawn under the head and arms
+        Back(Im, B, View, Y);
+        // shoulders and arms
+        if (Side)
+        {
+            Ell(Im, 26, (21 + Y), B.ShoulderR, (B.ShoulderR - 1), B.Body);
+            Arm(Im, 27, (22 + Y), B, Front, false);
+        }
+        else
+        {
+            Ell(Im, 13, (21 + Y), B.ShoulderR, (B.ShoulderR - 1), B.Body);
+            Ell(Im, 35, (21 + Y), B.ShoulderR, (B.ShoulderR - 1), B.Body);
+            Arm(Im, 10, (22 + Y), B, Front, false);
+            Arm(Im, 38, (22 + Y), B, Front, true);
+        }
+        // head, sunk between the shoulders
+        // the Phantom's hood sits on its cloak; the brutes lean their head forward
+        float Hx = (Side ? (B.Legs ? 31 : 26) : 24);
+        float Hy = (14 + Y);
+        Ell(Im, Hx, Hy, B.HeadR, (B.HeadR - 1), B.Body);
+        if (Front)
+        {
+            Px(Im, (int)(Hx - 3), (int)Hy, B.Eye, 2);
+            Px(Im, (int)(Hx + 2), (int)Hy, B.Eye, 2);
+            Fill(Im, (int)(Hx - 2), (int)(Hy + 3), 5, 1, new Color("120A16"));
+            Px(Im, (int)(Hx - 1), (int)(Hy + 3), new Color("E8E3C8"));
+            Px(Im, (int)(Hx + 1), (int)(Hy + 3), new Color("E8E3C8"));
+        }
+        else if (Side)
+        {
+            Px(Im, (int)(Hx + 2), (int)Hy, B.Eye, 2);
+            Fill(Im, (int)(Hx + 1), (int)(Hy + 3), 4, 1, new Color("120A16"));
+        }
+        Front_(Im, B, View, Y, Hx, Hy);
+        return Im;
+    }
+
+    static void Leg(Image Im, int X, Color[] T, int Lift)
+    {
+        int Top = 36;
+        int Bottom = (45 - Lift);
+        Fill(Im, X, Top, 5, (Bottom - Top), T[1]);
+        Fill(Im, X, Top, 1, (Bottom - Top), T[0]);
+        Fill(Im, (X + 4), Top, 1, (Bottom - Top), T[2]);
+        // foot
+        Fill(Im, (X - 1), (Bottom - 1), 7, 2, T[2]);
+    }
+
+    static void Arm(Image Im, int X, int Y, Boss B, bool Front, bool Right)
+    {
+        var T = (B.Name == "phantom") ? B.Part : B.Body;
+        int W = ((B.Name == "phantom") ? 3 : 4);
+        Fill(Im, X, Y, W, 13, T[1]);
+        Fill(Im, X, Y, 1, 13, T[0]);
+        Fill(Im, ((X + W) - 1), Y, 1, 13, T[2]);
+        float Fx = (X + (W / 2.0f));
+        float Fy = (Y + 14);
+        switch (B.Name)
+        {
+            case "burrower":
+                // digging claws: three bone hooks
+                Ell(Im, Fx, Fy, 3.5f, 2.5f, B.Body);
+                for (int K = -1; K <= 1; K++)
+                {
+                    Fill(Im, (int)(Fx + (K * 2)), (int)(Fy + 2), 1, 3, B.Part[1]);
+                    Px(Im, (int)(Fx + (K * 2)), (int)(Fy + 5), B.Part[2]);
+                }
+                break;
+            case "gatebreaker" when Right:
+                // the ram: a steel block on the right fist
+                Ell(Im, Fx, Fy, 5.5f, 4.5f, B.Part);
+                Fill(Im, (int)(Fx - 4), (int)(Fy - 1), 9, 1, B.Part[2]);
+                Px(Im, (int)(Fx - 2), (int)(Fy - 3), new Color("D9534A"), 2);
+                break;
+            case "phantom":
+                // long ghostly fingers
+                Ell(Im, Fx, Fy, 2, 2, B.Part);
+                for (int K = -1; K <= 1; K++)
+                {
+                    Fill(Im, (int)(Fx + K), (int)(Fy + 1), 1, 3, B.Part[1]);
+                }
+                break;
+            default:
+                Ell(Im, Fx, Fy, 3, 3, T);
+                break;
+        }
+    }
+
+    // The Phantom has no legs: a hooded cloak that narrows to a ragged hem which sways when it moves.
+    static void Cloak(Image Im, float X, int Y, int Step, Boss B, bool Side)
+    {
+        for (int Row = (18 + Y); Row <= 43; Row++)
+        {
+            float K = ((Row - (18 + Y)) / 25.0f);
+            float Half = ((Side ? 8.0f : 11.0f) - (K * 3.0f));
+            float Sway = (Step * K * 2.0f);
+            for (int Col = (int)((X - Half) + Sway); Col <= (int)((X + Half) + Sway); Col++)
+            {
+                bool Rag = ((Row > 39) && (((Col + Row) % 3) == 0));
+                if (Rag)
+                {
+                    continue;
+                }
+                float U = ((Col - (X + Sway)) / Half);
+                Color C = (U < -0.5f) ? B.Body[0] : ((U > 0.45f) ? B.Body[2] : B.Body[1]);
+                Px(Im, Col, Row, C);
+            }
+        }
+    }
+
+    // Parts on the back (drawn before the arms and head).
+    static void Back(Image Im, Boss B, string View, int Y)
+    {
+        switch (B.Name)
+        {
+            case "broodmother":
+                // egg sacs on the abdomen (more of them on the back)
+                if (View == "up")
+                {
+                    foreach (var (X, Ey) in new[] { (17, 26), (24, 24), (31, 26), (20, 32), (28, 32) })
+                    {
+                        Ell(Im, X, (Ey + Y), 3, 3, B.Part);
+                    }
+                }
+                else if (View == "down")
+                {
+                    foreach (var (X, Ey) in new[] { (18, 32), (24, 34), (30, 32) })
+                    {
+                        Ell(Im, X, (Ey + Y), 3, 2.5f, B.Part);
+                    }
+                }
+                else
+                {
+                    Ell(Im, 16, (30 + Y), 4, 4, B.Part);
+                    Ell(Im, 20, (34 + Y), 3, 3, B.Part);
+                }
+                break;
+            case "bio_cannon":
+                // spore pods on the shoulders and a row of tubes down the back
+                if (View == "side")
+                {
+                    Ell(Im, 18, (17 + Y), 4, 4, B.Part);
+                    Ell(Im, 15, (24 + Y), 3, 3, B.Part);
+                }
+                else
+                {
+                    Ell(Im, 13, (15 + Y), 4, 4, B.Part);
+                    Ell(Im, 35, (15 + Y), 4, 4, B.Part);
+                    if (View == "up")
+                    {
+                        for (int K = 0; K < 3; K++)
+                        {
+                            Ell(Im, 24, ((22 + (K * 5)) + Y), 2.5f, 2, B.Part);
+                        }
+                    }
+                }
+                break;
+            case "juggernaut":
+                // bone plates on the shoulders and spine
+                if (View != "side")
+                {
+                    Ell(Im, 13, (18 + Y), 6, 3, B.Part);
+                    Ell(Im, 35, (18 + Y), 6, 3, B.Part);
+                }
+                if (View == "up")
+                {
+                    for (int K = 0; K < 4; K++)
+                    {
+                        Fill(Im, 23, ((21 + (K * 4)) + Y), 3, 2, B.Part[1]);
+                    }
+                }
+                else if (View == "side")
+                {
+                    Ell(Im, 22, (18 + Y), 6, 3, B.Part);
+                }
+                break;
+        }
+    }
+
+    // Parts in front (drawn last).
+    static void Front_(Image Im, Boss B, string View, int Y, float Hx, float Hy)
+    {
+        switch (B.Name)
+        {
+            case "juggernaut":
+                // horns for the charge
+                if (View == "side")
+                {
+                    Fill(Im, (int)(Hx + 3), (int)(Hy - 4), 4, 1, B.Part[1]);
+                    Fill(Im, (int)(Hx + 6), (int)(Hy - 6), 1, 3, B.Part[0]);
+                }
+                else
+                {
+                    foreach (int Dir in new[] { -1, 1 })
+                    {
+                        Fill(Im, (int)(Hx + (Dir * 5)), (int)(Hy - 3), 1, 2, B.Part[1]);
+                        Fill(Im, (int)(Hx + (Dir * 6)), (int)(Hy - 6), 1, 4, B.Part[0]);
+                        Px(Im, (int)(Hx + (Dir * 7)), (int)(Hy - 7), B.Part[0]);
+                    }
+                }
+                break;
+            case "bio_cannon":
+                // the cannon maw in the chest
+                if (View == "down")
+                {
+                    Ell(Im, 24, (27 + Y), 4, 4, Tones("2E4A2C", "1A2A18", "0E160C"));
+                    Ell(Im, 24, (27 + Y), 2, 2, B.Part);
+                }
+                else if (View == "side")
+                {
+                    Fill(Im, 28, (25 + Y), 7, 5, B.Body[2]);
+                    Fill(Im, 34, (26 + Y), 2, 3, B.Part[1]);
+                }
+                break;
+            case "burrower":
+                // a pink snout for digging
+                if (View == "down")
+                {
+                    Ell(Im, Hx, (Hy + 2), 3, 2, Tones("F0B8A0", "D98F7A", "A86452"));
+                }
+                else if (View == "side")
+                {
+                    Ell(Im, (Hx + 5), (Hy + 1), 3, 2, Tones("F0B8A0", "D98F7A", "A86452"));
+                }
+                break;
+            case "gatebreaker":
+                // a steel helm with a red crest (every view)
+                for (int Col = (int)(Hx - 6); Col <= (int)(Hx + 6); Col++)
+                {
+                    for (int Row = (int)(Hy - 6); Row <= (int)(Hy - 1); Row++)
+                    {
+                        float Dx = ((Col - Hx) / 6.5f);
+                        float Dy = ((Row - Hy) / 6.0f);
+                        if (((Dx * Dx) + (Dy * Dy)) <= 1.0f)
+                        {
+                            Px(Im, Col, Row, ((Dx < -0.4f) ? B.Part[0] : ((Dx > 0.4f) ? B.Part[2] : B.Part[1])));
+                        }
+                    }
+                }
+                Fill(Im, (int)(Hx - 1), (int)(Hy - 8), 2, 3, new Color("D9534A"));
+                break;
+            case "phantom":
+                // a deep hood; only the eyes glow out of it
+                for (int Col = (int)(Hx - 7); Col <= (int)(Hx + 7); Col++)
+                {
+                    for (int Row = (int)(Hy - 7); Row <= (int)(Hy + 4); Row++)
+                    {
+                        float Dx = ((Col - Hx) / 7.0f);
+                        float Dy = ((Row - (Hy - 1)) / 6.5f);
+                        float D = ((Dx * Dx) + (Dy * Dy));
+                        if ((D <= 1.0f) && (D > 0.42f || View == "up"))
+                        {
+                            Px(Im, Col, Row, ((Dx < -0.3f) ? B.Part[0] : ((Dx > 0.4f) ? B.Part[2] : B.Part[1])));
+                        }
+                        else if (D <= 0.42f)
+                        {
+                            Px(Im, Col, Row, new Color("1A1030"));
+                        }
+                    }
+                }
+                if (View == "down")
+                {
+                    Px(Im, (int)(Hx - 2), (int)Hy, B.Eye, 2);
+                    Px(Im, (int)(Hx + 1), (int)Hy, B.Eye, 2);
+                }
+                else if (View == "side")
+                {
+                    Px(Im, (int)(Hx + 2), (int)Hy, B.Eye, 2);
+                }
+                break;
+            case "ironhide":
+                // thick front plates and pauldrons; the back stays bare (its weak side)
+                if (View == "down")
+                {
+                    Ell(Im, 24, (28 + Y), 9, 8, B.Part);
+                    Fill(Im, 16, (28 + Y), 17, 1, B.Part[2]);
+                    foreach (int X in new[] { 18, 24, 30 })
+                    {
+                        Px(Im, X, (24 + Y), new Color("F2B544"));
+                        Px(Im, X, (32 + Y), new Color("F2B544"));
+                    }
+                }
+                else if (View == "side")
+                {
+                    Fill(Im, 27, (19 + Y), 5, 18, B.Part[1]);
+                    Fill(Im, 27, (19 + Y), 1, 18, B.Part[0]);
+                    Fill(Im, 31, (19 + Y), 1, 18, B.Part[2]);
+                }
+                if (View != "up")
+                {
+                    Ell(Im, ((View == "side") ? 26 : 13), (19 + Y), 6, 3.5f, B.Part);
+                    if (View != "side")
+                    {
+                        Ell(Im, 35, (19 + Y), 6, 3.5f, B.Part);
+                    }
+                }
+                break;
+        }
+    }
+
+    // --- drawing helpers ----------------------------------------------------------
+    // A shaded ellipse: light on the upper left, dark on the lower right.
+    static void Ell(Image Im, float Cx, float Cy, float Rx, float Ry, Color[] T)
+    {
+        for (int Y = (int)Math.Floor(Cy - Ry); Y <= (int)Math.Ceiling(Cy + Ry); Y++)
+        {
+            for (int X = (int)Math.Floor(Cx - Rx); X <= (int)Math.Ceiling(Cx + Rx); X++)
+            {
+                float Dx = (((X + 0.5f) - Cx) / Rx);
+                float Dy = (((Y + 0.5f) - Cy) / Ry);
+                if (((Dx * Dx) + (Dy * Dy)) > 1.0f)
+                {
+                    continue;
+                }
+                float Lit = ((-0.6f * Dx) - (0.8f * Dy));
+                Px(Im, X, Y, ((Lit > 0.45f) ? T[0] : ((Lit < -0.35f) ? T[2] : T[1])));
+            }
+        }
+    }
+
+    static void Fill(Image Im, int X, int Y, int W, int H, Color C)
+    {
+        for (int Row = Y; Row < (Y + H); Row++)
+        {
+            for (int Col = X; Col < (X + W); Col++)
+            {
+                Px(Im, Col, Row, C);
+            }
+        }
+    }
+
+    static void Px(Image Im, int X, int Y, Color C, int W = 1)
+    {
+        for (int K = 0; K < W; K++)
+        {
+            if (((X + K) >= 1) && (Y >= 1) && ((X + K) < (S - 1)) && (Y < (S - 1)))
+            {
+                Im.SetPixel((X + K), Y, C);
+            }
+        }
+    }
+
+    // Dark outline around the silhouette, then a soft ground shadow under the feet (as tools/PixelChars.cs).
+    static Image Finish(Image Src)
+    {
+        var Im = (Image)Src.Duplicate();
+        for (int Y = 0; Y < S; Y++)
+        {
+            for (int X = 0; X < S; X++)
+            {
+                if (Src.GetPixel(X, Y).A > 0)
+                {
+                    continue;
+                }
+                foreach (var D in new[] { new Vector2I(1, 0), new Vector2I(-1, 0), new Vector2I(0, 1), new Vector2I(0, -1) })
+                {
+                    var Q = new Vector2I(X, Y) + D;
+                    if (Q.X >= 0 && Q.Y >= 0 && Q.X < S && Q.Y < S && Src.GetPixel(Q.X, Q.Y).A > 0)
+                    {
+                        Im.SetPixel(X, Y, Ink);
+                        break;
+                    }
+                }
+            }
+        }
+        for (int Y = 43; Y < S; Y++)
+        {
+            for (int X = 0; X < S; X++)
+            {
+                float Dx = (((X + 0.5f) - (S / 2.0f)) / 13.0f);
+                float Dy = (((Y + 0.5f) - 46.0f) / 2.4f);
+                if ((((Dx * Dx) + (Dy * Dy)) <= 1.0f) && (Im.GetPixel(X, Y).A == 0))
+                {
+                    Im.SetPixel(X, Y, Shade);
+                }
+            }
+        }
+        return Im;
+    }
+}

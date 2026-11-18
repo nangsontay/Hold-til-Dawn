@@ -170,6 +170,65 @@ public partial class Main : Node2D
                 Sim.Tick(0.01f);
                 Sim.Elapsed = Gd.Maxf(0.0f, (GameSim.FIRST_WAVE_DELAY - 0.5f));
             }
+            this.DevArgs(Args);
+        }
+    }
+
+    // Screenshot and playtest helpers: --kit (some materials and a bow), --walls, --panel=bag|craft|build|pause,
+    // --boss=0..6 (night 2 with that boss 9 tiles in front of door A, you beside it).
+    public void DevArgs(dynamic Args)
+    {
+        foreach (dynamic A in Gd.Iter(Args))
+        {
+            dynamic Me = Gd.Get(Sim.Players, 1);
+            if (((Me == null) || (Sim.Phase == "lobby")))
+            {
+                return;
+            }
+            if (Gd.Equal(A, "--kit"))
+            {
+                Sim.SetCount(Me, "wood", 30);
+                Sim.SetCount(Me, "stone", 12);
+                Sim.SetCount(Me, "metal", 8);
+                Sim.SetCount(Me, "bow", 1);
+                Sim.SetCount(Me, "arrow", 10);
+                Sim.SetCount(Me, "bandage", 2);
+                Sim.Unlock = 2;
+            }
+            else if (Gd.Equal(A, "--walls"))
+            {
+                // a wood and a stone wall beside door A, to look at
+                Vector2 D = (Vector2)((Gd.At(GameSim.DOOR_POS, 0) + ((Gd.At(GameSim.DOOR_DIR, 0) * 5) * T)));
+                Gd.Append(Sim.BuiltWalls, new GDict { { "id", 9001 }, { "kind", "wood" }, { "pos", GameSim.SnapToTile((D + Gd.MakeVector2(0, (-3 * T)))) }, { "vert", true }, { "hp", 200.0f }, { "maxhp", 200.0f } });
+                Gd.Append(Sim.BuiltWalls, new GDict { { "id", 9002 }, { "kind", "stone" }, { "pos", GameSim.SnapToTile((D + Gd.MakeVector2((-2 * T), (4 * T)))) }, { "vert", false }, { "hp", 300.0f }, { "maxhp", 400.0f } });
+                Sim.Teleport(Me, (D + Gd.MakeVector2((2 * T), 0)));
+            }
+            else if (Gd.Truth(Gd.BeginsWith(A, "--panel=")))
+            {
+                string P = Gd.Substr(A, 8);
+                BagOpen = (P == "bag");
+                CraftOpen = (P == "craft");
+                Paused = (P == "pause");
+                if ((P == "build"))
+                {
+                    BuildOpen = true;
+                    BuildKind = "wood";
+                }
+            }
+            else if (Gd.Truth(Gd.BeginsWith(A, "--boss=")))
+            {
+                Sim.BossPlan = new GArray(Gd.ToInt(Gd.Substr(A, 7)), 0);
+                Sim.K = 2;
+                Sim.Night();
+                Sim.Active = new GArray(0);
+                Sim.NextWave = float.PositiveInfinity;
+                Sim.BossSpawned = true;
+                Sim.SpawnBoss();
+                dynamic B = Sim.Boss();
+                B.Pos = (Gd.At(GameSim.DOOR_POS, 0) + ((Gd.At(GameSim.DOOR_DIR, 0) * 9) * T));
+                B.Spd = 0.0f;
+                Sim.Teleport(Me, (B.Pos + Gd.MakeVector2((2.5f * T), (0.5f * T))));
+            }
         }
     }
 
@@ -203,7 +262,8 @@ public partial class Main : Node2D
     public override void _PhysicsProcess(double delta)
     {
         dynamic Dt = (float)delta;
-        if (Gd.Truth(Sim))
+        // a solo match stops while the pause overlay is open
+        if ((Gd.Truth(Sim) && !Gd.Truth(Paused)))
         {
             Sim.Tick(Dt);
             Frame += 1;
@@ -242,7 +302,7 @@ public partial class Main : Node2D
         }
         LocalPos = LocalPos.LimitLength(GameSim.ISLAND);
         LocalPos = GameSim.Collide(LocalPos, (0.4f * T), this.DoorsOpen());
-        if (((Snap.Ph == "night") && !(Gd.Truth(this.Breach())) && !(Gd.Truth(Gd.At(Me, 19)))))
+        if (((Snap.Ph == "night") && !(Gd.Truth(this.Breach())) && !(Gd.Truth(Gd.At(Me, 19))) && !Gd.Truth(GameSim.InsideBase(LocalPos))))
         {
             LocalPos = GameSim.PushOut(LocalPos, (0.4f * T));
         }
@@ -252,7 +312,7 @@ public partial class Main : Node2D
             SendAcc = 0.0f;
             // from the body, not the feet
             dynamic Aim = (Gd.Native(this, "get_global_mouse_position") - (LocalPos - Gd.MakeVector2(0, LIFT))).Angle();
-            dynamic Atk = (Gd.Truth(Playing) && Gd.Truth(Gd.Static(typeof(Input), "is_mouse_button_pressed", 1)));
+            dynamic Atk = (Gd.Truth(Playing) && !this.UiCapturesMouse() && Gd.Truth(Gd.Static(typeof(Input), "is_mouse_button_pressed", 1)));
             dynamic Inter = (Gd.Truth(Playing) && Gd.Truth(Gd.Static(typeof(Input), "is_physical_key_pressed", 69)));
             dynamic Ent = (Gd.Truth(Playing) && Gd.Truth(Gd.Static(typeof(Input), "is_physical_key_pressed", 70)));
             InputSequence += 1;
@@ -283,20 +343,44 @@ public partial class Main : Node2D
         {
             if (Gd.Equal(Ev.PhysicalKeycode, 4194305))
             {
-                this.BackToMenu("Left the match");
+                this.EscapeKey();
             }
-            else
+            else if (Gd.Truth(Paused))
+            {
+                return;
+            }
+            else if (Gd.Equal(Ev.PhysicalKeycode, 66))
+            {
+                this.ToggleBuild();
+            }
+            else if (!this.BuildKey(Ev.PhysicalKeycode))
             {
                 this.GameplayKey(Ev.PhysicalKeycode);
             }
         }
-        else if ((Gd.IsType(Ev, typeof(InputEventMouseButton)) && Gd.Truth(Ev.Pressed) && (Ev.ButtonIndex == 2)))
-        {
-            this.GameplayRightClick();
-        }
         else if ((Gd.IsType(Ev, typeof(InputEventMouseButton)) && Gd.Truth(Ev.Pressed) && Gd.Contains(new GArray(4, 5), Ev.ButtonIndex)))
         {
-            ZoomI = Gd.Clampi((ZoomI + ((Ev.ButtonIndex == 4) ? (dynamic)(1) : (-1))), 0, (Gd.Size(ZOOMS) - 1));
+            // the wheel picks the hotbar slot; Ctrl + wheel zooms
+            if (Gd.Truth(Ev.CtrlPressed))
+            {
+                ZoomI = Gd.Clampi((ZoomI + ((Ev.ButtonIndex == 4) ? (dynamic)(1) : (-1))), 0, (Gd.Size(ZOOMS) - 1));
+            }
+            else if (!Gd.Truth(Paused))
+            {
+                this.HotbarWheel(((Ev.ButtonIndex == 4) ? (-1) : 1));
+            }
+        }
+        else if (Gd.IsType(Ev, typeof(InputEventMouseButton)))
+        {
+            // overlays take the click first, then panels, then the world (right mouse = flask)
+            if ((this.PauseMouse(Ev) || this.ResultMouse(Ev) || this.BuildMouse(Ev) || this.InventoryMouse(Ev) || this.CraftMouse(Ev)))
+            {
+                return;
+            }
+            if ((Gd.Truth(Ev.Pressed) && (Ev.ButtonIndex == 2)))
+            {
+                this.GameplayRightClick();
+            }
         }
     }
 
@@ -365,9 +449,10 @@ public partial class Main : Node2D
         dynamic OldMe = Gd.Get(Gd.Get(Snap, "ps", new GDict {  }), MyId);
         if (((Mine != null) && (OldMe != null)))
         {
-            foreach (dynamic Res in Gd.Iter(Gd.At(Mine, 7)))
+            // "+1 wood" popups from the change in carried totals
+            foreach (dynamic Res in Gd.Iter(new GArray("wood", "stone", "herb", "metal", "bandage", "arrow")))
             {
-                int Gain = Gd.Int((Gd.At(Gd.At(Mine, 7), Res) - Gd.Get(Gd.At(OldMe, 7), Res, 0)));
+                int Gain = (Main.Carried(Mine, Res) - Main.Carried(OldMe, Res));
                 if ((Gain > 0))
                 {
                     this.Popup((Gd.At(Mine, 2) - Gd.MakeVector2(0, LIFT)), Gd.Format("+%d %s", new GArray(Gain, Res)), (Gd.Get(DROP_COL, Res, Colors.White) * 1.6f), 14);
@@ -386,7 +471,7 @@ public partial class Main : Node2D
         {
             PrevPhp[Id] = Gd.At(Gd.At(D.Ps, Id), 3);
         }
-        Geometry.Rebuild(Gd.Map(Gd.Get(D, "nodes", new GArray()), (Func<dynamic, dynamic>)((N) => new GDict { { "type", Gd.At(N, 0) }, { "pos", Gd.At(N, 1) }, { "amount", Gd.At(N, 2) } })), Gd.Map(Gd.Get(D, "tw", new GArray()), (Func<dynamic, dynamic>)((Tw) => new GDict { { "pos", Gd.At(Tw, 1) } })));
+        Geometry.Rebuild(Gd.Map(Gd.Get(D, "nodes", new GArray()), (Func<dynamic, dynamic>)((N) => new GDict { { "type", Gd.At(N, 0) }, { "pos", Gd.At(N, 1) }, { "amount", Gd.At(N, 2) } })), Gd.Map(Gd.Get(D, "tw", new GArray()), (Func<dynamic, dynamic>)((Tw) => new GDict { { "pos", Gd.At(Tw, 1) } })), Gd.Map(Gd.Get(D, "walls", new GArray()), (Func<dynamic, dynamic>)((W) => new GDict { { "pos", Gd.At(W, 0) }, { "vert", Gd.At(W, 1) } })));
         if (((Mine != null) && (Gd.At(Mine, 15) == LocalTp) && (Gd.Size(Mine) > 24)))
         {
             int Acknowledged = Gd.Int(Gd.At(Mine, 24));
@@ -437,11 +522,12 @@ public partial class Main : Node2D
             return;
         }
         Clock += Dt;
+        LocalNoteT -= Dt;
         string Ph = Gd.Get(Snap, "ph", "");
         dynamic InGame = Gd.Contains(new GArray("day", "dusk", "night", "result"), Ph);
         MenuPanel.Visible = (Ph == "");
         LobbyPanel.Visible = (Ph == "lobby");
-        Banner.Visible = InGame;
+        Banner.Visible = (Gd.Truth(InGame) && (Ph != "result"));
         Front.Visible = !(Gd.Truth(InGame));
         if (Gd.Truth(Front.Visible))
         {
@@ -452,6 +538,12 @@ public partial class Main : Node2D
         if (((Ph != "day") && (Ph != "dusk") && !(((Ph == "night") && (MeNow != null) && Gd.Truth(Gd.At(MeNow, 19))))))
         {
             CraftOpen = false;
+        }
+        if (!Gd.Contains(new GArray("day", "dusk", "night"), Ph))
+        {
+            BagOpen = false;
+            Paused = false;
+            this.CloseBuild();
         }
         Banner.Text = Gd.Get(Snap, "msg", "");
         if ((Ph == "lobby"))
@@ -699,12 +791,7 @@ public partial class Main : Node2D
         {
             Gd.Native(this, "draw_line", Gd.MakeVector2(((-H.X) + 12), Y), Gd.MakeVector2((H.X - 12), Y), Gd.MakeColor(0, 0, 0, 0.12f), 1);
         }
-        foreach (dynamic Tl in Gd.Iter(Snap.Tele))
-        {
-            Gd.Native(this, "draw_circle", Gd.At(Tl, 0), Gd.At(Tl, 1), Gd.MakeColor(1.0f, 0.1f, 0.3f, 0.16f));
-            Gd.Native(this, "draw_circle", Gd.At(Tl, 0), (Gd.At(Tl, 1) * (1.0f - Gd.At(Tl, 2))), Gd.MakeColor(1.0f, 0.15f, 0.3f, 0.35f));
-            Gd.Native(this, "draw_arc", Gd.At(Tl, 0), Gd.At(Tl, 1), 0, Mathf.Tau, 48, NEON_RED, 3);
-        }
+        this.DrawTelegraphs();
         // depth layer: [foot y, kind, ...], drawn back to front
         dynamic Items = new GArray();
         if ((Gd.Size(Cmove) > 400))
@@ -800,7 +887,15 @@ public partial class Main : Node2D
         }
         foreach (dynamic B in Gd.Iter(Snap.Proj))
         {
-            Gd.Append(Items, new GArray(B.Y, 4, B));
+            Gd.Append(Items, new GArray(Gd.At(B, 0).Y, 4, B));
+        }
+        foreach (dynamic A in Gd.Iter(Gd.Get(Snap, "arrows", new GArray())))
+        {
+            Gd.Append(Items, new GArray(Gd.At(A, 0).Y, 11, A));
+        }
+        foreach (dynamic W in Gd.Iter(Gd.Get(Snap, "walls", new GArray())))
+        {
+            Gd.Append(Items, new GArray((Gd.At(W, 0).Y + (Gd.Truth(Gd.At(W, 1)) ? (dynamic)((1.5f * T)) : (0.5f * T))), 10, W));
         }
         foreach (dynamic D in Gd.Iter(Gd.Get(Snap, "drops", new GArray())))
         {
@@ -828,14 +923,17 @@ public partial class Main : Node2D
             }
             else if (Gd.Equal(Gd.At(It, 1), 4))
             {
-                this.Shadow((Gd.At(It, 2) + Gd.MakeVector2(0, (-4))), 5);
-                Gd.Native(this, "draw_circle", (Gd.At(It, 2) - Gd.MakeVector2(0, LIFT)), 7, Gd.MakeColor(1.6f, 1.9f, 0.4f, 0.35f));
-                Gd.Native(this, "draw_circle", (Gd.At(It, 2) - Gd.MakeVector2(0, LIFT)), 3.5f, Gd.MakeColor(2.0f, 2.2f, 0.6f));
+                // enemy projectile: Spitter spit or Bio-Cannon spore (art/fx)
+                dynamic B = Gd.At(It, 2);
+                Vector2 Bp = (Vector2)(Gd.At(B, 0));
+                this.Shadow((Bp + Gd.MakeVector2(0, (-4))), 5);
+                Gd.Native(this, "draw_circle", (Bp - Gd.MakeVector2(0, LIFT)), 8, ((Gd.At(B, 1) == "orb") ? (dynamic)(Gd.MakeColor(0.5f, 2.0f, 0.6f, 0.3f)) : Gd.MakeColor(1.6f, 1.9f, 0.4f, 0.35f)));
+                this.DrawFx(Gd.At(B, 1), (Bp - Gd.MakeVector2(0, LIFT)), 0.0f);
             }
             else if (Gd.Equal(Gd.At(It, 1), 5))
             {
                 dynamic D = Gd.At(It, 2);
-                if (((Gd.At(D, 3) < 5.0f) && (Gd.Fmod(Tnow, 0.3f) < 0.12f)))
+                if (((Gd.At(D, 3) >= 0.0f) && (Gd.At(D, 3) < 5.0f) && (Gd.Fmod(Tnow, 0.3f) < 0.12f)))
                 {
                     continue;
                 }
@@ -843,8 +941,8 @@ public partial class Main : Node2D
                 Vector2 Dp = (Vector2)((Gd.At(D, 0) - Gd.MakeVector2(0, (10 + (Gd.Sin(((Tnow * 4.0f) + Gd.At(D, 0).X)) * 3.0f)))));
                 this.Shadow((Gd.At(D, 0) - Gd.MakeVector2(0, 6)), 7);
                 Gd.Native(this, "draw_circle", Dp, 12, Gd.MakeColor((Dc.R * 1.8f), (Dc.G * 1.8f), (Dc.B * 1.8f), 0.3f));
-                this.Diamond(this, Dp, 8, INK);
-                this.Diamond(this, Dp, 6, Dc);
+                // the item's own icon, floating (art/items)
+                this.DrawItemIcon(this, Gd.At(D, 1), Dp.Round(), 1.0f);
             }
             else if (Gd.Equal(Gd.At(It, 1), 6))
             {
@@ -857,6 +955,15 @@ public partial class Main : Node2D
             else if (Gd.Equal(Gd.At(It, 1), 9))
             {
                 this.DrawTower(Gd.At(It, 2));
+            }
+            else if (Gd.Equal(Gd.At(It, 1), 10))
+            {
+                this.DrawBuiltWall(Gd.At(It, 2));
+            }
+            else if (Gd.Equal(Gd.At(It, 1), 11))
+            {
+                dynamic A = Gd.At(It, 2);
+                this.DrawFx("arrow", (Gd.At(A, 0) - Gd.MakeVector2(0, LIFT)), Gd.At(A, 1));
             }
             else if (Gd.Equal(Gd.At(It, 1), 7))
             {
@@ -912,6 +1019,7 @@ public partial class Main : Node2D
         {
             Gd.Native(this, "draw_circle", F.Pos, ((F.R * F.Life) / F.Max), F.Col);
         }
+        this.DrawBuildPreview();
     }
 
     public void DrawPlayer(dynamic Id, dynamic P, dynamic Foot)
@@ -1393,7 +1501,7 @@ public partial class Main : Node2D
         this.Hex(C, HpC, 31, Gd.MakeColor("B3262A").Lerp(Gd.MakeColor(2.5f, 0.4f, 0.3f), (Hurt / 0.35f)));
         this.Text(C, (HpC + Gd.MakeVector2((-40), 8)), Gd.Str(Gd.Int(Gd.At(Me, 3))), 22, Colors.White, 1, 80, true);
         this.Text(C, (HpC + Gd.MakeVector2((-40), 24)), Gd.Format("/%d", Gd.At(Me, 4)), 10, Gd.MakeColor(1, 1, 1, 0.7f), 1, 80);
-        dynamic Small = new GArray(new GArray(Gd.MakeColor("3B6FB0"), Gd.Format("%d%%", Gd.Int((Gd.At(GameSim.ARMOUR, Gd.At(Me, 9)) * 100)))), new GArray(Gd.MakeColor("2E8B4A"), Gd.Str(Gd.At(Me, 7).Bandage)));
+        dynamic Small = new GArray(new GArray(Gd.MakeColor("3B6FB0"), Gd.Format("%d%%", Gd.Int((Gd.At(GameSim.ARMOUR, Gd.At(Me, 9)) * 100)))), new GArray(Gd.MakeColor("2E8B4A"), Gd.Str(Main.Carried(Me, "bandage"))));
         if ((Gd.At(Me, 1) == 1))
         {
             Gd.Append(Small, new GArray(Gd.MakeColor("3DBE5A"), Gd.Format("+%d", Gd.At(Me, 10))));
@@ -1413,14 +1521,24 @@ public partial class Main : Node2D
         // bottom right: weapon card
         dynamic Wr = Gd.MakeRect2((Vs.X - 236), (Vs.Y - 62), 228, 54);
         this.Panel(C, Wr);
-        this.Text(C, (Wr.Position + Gd.MakeVector2(10, 18)), Gd.At(GameSim.WEAPONS, Gd.At(Me, 8)), 14, Colors.White, 0, (-1.0f), true);
-        foreach (dynamic TimeLeft in Gd.Iter(3))
+        string Wid = Gd.Str(Gd.At(Me, 8));
+        this.Text(C, (Wr.Position + Gd.MakeVector2(10, 18)), GameSim.WeaponName(Wid), 14, Colors.White, 0, (-1.0f), true);
+        if (Gd.Truth(GameSim.WEAPON_STATS.Has(Wid)))
         {
-            this.Diamond(C, (Wr.Position + Gd.MakeVector2((14 + (TimeLeft * 16)), 34)), 5, ((TimeLeft <= Gd.At(Me, 8)) ? (dynamic)(GOLD) : Gd.MakeColor(1, 1, 1, 0.15f)));
+            dynamic St = GameSim.WEAPON_STATS[Wid];
+            string Info = Gd.Format("%d dmg  %.2f/s  %s %s tiles", new GArray(Gd.Int(Gd.At(St, 0)), Gd.At(St, 1), (Gd.Truth(Gd.At(St, 3)) ? "range" : "reach"), Gd.Str(Gd.At(St, 2))));
+            if (Gd.Truth(Gd.At(St, 4)))
+            {
+                Info += Gd.Format("   arrows %d", Main.Carried(Me, "arrow"));
+            }
+            this.Text(C, (Wr.Position + Gd.MakeVector2(10, 34)), Info, 10, Gd.MakeColor(1, 1, 1, 0.8f));
         }
-        this.Text(C, (Wr.Position + Gd.MakeVector2(10, 48)), "LMB hit  E use  Q heal  C craft  F door  T tower", 9, Gd.MakeColor(1, 1, 1, 0.55f));
+        this.Text(C, (Wr.Position + Gd.MakeVector2(10, 48)), "Tab bag  C craft  B build  Q heal  Esc menu", 9, Gd.MakeColor(1, 1, 1, 0.55f));
+        this.DrawHotbar(C, Vs, Me);
         this.DrawInteractionHint(C, Vs, Me, Ph);
         this.DrawCraftPanel(C, Vs);
+        this.DrawBuildMenu(C, Vs, Me);
+        this.DrawBag(C, Vs, Me);
         if ((Hurt > 0))
         {
             dynamic A = ((Hurt / 0.35f) * 0.5f);
@@ -1429,6 +1547,8 @@ public partial class Main : Node2D
                 C.DrawRect(R, Gd.MakeColor(0.9f, 0.05f, 0.05f, A));
             }
         }
+        this.DrawResult(C, Vs);
+        this.DrawPause(C, Vs);
     }
 
     public void Text(dynamic Ci, dynamic Pos, dynamic S, dynamic Size, dynamic Col, dynamic Align = null, dynamic Width = null, dynamic Title = null)
@@ -1521,10 +1641,17 @@ public partial class Main : Node2D
             Nvar[Gd.At(Base, 0)] = Gd.Maxi(Gd.Get(Nvar, Gd.At(Base, 0), 0), (Gd.ToInt(Gd.At(Base, 1)) + 1));
         }
         Cinfo = Gd.FromVariant(Json.ParseString(Gd.Static(typeof(FileAccess), "get_file_as_string", (CHARS + "chars.json"))));
+        // the seven bosses come from tools/PixelBosses.cs in the same sheet layout
+        dynamic Bj = Gd.FromVariant(Json.ParseString(Gd.Static(typeof(FileAccess), "get_file_as_string", (CHARS + "bosses.json"))));
+        foreach (dynamic N in Gd.Iter(Bj.Chars))
+        {
+            Cinfo.Chars[N] = Gd.At(Bj.Chars, N);
+        }
         foreach (dynamic N in Gd.Iter(Cinfo.Chars))
         {
             Csheet[N] = Gd.Load(((CHARS + N) + ".png"));
         }
+        this.LoadItemArt();
         dynamic Pj = Gd.FromVariant(Json.ParseString(Gd.Static(typeof(FileAccess), "get_file_as_string", (PROPS + "props.json"))));
         foreach (dynamic N in Gd.Iter(Pj))
         {
@@ -1574,6 +1701,8 @@ public partial class Main : Node2D
         Root.Theme = this.Theme();
         Ui.AddChild(Root);
         Hud.SetAnchorsPreset(Gd.EnumValue(typeof(Control), "PRESET_FULL_RECT", 15));
+        // item icons are pixel art too
+        Hud.TextureFilter = Gd.EnumValue(typeof(CanvasItem), "TEXTURE_FILTER_NEAREST", 1);
         Hud.MouseFilter = Gd.EnumValue(typeof(Control), "MOUSE_FILTER_IGNORE", 2);
         Gd.Connect(Hud, "draw", (Action<dynamic[]>)(SignalArgs => { DrawHud(); }));
         Root.AddChild(Hud);

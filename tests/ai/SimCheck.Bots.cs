@@ -21,7 +21,7 @@ public partial class SimCheck : Node
         this.Check((Gd.Size(S.Players) == 3), "bots can be removed and added in the lobby");
         S.Action(1, "start", 0);
         this.Run(S, 60);
-        this.Check((Gd.Size(Gd.Filter(Gd.Values(S.Players), (Func<dynamic, dynamic>)((P) => (Gd.Truth(P.Bot) && (((P.Inv.Wood + P.Inv.Stone) + P.Inv.Herb) > 0))))) == 2), "bots gather resources by day");
+        this.Check((Gd.Size(Gd.Filter(Gd.Values(S.Players), (Func<dynamic, dynamic>)((P) => (Gd.Truth(P.Bot) && (((S.Count(P, "wood") + S.Count(P, "stone")) + S.Count(P, "herb")) > 0))))) == 2), "bots gather resources by day");
         this.Check((S.Snapshot().Need == 1), "only people count for the day-skip vote");
         S.Action(1, "vote", 0);
         this.Run(S, 400, "night");

@@ -52,6 +52,8 @@ public partial class SimCheck : Node
         if (!arguments.Contains("--mechanics-only")) CheckProgression();
         if (!arguments.Contains("--progression-only")) CheckMechanics();
         if (!arguments.Contains("--progression-only")) CheckBots();
+        if (!arguments.Contains("--progression-only")) CheckItems();
+        if (!arguments.Contains("--progression-only")) CheckBosses();
         GD.Print((Gd.Truth(Fails) ? (dynamic)(Gd.Format("FAILED %d", Fails)) : "ALL OK"));
         GetTree().Quit((Gd.Truth(Fails) ? (dynamic)(1) : 0));
     }
@@ -67,7 +69,7 @@ public partial class SimCheck : Node
         Eng.Pos = Wood.Pos;
         Eng.Inter = true;
         this.Run(S, 15);
-        this.Check(((Eng.Inv.Wood == 5) && (Wood.Amount == 0)), "gathering at 0.35/s empties a 5-unit node in ~15 s");
+        this.Check(((S.Count(Eng, "wood") == 5) && (Wood.Amount == 0)), "gathering at 0.35/s empties a 5-unit node in ~15 s");
         Eng.Inter = false;
         dynamic Stone = Gd.At(Gd.Filter(S.Nodes, (Func<dynamic, dynamic>)((N) => (N.Type == 1))), 0);
         Eng.Pos = Stone.Pos;
@@ -77,7 +79,7 @@ public partial class SimCheck : Node
             Eng.Pos = (Stone.Pos + Gd.MakeVector2((20.0f * Gd.Sin((I * 0.2f))), 0));
             S.Tick((1.0f / 60));
         }
-        this.Check(((Eng.Inv.Stone == 0) && (Stone.Amount == 5)), "moving while holding E gathers nothing (MEC-08)");
+        this.Check(((S.Count(Eng, "stone") == 0) && (Stone.Amount == 5)), "moving while holding E gathers nothing (MEC-08)");
         Eng.Pos = Stone.Pos;
         this.Run(S, 1.5f);
         this.Check(((Eng.GatherAcc > 0.4f) && (Eng.GatherAcc < 0.6f) && (Gd.At(Gd.At(S.Snapshot().Ps, 1), 21) == Eng.GatherAcc)), "gather progress is in the snapshot");
@@ -85,11 +87,15 @@ public partial class SimCheck : Node
         this.Run(S, 0.1f);
         this.Check((Eng.GatherAcc == 0.0f), "releasing E resets gather progress");
         Eng.Pos = Vector2.Zero;
-        Eng.Inv.Wood = 6;
+        S.SetCount(Eng, "wood", 6);
         S.Action(1, "craft", 0);
-        this.Check(((Eng.Armour == 1) && (Eng.Inv.Wood == 0)), "light armour crafted at workbench");
+        this.Run(S, 2.9f);
+        this.Check((S.Count(Eng, "light_armour") == 0), "crafting takes 3 s (BAL-19)");
+        this.Run(S, 0.2f);
+        this.Check(((Eng.Armour == 1) && (S.Count(Eng, "wood") == 0)), "light armour crafted at workbench");
         S.Action(1, "craft", 4);
-        this.Check((Eng.Weapon == 0), "stone spear locked before night 1");
+        this.Run(S, 3.1f);
+        this.Check((S.Count(Eng, "stone_spear") == 0), "stone spear locked before night 1");
         S.TimeLeft = 0;
         this.Run(S, 0.1f);
         this.Check((S.Phase == "dusk"), "day -> dusk");
@@ -151,9 +157,10 @@ public partial class SimCheck : Node
         this.Run(S, 2.1f);
         E1.Ent = false;
         this.Check((Gd.Truth(E1.Inside) && Gd.Truth(GameSim.InsideBase(E1.Pos))), "Engineer holds F 2 s at a closed door and gets inside");
-        E1.Inv.Herb = 2;
+        S.SetCount(E1, "herb", 2);
         S.Action(1, "craft", 1);
-        this.Check((E1.Inv.Bandage == 1), "Engineer crafts at night inside");
+        this.Run(S, 3.1f);
+        this.Check((S.Count(E1, "bandage") == 1), "Engineer crafts at night inside");
         Sc2.Pos = (Gd.At(GameSim.DOOR_POS, 1) + (Gd.At(GameSim.DOOR_DIR, 1) * 32));
         Sc2.Ent = true;
         this.Run(S, 2.1f);
@@ -166,13 +173,13 @@ public partial class SimCheck : Node
         E1.Pos = (Gd.At(GameSim.DOOR_POS, 0) + (Gd.At(GameSim.DOOR_DIR, 0) * 24));
         S.Doors[0] = 300.0f;
         S.DoorPause[0] = 0.0f;
-        E1.Inv.Wood = 0;
+        S.SetCount(E1, "wood", 0);
         E1.Inter = true;
         this.Run(S, 1.0f);
         this.Check((Gd.At(S.Doors, 0) == 300.0f), "no repair without wood");
-        E1.Inv.Wood = 10;
+        S.SetCount(E1, "wood", 10);
         this.Run(S, 2.0f);
-        this.Check(((Gd.At(S.Doors, 0) > 328.0f) && (Gd.At(S.Doors, 0) < 332.0f) && (E1.Inv.Wood == 7)), Gd.Format("night repair: +15/s and 1 wood per 10 (%.1f, wood %d)", new GArray(Gd.At(S.Doors, 0), E1.Inv.Wood)));
+        this.Check(((Gd.At(S.Doors, 0) > 328.0f) && (Gd.At(S.Doors, 0) < 332.0f) && (S.Count(E1, "wood") == 7)), Gd.Format("night repair: +15/s and 1 wood per 10 (%.1f, wood %d)", new GArray(Gd.At(S.Doors, 0), S.Count(E1, "wood"))));
         S.DoorPause[0] = 2.0f;
         float Before = Gd.Float(Gd.At(S.Doors, 0));
         this.Run(S, 1.0f);
@@ -248,16 +255,16 @@ public partial class SimCheck : Node
         dynamic Pick = Gd.At(S.Players, 2);
         Pick.Pos = Gd.MakeVector2(0, (30 * 32));
         this.Run(S, 0.1f);
-        this.Check((Pick.Inv.Metal == 10), "boss drop collected by walking over it (+10 metal)");
+        this.Check((S.Count(Pick, "metal") == 10), "boss drop collected by walking over it (+10 metal)");
         Gd.Clear(S.Drops);
         S.AddDrop(Gd.MakeVector2(0, ((30 * 32) + 300)), "wood", 2);
         this.Run(S, 31);
         this.Check(Gd.IsEmpty(S.Drops), "uncollected drop vanishes after 30 s");
         S.AddDrop(Vector2.Zero, "wood", 2);
         Pick.Pos = Vector2.Zero;
-        dynamic W0 = Pick.Inv.Wood;
+        dynamic W0 = S.Count(Pick, "wood");
         this.Run(S, 0.5f);
-        this.Check((Pick.Inv.Wood == W0), "drops cannot be collected from inside the base");
+        this.Check((S.Count(Pick, "wood") == W0), "drops cannot be collected from inside the base");
         // Walls: only doors let players in.
         Func<dynamic, dynamic, dynamic, dynamic> Walk = (Start, Step, Open) =>
         {
@@ -278,6 +285,10 @@ public partial class SimCheck : Node
         this.Check(((GameSim.HALF == (Gd.MakeVector2(11, 7) * 16)) && (Gd.At(GameSim.DOOR_POS, 0).X < 0) && (Gd.At(GameSim.DOOR_POS, 1).Y < 0) && (Gd.At(GameSim.DOOR_POS, 2).X > 0)), "11 x 7 base, doors A west, B north, C east");
         S = this.NewMatch();
         S.Rng.Seed = 42;
+        // random resource nodes would nudge spawns out of the band; scenery stays (it is fixed)
+        dynamic KeptNodes = S.Nodes;
+        S.Nodes = new GArray();
+        S.World.Rebuild(S.Nodes, S.Towers);
         S.K = 3;
         S.Active = new GArray(0, 1, 2);
         S.SpawnWave();
@@ -302,9 +313,12 @@ public partial class SimCheck : Node
             this.Check(Gd.All(S.Enemies, InBand), "night spawns in a band 25-35 tiles in front of each active door");
             this.Check(!(Gd.Truth(Gd.Any(S.Enemies, South))), "no night spawn south of the base");
         }
+        S.Nodes = KeptNodes;
         this.Check(Gd.All(S.Nodes, (Func<dynamic, dynamic>)((N) => (!(Gd.Truth(GameSim.InDoorLane(N.Pos))) && Gd.Truth(((N.Type < 3) ? (dynamic)((GameSim.WallDist(N.Pos) <= (20 * 32))) : (GameSim.WallDist(N.Pos) > (20 * 32))))))), "resource nodes in the safe zone, metal beyond it, door corridors clear");
         S.K = 2;
         S.Active = new GArray(1);
+        // a Juggernaut: the Broodmother is slower on purpose (BAL-39)
+        S.BossPlan = new GArray(0, 1);
         S.SpawnBoss();
         dynamic B = S.Boss();
         this.Check(((B != null) && (B.Pos.DistanceTo((Gd.At(GameSim.DOOR_POS, 1) + ((Gd.At(GameSim.DOOR_DIR, 1) * 60) * 32))) < 1.0f)), "boss starts 60 tiles in front of its door");
@@ -358,18 +372,18 @@ public partial class SimCheck : Node
         Te.Pos = (Gd.At(GameSim.DOOR_POS, 0) + ((Gd.At(GameSim.DOOR_DIR, 0) * 5) * 32));
         S.Action(1, "tower", 0);
         dynamic Tw = Gd.At(S.Towers, 0);
-        this.Check(((Tw != null) && (Tw.Hp == 300.0f) && !(Gd.Truth(S.FreeTower)) && (Te.Inv.Wood == 0)), "the free tower is placed 3-8 tiles in front of door A at no cost");
+        this.Check(((Tw != null) && (Tw.Hp == 300.0f) && !(Gd.Truth(S.FreeTower)) && (S.Count(Te, "wood") == 0)), "the free tower is placed 3-8 tiles in front of door A at no cost");
         Te.Pos = (Gd.At(GameSim.DOOR_POS, 2) + ((Gd.At(GameSim.DOOR_DIR, 2) * 5) * 32));
-        Te.Inv.Wood = 20;
-        Te.Inv.Metal = 10;
+        S.SetCount(Te, "wood", 20);
+        S.SetCount(Te, "metal", 10);
         S.Action(1, "tower", 0);
-        this.Check(((Gd.At(S.Towers, 2) == null) && (Te.Inv.Wood == 20)), "a second tower is locked until the first boss is killed");
+        this.Check(((Gd.At(S.Towers, 2) == null) && (S.Count(Te, "wood") == 20)), "a second tower is locked until the first boss is killed");
         S.Unlock = 2;
         S.Action(1, "tower", 0);
-        this.Check(((Gd.At(S.Towers, 2) != null) && (Te.Inv.Wood == 10) && (Te.Inv.Metal == 5)), "an unlocked tower costs 10 wood + 5 metal");
+        this.Check(((Gd.At(S.Towers, 2) != null) && (S.Count(Te, "wood") == 10) && (S.Count(Te, "metal") == 5)), "an unlocked tower costs 10 wood + 5 metal");
         Te.Pos = (Gd.At(GameSim.DOOR_POS, 2) + ((Gd.At(GameSim.DOOR_DIR, 2) * 6) * 32));
         S.Action(1, "tower", 0);
-        this.Check((Te.Inv.Wood == 10), "one tower per door");
+        this.Check((S.Count(Te, "wood") == 10), "one tower per door");
         dynamic Tg = S.Spawn(GameSim.GRUNT, 0, 0.0f);
         Tg.Pos = (Tw.Pos + Gd.MakeVector2(0, (4 * 32)));
         Tg.State = 4;
@@ -405,7 +419,7 @@ public partial class SimCheck : Node
         this.Check(((G2.State == 5) && (Tw.Hp < 300.0f) && (Gd.At(S.Doors, 0) == GameSim.DOOR_HP)), "at night an enemy entering the light attacks the tower before its door");
         G2.Cd = 99.0f;
         Te.Pos = (Tw.Pos + Gd.MakeVector2(0, 32));
-        Te.Inv.Wood = 5;
+        S.SetCount(Te, "wood", 5);
         Te.Inter = true;
         float Thp = Gd.Float(Tw.Hp);
         // a hit blocks repair for 2 s (FML-08)
@@ -422,7 +436,7 @@ public partial class SimCheck : Node
         this.Run(S, 1.0f);
         this.Check((Tw.Hp == 0.0f), "a destroyed tower cannot be repaired while an enemy is in its light");
         Gd.Clear(S.Enemies);
-        Te.Inv.Wood = 20;
+        S.SetCount(Te, "wood", 20);
         this.Run(S, 10.0f);
         this.Check((Gd.Absf((Tw.Hp - 90.0f)) < 0.01f), Gd.Format("a destroyed tower is repaired only to 30%% (%.1f)", Tw.Hp));
         Te.Inter = false;

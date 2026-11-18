@@ -43,7 +43,8 @@ public partial class GameSim : RefCounted
         dynamic S = Gd.Format("Radio: night %d/5 - %s %s will be attacked", new GArray(K, ((Gd.Size(Names) == 1) ? (dynamic)("door") : "doors"), Gd.Join(", ", Names)));
         if (((K == 2) || (K == 4)))
         {
-            S += ", and a NOX specimen is coming";
+            // FML-05: tonight's boss is announced at dawn so the team can prepare
+            S += Gd.Format(", and specimen %s is coming", GameSim.BossTitle(this.BossKindFor(K)).ToUpper());
         }
         if ((K == 5))
         {
@@ -67,7 +68,7 @@ public partial class GameSim : RefCounted
             {
                 Gd.Erase(E, "home");
                 E.State = 0;
-                Gd.Clear(E.Threat);
+                Gd.Clear(E.Hits);
                 E.Door = this.NearestActiveDoor(E.Pos);
             }
         }
@@ -118,8 +119,10 @@ public partial class GameSim : RefCounted
 
     public void End(dynamic Win, dynamic Why)
     {
+        // section 2.5: the result screen stays until the players go back to the lobby
         Phase = "result";
-        TimeLeft = 10.0f;
+        TimeLeft = 0.0f;
+        Result = new GArray(Win, Why, K);
         Msg = (((Gd.Truth(Win) ? (dynamic)("MISSION COMPLETE - ") : "BEACON LOST - ") + Why) + Gd.Format(" (night %d)", K));
         Gd.Clear(Enemies);
         Gd.Clear(Proj);
@@ -130,6 +133,7 @@ public partial class GameSim : RefCounted
     {
         Phase = "lobby";
         Msg = "";
+        Result = null;
         Gd.Clear(Drops);
         Gd.Clear(Enemies);
         Gd.Clear(Proj);
@@ -144,7 +148,7 @@ public partial class GameSim : RefCounted
     {
         if ((BaseHp <= 0))
         {
-            this.End(false, "Generator destroyed");
+            this.End(false, ((LastDoor >= 0) ? (dynamic)(Gd.Format("Generator destroyed at door %s", Gd.At(DOOR_NAMES, LastDoor))) : "Generator destroyed"));
             return;
         }
         if (Gd.Truth(this.TeamWiped()))
@@ -241,6 +245,41 @@ public partial class GameSim : RefCounted
             }
         }
         return true;
+    }
+
+    // MEC-17 / BAL-25: once no door is broken, players inside (other than the Engineer who entered) get a
+    // 5 s warning and are then moved to the nearest door.
+    public dynamic BreachEndT = (-1.0f);
+
+    public void TickBreachEnd(dynamic Dt)
+    {
+        dynamic Caught = Gd.Filter(Gd.Values(Players), (Func<dynamic, dynamic>)((P) => ((P.State != 2) && !Gd.Truth(P.Inside) && Gd.Truth(GameSim.InsideBase(P.Pos)))));
+        if ((Gd.Truth(this.AnyBreach()) || Gd.Truth(Gd.IsEmpty(Caught))))
+        {
+            BreachEndT = (-1.0f);
+            return;
+        }
+        if ((BreachEndT < 0))
+        {
+            BreachEndT = 5.0f;
+            this.Say("The doors hold again - everyone out in 5 s!");
+        }
+        BreachEndT -= Dt;
+        if ((BreachEndT > 0))
+        {
+            return;
+        }
+        BreachEndT = (-1.0f);
+        foreach (dynamic P in Gd.Iter(Caught))
+        {
+            dynamic D = this.NearestDoor(P.Pos);
+            this.Teleport(P, (Gd.At(DOOR_POS, D) + (Gd.At(DOOR_DIR, D) * T)));
+        }
+    }
+
+    public dynamic AnyBreach()
+    {
+        return Gd.Any(Doors, (Func<dynamic, dynamic>)((D) => (D <= 0)));
     }
 
     public dynamic EnemyInside()

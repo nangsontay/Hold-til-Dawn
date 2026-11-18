@@ -23,6 +23,8 @@ public partial class WorldGeometry : RefCounted
     public dynamic Grids = new GDict {  };
     public dynamic Paths = new GDict {  };
     public dynamic Revision = 0;
+    // a built wall is three solid circles one tile apart (GameSim.Walls.cs)
+    public const float WALL_PIECE = 0.55f;
     public WorldGeometry()
     {
         this.Generate();
@@ -139,9 +141,22 @@ public partial class WorldGeometry : RefCounted
         this.Rebuild(new GArray(), new GArray());
     }
 
-    public void Rebuild(dynamic Nodes, dynamic Towers)
+    public static GArray WallPieces(dynamic Pos, dynamic Vert)
+    {
+        Vector2 Along = (Gd.Truth(Vert) ? Vector2.Down : Vector2.Right);
+        return new GArray((Pos - (Along * T)), Pos, (Pos + (Along * T)));
+    }
+
+    public void Rebuild(dynamic Nodes, dynamic Towers, dynamic Walls = null)
     {
         dynamic Next = Gd.Duplicate(StaticSolids);
+        foreach (dynamic W in Gd.Iter((Walls ?? new GArray())))
+        {
+            foreach (dynamic Piece in Gd.Iter(WorldGeometry.WallPieces(W.Pos, W.Vert)))
+            {
+                Gd.Append(Next, new GArray(Piece, (WALL_PIECE * T), true));
+            }
+        }
         foreach (dynamic Nd in Gd.Iter(Nodes))
         {
             float R = Gd.Float((Gd.At(new GArray(0.25f, 0.62f, 0.0f, 0.6f), Nd.Type) * T));

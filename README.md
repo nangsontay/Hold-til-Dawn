@@ -9,7 +9,7 @@ Godot **4.7.2 .NET** with the **.NET 8 SDK** (or a compatible newer SDK). All ga
 - The lobby leader (first to join) picks the mode and presses **Start** (needs at least one Engineer).
 
 ## Controls
-WASD move, mouse aim, LMB attack, E (hold) gather / repair door (Engineer) / revive, Q bandage, C workbench (inside the base by day, then number keys), RMB healing flask (Healer), F (hold 2 s, Engineer at night) enter or leave the base through a closed door, V skip-day vote, T (Engineer, 3-8 tiles in front of a door) build a tower, mouse wheel zoom (2, 3 or 4 screen pixels per art pixel), Esc leave.
+WASD move, mouse aim, LMB attack with the selected weapon (bows shoot toward the cursor), E (hold) gather / repair door or tower (Engineer, needs the hammer) / revive / pick up a dropped item, 1-4 or mouse wheel select a hotbar slot, Tab inventory and (at the workbench) base storage with drag and drop, G give the selected stack to a teammate in reach or drop it, Q bandage, C workbench (number keys or click; each craft takes 3 s), B build menu (Engineer: wood wall, stone wall, tower; R turns a wall, LMB places, RMB cancels), RMB healing flask (Healer), F (hold 2 s, Engineer at night) enter or leave the base through a closed door, V skip-day vote, T quick-place a tower at your feet, Ctrl + wheel zoom, Esc pause menu (closes open panels first).
 
 Day-skip vote (FML-14): press V by day to vote or withdraw. Votes count once 180 s of the day have passed; the day then ends when at least 60% of the people vote (bots do not vote; one vote when playing solo). A day lasts at most 360 s. The 15-second dusk warning (BAL-05) follows, then night. For a quick test, the debug-only F9 key (host) ends the current phase.
 
@@ -20,7 +20,12 @@ Day-skip vote (FML-14): press V by day to vote or withdraw. Votes count once 180
 - Night waves spawn out of sight 25-35 tiles out in a band in front of each attacked door (GDD 4.3, BAL-34). First wave after 30 s, then every 90 s (45 s on night 5) (BAL-04); budget from FML-04. Enemy speeds follow BAL-29..32 (Grunt and Spitter 2 tiles/s, Wrecker 1.6, x1.08 per night, cap 3); a boss moves like a Grunt of its night. Boss on nights 2 and 4, night-5 helicopter extraction.
 - Daytime roamers beyond 20 tiles from the base (chance grows with distance per FML-16, pairs, max 8); at dusk they walk to an attacked door.
 - Enemy drops (BAL-41: Grunt 10%, Spitter 15%, Wrecker 20%, boss always; resource nodes 4 + 3n per type, BAL-17): walk over to pick up, gone after 30 s, not from inside the base.
-- Defence towers (AGT-12, MEC-11, MEC-28, BAL-28): 300 HP, shoot the nearest enemy within 6 tiles at 8 DPS, light 6 tiles at night for everyone. One free tower (placed with T by an Engineer on day 1, or it appears in front of night 1's door at dusk); more cost 10 wood + 5 metal after the first boss; one per door. At night enemies walking into a tower's light attack it first (Wreckers x2, Spitters never); the Engineer repairs it like a door, a destroyed one only to 30% and only with no enemy in its light.
+- Defence towers (AGT-12, MEC-11, MEC-28, BAL-28): 300 HP, shoot the nearest enemy within 6 tiles at 8 DPS, light 6 tiles at night for everyone. One free tower (placed from the build menu (B) or with T by an Engineer on day 1, or it appears in front of night 1's door at dusk); more cost 10 wood + 5 metal after the first boss; one per door. At night enemies walking into a tower's light attack it first (Wreckers x2, Spitters never); the Engineer repairs it like a door, a destroyed one only to 30% and only with no enemy in its light.
+- Inventory (MEC-09, BAL-18): 12 slots of up to 20 (weapons and armour 1 per slot), the first 4 are the hotbar; 40 shared storage slots at the workbench. Kits (team change to BAL-42, no basic weapon item): Scout a starter bow (no arrows needed), Engineer the hammer, Healer empty hands and 3 flasks. With no weapon in the selected slot a player fights bare-handed with the GDD basic weapon's numbers (15 damage, 1.5/s, reach 1.5 tiles). The best armour carried is worn. Player-dropped items stay until picked up with E; enemy drops need free space.
+- Crafting (MEC-10, BAL-19, section 3.2): 3 s per item at the workbench, cancelled by leaving it or a hit; recipes include Bow + 5 arrows and 5 arrows (stone tier after night 1). Base repair is Engineer-only, by day, 20 HP/s. A Revival kit brings a dead teammate back at the door nearest to where they fell.
+- Walls (ITM-07, ITM-11, MEC-11, BAL-27): wood (5 wood, 200 HP) and stone (5 stone, 400 HP, after night 1), 3 tiles long, not within 3 tiles of a door; enemies walk around them and attack one that blocks them.
+- Bosses (AGT-05..11, table 4.2): all seven archetypes; night 2 draws one at random and night 4 another (FML-05), announced at dawn. Each has the shared slam plus its move: Juggernaut charge, Broodmother summons, Bio-Cannon projectile ring, Burrower burrow, Gatebreaker 120-point door blow, Phantom cloak and ambush, Ironhide front armour. Every damaging move has a 1.0 s ground telegraph.
+- Result screen (section 2.5): win or loss with its cause (e.g. "Generator destroyed at door B"), night reached and per-player kills, revives, damage dealt and taken; Back to lobby. Esc opens a pause overlay (a solo match pauses).
 
 ## 2.5D look (branch `proto-2.5d`)
 - The rules are still flat 2D (`GameSim` unchanged); only `Main` draws differently: everything with height (trees, rocks, walls, enemies, players) is sorted by the y of its foot, walls have a top and a front face, and bodies stand above their shadows. Scenery and resource nodes stay opaque even when a character stands behind them; depleted nodes are smaller until dawn.
@@ -39,13 +44,16 @@ Day-skip vote (FML-14): press V by day to vote or withdraw. Votes count once 180
 - F3 toggles collision outlines for playtesting. Enemy separation and scenery queries use spatial buckets; the renderer culls against the actual camera view at every zoom level.
 - Geometry checks: `godot --headless --path . tests/GeometryCheck.tscn` (shared scenery, navigation, swept hits, blocked attacks and movement validation).
 - `-- --autolobby` opens the crew lobby with 2 bots for UI previews (`--bots=N` to change). The menu and lobby also support `--shot` screenshots.
+- Playtest helpers (with `--autoplay`): `--kit` (materials, a bow and arrows, all recipes unlocked), `--walls` (two built walls by door A), `--panel=bag|craft|build|pause`, `--boss=0..6` (night 2 next to that boss: Juggernaut, Broodmother, Bio-Cannon, Burrower, Gatebreaker, Phantom, Ironhide).
 - `-- --autoplay` (or the old `--autohost`) starts a match at once with 2 bot teammates (`--bots=N` to change, 0 for none); add `--night` to jump to night 1.
 - `--shot=<file.png>` saves a screenshot after `--shot-at=<seconds>` (default 4) and quits; `--at=<x>,<y>` puts you at that tile first.
 - F9 (host, debug build) ends the current phase.
 - Rules check: `godot --headless --path . tests/SimCheck.tscn`
 
 ## Art tools (C#)
-- Props: `godot --headless --path . tools/PixelProps.tscn`
+- Props and built walls: `godot --headless --path . tools/PixelProps.tscn`
 - Characters: `godot --headless --path . tools/PixelChars.tscn`
-- Both generators accept `-- --out=<directory>` to preview output without replacing the shipped art.
+- Bosses (7 sheets, `art/chars/boss_*.png` + `bosses.json`): `godot --headless --path . tools/PixelBosses.tscn`
+- Item icons (`art/items/<item id>.png`) and projectiles (`art/fx/`): `godot --headless --path . tools/PixelItems.tscn`
+- Every generator accepts `-- --out=<directory>` to preview output without replacing the shipped art. After adding new PNGs, open the project in the editor once (or run `godot --headless --path . --import`) so Godot imports them.
 - Nature baking: place the source glTF models in `models/`, then run `godot --path . tools/BakeNature.tscn -- --out=<directory>`. This needs a rendering device; see the script for model credits and rendering settings.
