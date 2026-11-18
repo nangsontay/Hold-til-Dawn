@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="AiSettings" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://config/ai/AiSettings.cs" id="1"]
+
+[resource]
+script = ExtResource("1")
+EnemySpeed = 1.0
+FirstWave = 30.0
+WaveInterval = 90.0
+FinalWaveInterval = 45.0
+SpawnMultiplier = 1.0
+RoamerMultiplier = 1.0
+DropMultiplier = 1.0

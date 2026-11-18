@@ -1,7 +1,7 @@
 Base props in this folder
 =========================
 lighthouse (the beacon), workbench, tower / tower_wreck (AGT-12), pad (landing pad, FML-13):
-original pixel art for Hold 'til Dawn, drawn by tools/pixel_props.gd (1 px = 1 game px,
+original pixel art for Hold 'til Dawn, drawn by tools/PixelProps.cs (1 px = 1 game px,
 GDD palette, light from the upper left, 1 px dark outline). No third-party asset and no AI
 image generator was used.
 
