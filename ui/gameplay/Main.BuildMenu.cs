@@ -161,7 +161,7 @@ public partial class Main : Node2D
         {
             return;
         }
-        Rect2 Box = Gd.MakeRect2((Vs.X - 330), 190, 320, 112);
+        Rect2 Box = Gd.MakeRect2((Vs.X - 330), 98, 320, 112);
         this.Panel(C, Box);
         this.Text(C, (Box.Position + Gd.MakeVector2(10, 16)), "BUILD  (number to pick, R turn, LMB place, RMB cancel)", 10, GOLD, 0, (-1.0f), true);
         int Unlock = Gd.Int(Gd.Get(Snap, "unlock", 0));

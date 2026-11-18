@@ -9,10 +9,11 @@ public partial class PixelChars : Node
 {
     // Pixel-art sprites of the six GDD characters (tab:characters: CHR-01..03 players, CHR-05..07 enemies),
     // following the style guide of GDD ch. 6 (tab:style-guide): 32 x 32 px at tile scale (Wrecker 1.25 tiles = 40 x 40),
-    // dark outline, limited shading, light from the upper left, GDD palette, a walk cycle in 4 directions
-    // (left is the mirrored right). Not part of the game. Run: godot --headless --path . tools/PixelChars.tscn
+    // dark outline, limited shading, light from the upper left, GDD palette, a walk cycle in 8 directions
+    // (left is the mirrored right). The diagonals are 3/4 views: the same silhouette as the front / back view,
+    // with the face redrawn turned toward the right (far eye thinner, face shifted, hair or an ear showing). Not part of the game. Run: godot --headless --path . tools/PixelChars.tscn
     // Writes art/chars/<character>.png (1x pixels; the game scales them up without smoothing) and art/chars/chars.json.
-    // Sheet layout: rows = right, down, left, up; columns = idle 0-1, walk 0-3.
+    // Sheet layout: rows = right, down, left, up, down-right, down-left, up-left, up-right; columns = idle 0-1, walk 0-3.
     // The PNGs can be repainted by hand (Aseprite, Piskel, ...): the game reads them as they are.
     // #
     // Each body is a pixel map: one letter per pixel, looked up in the character's palette ('.' = empty).
@@ -29,28 +30,32 @@ public partial class PixelChars : Node
     public static readonly dynamic NOX_PAL = new GDict { { "N", "4A2C5A" }, { "n", "2F1B3B" }, { "M", "6B4380" }, { "Y", "E8E3C8" }, { "D", "120A16" }, { "T", "E8E3C8" }, { "A", "C63FA8" }, { "a", "8A2A75" } };
     public static readonly dynamic CHARACTERS = new GDict { { "scout", new GDict { { "body", "human" }, { "pal", new GDict { { "H", "6B4A2B" }, { "h", "4E3520" }, { "C", "2BB3B1" }, { "L", "6FD9D5" }, { "c", "1E7F7D" }, { "G", "4A3626" }, { "P", "5A6B34" }, { "p", "3E4B23" }, { "T", "36C9C6" }, { "W", "7A5634" }, { "w", "E8E3C8" }, { "F", "36C9C6" } } }, { "over", new GDict { { "down", new GArray(9, new GArray("..TTTTTTTTTTTT..", "................", "...............W", "..............WW", "..............W.", "..............W.", "..............W.", "..............W.", ".....W........W.", "......W.......W.", ".......W......W.", "........W.....W.", ".........W.....W")) }, { "up", new GArray(9, new GArray("..TTTTTTTTTTTT..", ".......TT.......", ".......TT.......", "................", "..............W.", "..............W.", ".............W..", "...........WW...", "..........W.....", ".........W......", "........W.......", ".......W........", "......W.........", "....WW..........")) }, { "side", new GArray(9, new GArray("...TTTTTTTTTTT..", "...TT...........", "..TT............", "...W............", "..Ww............", "..Ww............", "..Ww............", "..Ww............", "..Ww............", "..Ww............", "..Ww............", "..Ww............", "..Ww............", "...W............")) } } } } }, { "healer", new GDict { { "body", "human" }, { "pal", new GDict { { "H", "2B1E1A" }, { "h", "1A120F" }, { "S", "A86B45" }, { "s", "82502F" }, { "C", "F2F2F2" }, { "L", "FFFFFF" }, { "c", "C3CAD3" }, { "G", "8A96A3" }, { "P", "4A535E" }, { "p", "353C45" }, { "X", "3DBE5A" }, { "K", "F2F2F2" }, { "k", "8A96A3" }, { "Z", "9BE3B0" } } }, { "over", new GDict { { "down", new GArray(14, new GArray("..H..........H..", "..H..........H..", "..H..........H..", "..k.........k...", "...k.......k....", ".......X........", "......XXX.......", ".......X........", "................", "..............Z.", "..............Z.")) }, { "up", new GArray(14, new GArray("..hHHHHHHHHHHh..", "...HHHHHHHHHH...", "....HHHHHHHH....", "...kkkkkkkkkk...", "...kKKKKKKKKk...", "...kKKKXXKKKk...", "...kKKXXXXKKk...", "...kKKKXXKKKk...", "...kkkkkkkkkk...")) }, { "side", new GArray(14, new GArray("...HH...........", "...HHH..........", "..kkkk..........", "..kKKk..........", "..kXKk..........", "..XXXk.XX.......", "..kXKk..........", "..kKKk..........", "..kkkk..........")) } } } } }, { "engineer", new GDict { { "body", "human" }, { "pal", new GDict { { "H", "3A2A20" }, { "h", "261A13" }, { "C", "FF7A1A" }, { "L", "FFA65C" }, { "c", "2B3A55" }, { "G", "5A3E26" }, { "P", "2B3A55" }, { "p", "1E2A3F" }, { "O", "FF7A1A" }, { "o", "C2560A" }, { "Q", "FFB070" }, { "V", "D9DDE0" }, { "M", "8A8F98" }, { "m", "5B5F6B" }, { "W", "7A5634" }, { "D", "3A4250" }, { "Y", "F2B544" } } }, { "over", new GDict { { "down", new GArray(4, new GArray(".....OOQOO......", "...OOOOQOOOO....", "..OOOOOQOOOOo...", "..OOOOOQOOOOo...", "..OOOOOOOOOOo...", ".oooooooooooooo.", "................", "................", "................", "................", "................", "................", "MMM.............", "MmM.............", ".W..............", ".W..VVVVVVVV....", ".W..............", ".W..............", ".W.....YY.......", ".W..............")) }, { "up", new GArray(4, new GArray("......OOQOO.....", "....OOOOQOOOO...", "...OOOOOQOOOOo..", "...OOOOOQOOOOo..", "..OOOOOOOOOOOo..", ".oooooooooooooo.", "................", "................", "................", "................", "................", "................", "...DDDDDDDDDD.MM", "...DOOOOOOOOD.Mm", "...DDDDDDDDDD..W", "...DDDDDDDDDD..W", "...DDDDDDDDDD..W", "...............W", "...............W")) }, { "side", new GArray(4, new GArray(".....OOOQOO.....", "....OOOOQOOOO...", "...OOOOOQOOOOo..", "...OOOOOQOOOOo..", "...OOOOOOOOOOo..", "..ooooooooooooo.", "................", "................", "................", "................", "................", "................", "...DD...........", "..DDD...........", "..DOD.VVVV......", "..DDD...........", "..DDD...........", "...........MM...", ".........WWMm...", "................")) } } } } }, { "grunt", new GDict { { "body", "nox" }, { "pal", new GDict {  } }, { "over", new GDict { { "down", new GArray(8, new GArray("....A......A....", "....aA....Aa....", "................", "................", "................", "................", "................", "................", "................", "................", "................", "................", "......A...A.....", ".......A...A....", "........A...A...")) }, { "up", new GArray(8, new GArray("....A......A....", "....aA....Aa....", "................", ".......AA.......", "......aAAa......", "................", ".......AA.......", "......aAAa......", "................", ".......AA.......", "......aAAa......")) }, { "side", new GArray(8, new GArray("................", "...A..A.........", "..aAaaAa........", "................", "................", "................", "................", "................", "................", "................", "....A.A.........")) } } } } }, { "spitter", new GDict { { "body", "nox" }, { "pal", new GDict { { "Q", "D8E03A" }, { "q", "F6F9A8" }, { "j", "8F9620" } } }, { "over", new GDict { { "down", new GArray(8, new GArray("..........jQQj..", ".........jQqQQj.", ".........QQQQQj.", ".........jQQQj..", "................", "................", "................", "................", "................", ".......QQ.......", "........Q.......", "........Q.......")) }, { "up", new GArray(11, new GArray("................", ".....jQQQQj.....", "....jQqqQQQj....", "....QQqQQQQQ....", "....QQQQQQQQ....", "....jQQQQQQj....", ".....jQQQQj.....")) }, { "side", new GArray(8, new GArray("..jQQj..........", ".jQqQQj.........", ".QQQQQQ.........", ".jQQQQj.........", "..jQQj..........", "................", "................", "................", "..............Q.", "..............Q.")) } } } } }, { "wrecker", new GDict { { "body", "wrecker" }, { "pal", new GDict { { "R", "6E5A7A" }, { "r", "463650" } } }, { "over", new GDict {  } } } } };
     public static readonly dynamic BODIES = new GDict { { "human", HUMAN }, { "nox", NOX }, { "wrecker", WRECKER_BODY } };
-    public static readonly dynamic VIEWS = new GArray("side", "down", "side", "up");
+    public static readonly dynamic VIEWS = new GArray("side", "down", "side", "up", "down3q", "down3q", "up3q", "up3q");
+    // rows drawn mirrored (facing left) and rows turned into a 3/4 view
+    public static readonly int[] MIRRORED = { 2, 5, 6 };
     public override void _Ready()
     {
         dynamic Out = "res://art/chars";
         foreach (string outputArgument in OS.GetCmdlineUserArgs())
             if (outputArgument.StartsWith("--out=", StringComparison.Ordinal)) Out = outputArgument[6..];
         Gd.Static(typeof(DirAccess), "make_dir_recursive_absolute", Out);
-        dynamic Info = new GDict { { "frames", new GDict { { "idle", new GArray(0, 2) }, { "run", new GArray(2, 4) } } }, { "fps", new GDict { { "idle", 2.0f }, { "run", 8.0f } } }, { "dirs", new GArray("right", "down", "left", "up") }, { "chars", new GDict {  } } };
+        this.AddThreeQuarterViews();
+        dynamic Info = new GDict { { "frames", new GDict { { "idle", new GArray(0, 2) }, { "run", new GArray(2, 4) } } }, { "fps", new GDict { { "idle", 2.0f }, { "run", 10.0f } } }, { "dirs", new GArray("right", "down", "left", "up", "down_right", "down_left", "up_left", "up_right") }, { "chars", new GDict {  } } };
         foreach (dynamic N in Gd.Iter(CHARACTERS))
         {
             dynamic Body = Gd.At(BODIES, Gd.At(CHARACTERS, N).Body);
             int Size = Gd.Int(Body.Size);
-            dynamic Sheet = Gd.Static(typeof(Image), "create_empty", (Size * 6), (Size * 4), false, Gd.EnumValue(typeof(Image), "FORMAT_RGBA8", 5));
-            foreach (dynamic Row in Gd.Iter(4))
+            dynamic Sheet = Gd.Static(typeof(Image), "create_empty", (Size * 6), (Size * 8), false, Gd.EnumValue(typeof(Image), "FORMAT_RGBA8", 5));
+            foreach (dynamic Row in Gd.Iter(8))
             {
                 string View = Gd.At(VIEWS, Row);
                 dynamic Base = this.Compose(N, View);
-                dynamic Frames = new GArray(Base, this.Bob(Base, Body), Base, this.Step(Base, Body, View, 1), Base, this.Step(Base, Body, View, (-1)));
+                // walk: the body dips a pixel on each stride and rises as the legs pass (a light bounce)
+                dynamic Frames = new GArray(Base, this.Bob(Base, Body), this.Bob(this.Step(Base, Body, View, 1), Body), Base, this.Bob(this.Step(Base, Body, View, (-1)), Body), Base);
                 foreach (dynamic Col in Gd.Iter(6))
                 {
                     dynamic F = this.Finish(Gd.At(Frames, Col), Body);
-                    if ((Row == 2))
+                    if ((Array.IndexOf(MIRRORED, (int)Row) >= 0))
                     {
                         F.FlipX();
                     }
@@ -79,7 +84,9 @@ public partial class PixelChars : Node
         }
         dynamic Im = Gd.Static(typeof(Image), "create_empty", Size, Size, false, Gd.EnumValue(typeof(Image), "FORMAT_RGBA8", 5));
         int Pad = Gd.Int(((Size - Gd.Length(Gd.At(Gd.At(Gd.At(Body, View), 1), 0))) / 2));
-        foreach (dynamic Layer in Gd.Iter(new GArray(Gd.At(Body, View), Gd.Get(Ch.Over, View, new GArray(0, new GArray())))))
+        // gear is the same in a 3/4 view as in the front / back view
+        string GearView = ((string)View).Replace("3q", "");
+        foreach (dynamic Layer in Gd.Iter(new GArray(Gd.At(Body, View), Gd.Get(Ch.Over, GearView, new GArray(0, new GArray())))))
         {
             int Top = Gd.Int(Gd.At(Layer, 0));
             foreach (dynamic R in Gd.Iter(Gd.Size(Gd.At(Layer, 1))))
@@ -102,6 +109,43 @@ public partial class PixelChars : Node
             }
         }
         return Im;
+    }
+
+    // 3/4 views facing right (the left ones are mirrored): the front / back pixel map with a few rows redrawn.
+    public void AddThreeQuarterViews()
+    {
+        Turned(HUMAN, "down", new GDict {
+            { 4, "..HHHHSSSSSSSh.." },
+            { 5, "..HHHSSSSSSSSS.." },
+            { 6, "..hHSSSESSSEES.." },
+            { 7, "..hHSSSESSSEES.." },
+            { 8, "..hhSSSSSSSSSs.." },
+            { 9, "...hsSSSSSSSSs.." } });
+        Turned(HUMAN, "up", new GDict {
+            { 6, "..HHHHHHHHHHSs.." },
+            { 7, "..hHHHHHHHHHSs.." },
+            { 8, "..shHHHHHHHHSs.." } });
+        Turned(NOX, "down", new GDict {
+            { 4, ".MNNNYNNNNNYYNn." },
+            { 5, ".NNNNYNNNNNYYNn." },
+            { 7, ".nNNNNDTDTTDTDn." } });
+        Turned(NOX, "up", new GDict {  });
+        Turned(WRECKER_BODY, "down", new GDict {
+            { 6, "..NNNNNYYNNNNYYYNn.." },
+            { 8, "..nNNNNDTDTDTDTDNn.." } });
+        Turned(WRECKER_BODY, "up", new GDict {  });
+    }
+
+    static void Turned(dynamic Body, string View, dynamic Rows)
+    {
+        dynamic Map = Gd.At(Body, View);
+        dynamic Lines = Gd.Duplicate(Gd.At(Map, 1));
+        foreach (dynamic R in Gd.Iter(Rows))
+        {
+            Lines[R] = Gd.At(Rows, R);
+        }
+        Body[(View + "3q")] = new GArray(Gd.At(Map, 0), Lines);
+        Body.Split[(View + "3q")] = Gd.At(Body.Split, View);
     }
 
     public dynamic Bob(dynamic Src, dynamic Body)

@@ -1,9 +1,20 @@
-Nature sprites (trees, rocks, bushes, grass, flowers, pebbles)
+Nature sprites in this folder
+============================
+Scenery: pine_0..5 and dead_0..3 (outer forest), rock_0..4 (outcrops), crag_0..2 (rock spires of the ridges),
+reed_0..2 (along the streams), shrub_0..2 (near the base),
+grass_0..3, grass_dry_0..1 and pebble_0..3 (ground scatter).
+Resource nodes (MEC-08): node_wood_0..2 (fir with an axe notch), node_stone_0..1 (pale quarry boulder),
+node_herb_0..1 (flowering herb), node_metal_0 (car wreck) and node_metal_1 (scrap heap), and what is left
+once a node is gathered: stump_0, rubble_0, herb_cut_0, scrap_0.
+ground.png: 256 x 256 tileable ground texture (8 x 8 tiles), near-white so the game tints it with the
+day-grass and outer-zone colours.
+index.json: {name: [anchor_x, anchor_y, solid_radius_px]}; the anchor is the pixel on the ground point.
 
-Source:  Stylized Nature MegaKit [Standard] by Quaternius - https://quaternius.com
-Licence: CC0 1.0 Universal (public domain) - https://creativecommons.org/publicdomain/zero/1.0/
-Changes: the 3D models were rendered to 2D pixel-art PNG sprites from the game's 3/4 camera by
-         tools/BakeNature.cs (32 px per tile, banded colours, hard shadow, 1 px dark outline;
-         scaled, turned, lit from the upper left). The script was written with an AI coding
-         assistant (Claude); declare it in GDD Appendix B.
-AI:      no AI image generation (the models are hand-made by Quaternius).
+Original pixel art for Hold 'til Dawn, drawn by tools/PixelNature.cs (1 px = 1 game px, 32 px tile,
+GDD palette, light from the upper left, dark outline, soft shadow to the lower right). No third-party
+asset and no AI image generator was used. (This replaces the earlier sprites rendered from the
+Quaternius Stylized Nature MegaKit.)
+
+AI disclosure: the script was written by an AI coding assistant (Claude) from the team's GDD; declare
+these sprites in GDD Appendix B as AI-made assets. The PNGs can be repainted by hand (Aseprite,
+Piskel, ...): keep the file name and size, or update the anchor in index.json.

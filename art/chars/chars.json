@@ -47,11 +47,15 @@
 		"right",
 		"down",
 		"left",
-		"up"
+		"up",
+		"down_right",
+		"down_left",
+		"up_left",
+		"up_right"
 	],
 	"fps": {
 		"idle": 2.0,
-		"run": 8.0
+		"run": 10.0
 	},
 	"frames": {
 		"idle": [

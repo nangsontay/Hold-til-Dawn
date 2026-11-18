@@ -147,7 +147,7 @@ public partial class Main : Node2D
 
     public Rect2 CraftRect(dynamic Vs)
     {
-        return Gd.MakeRect2((Vs.X - 330), 190, 320, (40 + (Gd.Size(GameSim.RECIPES) * 18)));
+        return Gd.MakeRect2((Vs.X - 330), 98, 320, (40 + (Gd.Size(GameSim.RECIPES) * 18)));
     }
 
     // Workbench (MEC-10): number keys or a click craft a recipe; each craft takes 3 s.
@@ -229,6 +229,10 @@ public partial class Main : Node2D
         else if (Gd.Equal(Code, 71))
         {
             this.Act("give");
+        }
+        else if (Gd.Equal(Code, 77))
+        {
+            this.ToggleMap();
         }
         else if (Gd.Equal(Code, 67))
         {

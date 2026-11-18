@@ -2,7 +2,8 @@ Character sprites in this folder
 ================================
 scout, healer, engineer (CHR-01..03), grunt, spitter, wrecker (CHR-05..07):
 original 32x32 pixel art (Wrecker 40x40) for Hold 'til Dawn, following the GDD style guide
-(palette, dark outline, 4 directions with left mirrored, idle 2 frames + walk 4 frames).
+(palette, dark outline, 8 directions: right, down, left, up and the four 3/4 diagonals (the front or
+back silhouette with the face turned), left mirrored; idle 2 frames + walk 4 frames with a 1 px body bounce).
 
 Made by tools/PixelChars.cs: every sprite is written there as a pixel map (one letter per pixel);
 the script adds the outline, the ground shadow and the walk/idle frames, and writes these PNGs.
@@ -15,7 +16,7 @@ from the team's GDD; declare them in GDD Appendix B as AI-made assets. The PNGs 
 Bosses (boss_*.png, bosses.json)
 --------------------------------
 juggernaut, broodmother, bio_cannon, burrower, gatebreaker, phantom, ironhide (AGT-05..11):
-original 48x48 pixel art, same sheet layout as above (rows right, down, left, up; idle 2 + walk 4).
+original 48x48 pixel art, same sheet layout as above (8 direction rows; idle 2 + walk 4).
 Each is the NOX brute with the part that shows its move (horns, egg sacs, spore pods, claws,
 ram fist, hood and cloak, front plates). Made by tools/PixelBosses.cs from shaded shapes;
 same AI disclosure as above.

@@ -46,9 +46,12 @@ public partial class WorldGeometry : RefCounted
         Gd.Clear(Scatter);
         dynamic Random = Gd.Wrap(new RandomNumberGenerator());
         Random.Seed = 7;
-        dynamic Pines = new GArray("Pine_1", "Pine_2", "Pine_3", "Pine_4", "Pine_5");
-        dynamic Dead = new GArray("DeadTree_1", "DeadTree_2", "DeadTree_3", "DeadTree_4", "DeadTree_5");
-        dynamic Rocks = new GArray("Rock_Medium_1", "Rock_Medium_2", "Rock_Medium_3");
+        // streams, plateaus, rock ridges and trails first, so the scenery grows around them (WorldTerrain.cs)
+        this.BuildTerrain();
+        // sprite names without the variant number (art/nature/<name>_<k>.png, tools/PixelNature.cs)
+        dynamic Pines = new GArray("pine");
+        dynamic Dead = new GArray("dead");
+        dynamic Rocks = new GArray("rock");
         dynamic Variants = Gd.FromVariant(Json.ParseString(Gd.Static(typeof(FileAccess), "get_file_as_string", "res://art/nature/index.json")));
         dynamic Names = new GDict {  };
         foreach (dynamic N in Gd.Iter(Variants))
@@ -57,7 +60,7 @@ public partial class WorldGeometry : RefCounted
             Names[Gd.At(Base, 0)] = Gd.Maxi(Gd.Get(Names, Gd.At(Base, 0), 0), (Gd.ToInt(Gd.At(Base, 1)) + 1));
         }
         dynamic Variant = (Func<dynamic, dynamic, dynamic>)((N, K) => Gd.Format("%s_%d", new GArray(N, (Gd.Absi(K) % Gd.Maxi(1, Gd.Get(Names, N, 1))))));
-        dynamic Outer = (Func<dynamic, dynamic>)((P) => ((WorldGeometry.WallDist(P) > (SAFE_D + (2 * T))) && !(Gd.Truth(WorldGeometry.Lane(P))) && (Gd.Length(P) < (ISLAND - (2 * T)))));
+        dynamic Outer = (Func<dynamic, dynamic>)((P) => ((WorldGeometry.WallDist(P) > (SAFE_D + (2 * T))) && !(Gd.Truth(WorldGeometry.Lane(P))) && (Gd.Length(P) < (ISLAND - (2 * T))) && !this.TerrainBlocked((Vector2)P, (0.6f * T))));
         dynamic Ring = (Func<dynamic>)(() => (Vector2.FromAngle((Random.Randf() * Mathf.Tau)) * Random.RandfRange((HALF.X + SAFE_D), (ISLAND - (4 * T)))));
         foreach (dynamic C in Gd.Iter(44))
         {
@@ -68,7 +71,7 @@ public partial class WorldGeometry : RefCounted
                 if (Gd.Truth(Outer(P)))
                 {
                     dynamic Pool = ((Random.Randf() < 0.2f) ? (dynamic)(Dead) : Pines);
-                    Gd.Append(Deco, new GArray(P, Variant(Gd.At(Pool, (Random.Randi() % Gd.Size(Pool))), Random.Randi()), Random.RandfRange(0.8f, 1.2f), COLD));
+                    Gd.Append(Deco, new GArray(P, Variant(Gd.At(Pool, (Random.Randi() % Gd.Size(Pool))), Random.Randi()), 1.0f, COLD));
                 }
             }
         }
@@ -80,7 +83,7 @@ public partial class WorldGeometry : RefCounted
                 dynamic P = (Centre + (Vector2.FromAngle((Random.Randf() * Mathf.Tau)) * Random.RandfRange(0, (2.2f * T))));
                 if (Gd.Truth(Outer(P)))
                 {
-                    Gd.Append(Deco, new GArray(P, Variant(Gd.At(Rocks, (Random.Randi() % Gd.Size(Rocks))), Random.Randi()), Random.RandfRange(0.8f, 1.6f), COLD));
+                    Gd.Append(Deco, new GArray(P, Variant(Gd.At(Rocks, (Random.Randi() % Gd.Size(Rocks))), Random.Randi()), 1.0f, COLD));
                 }
             }
         }
@@ -89,37 +92,57 @@ public partial class WorldGeometry : RefCounted
             Vector2 P = (Vector2)(Ring());
             if (Gd.Truth(Outer(P)))
             {
-                Gd.Append(Deco, new GArray(P, Variant(Gd.At(Dead, (Random.Randi() % Gd.Size(Dead))), Random.Randi()), Random.RandfRange(0.8f, 1.1f), COLD));
+                Gd.Append(Deco, new GArray(P, Variant(Gd.At(Dead, (Random.Randi() % Gd.Size(Dead))), Random.Randi()), 1.0f, COLD));
             }
         }
         foreach (dynamic I in Gd.Iter(400))
         {
             dynamic P = ((Vector2.FromAngle((Random.Randf() * Mathf.Tau)) * ISLAND) * Gd.Sqrt(Random.Randf()));
             dynamic Wd = WorldGeometry.WallDist(P);
-            if (((Wd > (3 * T)) && (Wd < SAFE_D) && !(Gd.Truth(WorldGeometry.Lane(P))) && (Random.Randf() < 0.12f)))
+            if (((Wd > (3 * T)) && (Wd < SAFE_D) && !(Gd.Truth(WorldGeometry.Lane(P))) && (Random.Randf() < 0.12f) && !this.TerrainBlocked((Vector2)P, (0.5f * T))))
             {
-                Gd.Append(Deco, new GArray(P, "Bush_Common_0", Random.RandfRange(0.6f, 0.9f), COLD));
+                Gd.Append(Deco, new GArray(P, Variant("shrub", Random.Randi()), 1.0f, COLD));
             }
         }
-        dynamic Flat = new GArray("Grass_Wispy_Short", "Grass_Wispy_Tall", "Grass_Common_Short", "Grass_Wispy_Short", "Grass_Wispy_Tall", "Pebble_Round_1", "Pebble_Round_3", "Pebble_Square_2", "Pebble_Square_4", "Pebble_Round_5");
+        dynamic Flat = new GArray("grass", "grass", "grass", "grass_dry", "grass", "grass_dry", "pebble", "grass", "pebble", "grass");
         while ((Gd.Size(Scatter) < 1400))
         {
             dynamic P = ((Vector2.FromAngle((Random.Randf() * Mathf.Tau)) * ISLAND) * Gd.Sqrt(Random.Randf()));
-            if (((Gd.Absf(P.X) > (HALF.X + (2.6f * T))) || (Gd.Absf(P.Y) > (HALF.Y + (2.6f * T)))))
+            if ((((Gd.Absf(P.X) > (HALF.X + (2.6f * T))) || (Gd.Absf(P.Y) > (HALF.Y + (2.6f * T)))) && (this.TerrainAt((Vector2)P, 4.0f) is 0 or 4)))
             {
-                Gd.Append(Scatter, new GArray(P, Variant(Gd.At(Flat, (Random.Randi() % Gd.Size(Flat))), Random.Randi()), Random.RandfRange(0.8f, 1.2f)));
+                Gd.Append(Scatter, new GArray(P, Variant(Gd.At(Flat, (Random.Randi() % Gd.Size(Flat))), Random.Randi()), 1.0f));
+            }
+        }
+        // rock spires of the ridges, and reeds along both banks of the streams
+        foreach (Vector2 Cp in this.Crags)
+        {
+            Gd.Append(Deco, new GArray(Cp, Variant("crag", Random.Randi()), 1.0f, COLD));
+        }
+        foreach (var St in this.Streams)
+        {
+            for (int I = 3; I < St.Path.Length - 1; I += 4)
+            {
+                Vector2 Along = (St.Path[(I + 1)] - St.Path[(I - 1)]).Normalized();
+                Vector2 Bank = (St.Path[I] + ((new Vector2((-Along.Y), Along.X) * ((WATER_W / 2) + 5)) * (((I / 4) % 2 == 0) ? 1 : (-1))));
+                if (((Random.Randf() < 0.55f) && (Bank.Length() < (float)(ISLAND - T)) && !this.OnBridge(Bank)))
+                {
+                    Gd.Append(Deco, new GArray(Bank, Variant("reed", Random.Randi()), 1.0f, COLD));
+                }
             }
         }
         // Hand-placed objects are editable with Godot's 2D editor.
         dynamic Layout = LAYOUT.Instantiate();
         Gd.Clear(StaticSolids);
+        // index.json gives each sprite's solid radius in pixels: a trunk, a boulder's footprint, 0 for shrubs
         foreach (dynamic D in Gd.Iter(Deco))
         {
-            if (!(Gd.Truth(Gd.BeginsWith(Gd.At(D, 1), "Bush"))))
+            float Radius = Gd.Float(Gd.At(Gd.Get(Variants, Gd.At(D, 1), new GArray(0, 0, 0)), 2));
+            if ((Radius > 0))
             {
-                Gd.Append(StaticSolids, new GArray(Gd.At(D, 0), (((Gd.Truth(Gd.BeginsWith(Gd.At(D, 1), "Rock")) ? (dynamic)(0.75f) : 0.3f) * T) * Gd.At(D, 2)), true));
+                Gd.Append(StaticSolids, new GArray(Gd.At(D, 0), Radius, true));
             }
         }
+        this.AddTerrainSolids(StaticSolids);
         foreach (dynamic Child in Gd.Iter(Layout.GetChildren()))
         {
             if ((Gd.IsType(Child, typeof(Sprite2D)) && (Child.Texture != null)))

@@ -57,19 +57,27 @@ public partial class PixelBosses : Node
         DirAccess.MakeDirRecursiveAbsolute(Out);
         var Info = new Godot.Collections.Dictionary();
         var Chars = new Godot.Collections.Dictionary();
-        string[] Views = { "side", "down", "side", "up" };
-        // idle: (bob, step) = (0,0), (1,0); walk: steps 0, +1, 0, -1
-        (int Bob, int Step)[] Frames = { (0, 0), (1, 0), (0, 0), (0, 1), (0, 0), (0, -1) };
+        // rows: right, down, left, up, then the 3/4 diagonals down-right, down-left, up-left, up-right
+        string[] Views = { "side", "down", "side", "up", "down", "down", "up", "up" };
+        int[] Mirrored = { 2, 5, 6 };
+        int[] Turn = { 3, 7, 11 };
+        // idle: (bob, step) = (0,0), (1,0); walk: the body dips on each stride: (1,+1), (0,0), (1,-1), (0,0)
+        (int Bob, int Step)[] Frames = { (0, 0), (1, 0), (1, 1), (0, 0), (1, -1), (0, 0) };
         foreach (var B in Bosses)
         {
-            var Sheet = Image.CreateEmpty((S * 6), (S * 4), false, Image.Format.Rgba8);
-            for (int Row = 0; Row < 4; Row++)
+            var Sheet = Image.CreateEmpty((S * 6), (S * 8), false, Image.Format.Rgba8);
+            for (int Row = 0; Row < 8; Row++)
             {
                 for (int Col = 0; Col < 6; Col++)
                 {
                     var F = Frames[Col];
-                    var Im = Finish(Draw(B, Views[Row], F.Bob, F.Step));
-                    if (Row == 2)
+                    var Raw = Draw(B, Views[Row], F.Bob, F.Step);
+                    if (Row >= 4)
+                    {
+                        Raw = PixelTurn.TurnRight(Raw, S / 2, Turn);
+                    }
+                    var Im = Finish(Raw);
+                    if (Array.IndexOf(Mirrored, Row) >= 0)
                     {
                         Im.FlipX();
                     }

@@ -41,7 +41,7 @@ public partial class GeometryCheck : Node
         dynamic Second = new WorldGeometry();
         this.Check(((First.Deco == Second.Deco) && (First.Solids == Second.Solids)), "server and renderer build identical scenery/colliders");
         this.Check(Gd.Any(First.Deco, (Func<dynamic, dynamic>)((D) => (Gd.At(D, 0) == Gd.MakeVector2(960, 320)))), "Godot map scene supplies hand-placed landmarks");
-        this.Check(Gd.Any(First.Solids, (Func<dynamic, dynamic>)((D) => ((Gd.At(D, 0) == Gd.MakeVector2(960, 320)) && (Gd.At(D, 1) == 24.0f)))), "Inspector collider radius is used by simulation");
+        this.Check(Gd.Any(First.Solids, (Func<dynamic, dynamic>)((D) => ((Gd.At(D, 0) == Gd.MakeVector2(960, 320)) && (Gd.At(D, 1) == 18.0f)))), "Inspector collider radius is used by simulation");
         this.Check((Gd.Absf((WorldGeometry.CircleHit(Vector2.Zero, Gd.MakeVector2(100, 0), Gd.MakeVector2(50, 0), 10) - 0.4f)) < 0.0001f), "swept collision catches a target between frame endpoints");
         this.Check((WorldGeometry.CircleHit(Vector2.Zero, Gd.MakeVector2(100, 0), Gd.MakeVector2(150, 0), 10) == float.PositiveInfinity), "segment does not hit objects beyond its endpoint");
         this.Check((WorldGeometry.CircleHit(Vector2.Zero, Vector2.Zero, Vector2.Zero, 10) == 0), "zero-length segment inside a collider is safe");

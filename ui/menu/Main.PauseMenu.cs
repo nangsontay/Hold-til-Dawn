@@ -17,7 +17,7 @@ public partial class Main : Node2D
         "1-4 / wheel hotbar   Tab inventory   G give / drop",
         "Q bandage   RMB flask (Healer)   C workbench",
         "B build (Engineer)   F (hold) enter base at night",
-        "V skip-day vote   Ctrl + wheel zoom");
+        "V skip-day vote   M map   Ctrl + wheel zoom");
 
     public Rect2 PauseButton(dynamic Vs, int I)
     {
@@ -74,6 +74,11 @@ public partial class Main : Node2D
     // Esc closes an open panel first, then toggles the pause overlay.
     public void EscapeKey()
     {
+        if (Gd.Truth(MapBig))
+        {
+            MapBig = false;
+            return;
+        }
         if ((Gd.Truth(BagOpen) || Gd.Truth(CraftOpen) || Gd.Truth(BuildOpen)))
         {
             BagOpen = false;
