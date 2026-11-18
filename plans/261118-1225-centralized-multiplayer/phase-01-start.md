@@ -1,7 +1,7 @@
 ---
 phase: 1
 title: "Prove lobby and ENet compatibility"
-status: pending
+status: in-progress
 priority: P1
 dependencies: []
 ---
@@ -25,6 +25,8 @@ godot --headless --path . -- --server
 The last command runs a server until stopped. Stop the owned process after the local comparison. Track the same game build across subsequent phases.
 
 **Files.** Read [project.godot](../../project.godot), [main.gd](../../main.gd), [README](../../README.md) and both checks above. Planned additions include the pinned SDK under `addons/colyseus/`, a production Node package under `multiplayer-server/` and export presets if needed. Keep export credentials out of source control.
+
+**Current evidence.** See [phase 1 report](reports/phase-01-report.md). The local WS/ENet fixture works, but the exported WSS, gameplay and packaging gates remain open.
 
 **Gate and rollback.** Simulation and geometry checks pass and both exported clients complete both connections. If a target cannot load the native SDK or validate WSS, record the build and failure and resolve the version or packaging issue here before changing the shipping path.
 

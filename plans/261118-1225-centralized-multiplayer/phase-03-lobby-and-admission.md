@@ -1,6 +1,6 @@
 ---
 title: "Phase 3: Lobby and admission"
-status: pending
+status: in-progress
 phase: 3
 priority: P1
 dependencies: [2]
@@ -18,7 +18,7 @@ dependencies: [2]
 ## Overview
 
 - **Priority:** P1
-- **Status:** Todo
+- **Status:** Locally verified. Hosted deployment remains open.
 - **Objective:** Add one developer-operated Node/TypeScript Colyseus directory that serves public WSS, manages the fixed three-port roster, spawns one Godot ENet worker per room, recovers surviving workers after a directory crash, and delivers one-time admission material securely.
 - **Scope:** Public room directory, create/list/join, creator-first orchestration, fixed port ownership, worker recovery, WSS ticket delivery, service setup, and real-process tests. Gameplay authority, Ready, disconnect freeze/votes, and empty-room shutdown stay in the worker.
 - **Non-goals:** Multiple directory hosts, persistent room database, active-match rejoin, automatic matchmaking, accounts, private rooms, and gameplay relay.
@@ -35,40 +35,41 @@ dependencies: [2]
 
 ### Public directory
 
-- [ ] Create a dedicated Node/TypeScript server directory with one production entry point, one Colyseus lobby-room type, and a single in-process worker manager per host.
-- [ ] Terminate TLS at the configured reverse proxy and expose public HTTPS/WSS plus UDP 7778-7780. Bind worker control to loopback only.
-- [ ] Connect clients to the built-in WSS address, publish secret-free room entries `{roomId, name, humans, capacity, mode, state}`, and push changes within 1 second.
-- [ ] Room name equals the worker-reported current leader name, capped at 16 characters. Update the listing when leadership passes.
-- [ ] Permit Join only when the worker reports `waiting` and an available slot. Full/playing/recovering/stale rooms are visible with Join disabled, not silently joinable by ID.
-- [ ] When all UDP ports are owned or reserved, refuse a fourth Create with exactly `Server full`, then force/return a refreshed room list.
+- [x] Create a dedicated Node/TypeScript server directory with one production entry point, one Colyseus lobby-room type, and a single in-process worker manager per host.
+- [ ] Configure reverse proxy TLS termination and bind worker control to loopback only. (Local evidence only: the nginx template passed `nginx -t` and a loopback HTTPS/WSS smoke with a temporary certificate, and worker control is bound to IPv4 loopback and exercised locally. Production TLS termination, firewall exposure and the public routes remain open on the deployment host.)
+- [ ] Expose HTTPS/WSS and UDP 7778–7780 on the deployment host and verify the public routes.
+- [ ] Connect clients to the built-in public WSS address and verify it against real public certificates. (Open until a public trusted endpoint is exercised: the native SDK has only reached the production directory over a loopback TLS listener with a temporary CA.)
+- [x] (Local) Publish secret-free room entries `{roomId, name, humans, capacity, mode, state}` and push changes within 1 second: verified locally, including the native SDK TLS fixture over a loopback WSS listener with a temporary CA (`python3 tests/match-worker-wss.py /path/to/Godot`, run after importing the project and building the service; the temporary CA is configured in the project's `network/tls/certificate_bundle_override` before GDExtension initialization). Not verified against the public built-in endpoint or exported clients.
+- [x] Room name equals the worker-reported current leader name, capped at 16 characters. Update the listing when leadership passes.
+- [x] Permit Join only when the worker reports `waiting` and an available slot. Full/playing/recovering/stale rooms are visible with Join disabled, not silently joinable by ID.
+- [x] When all UDP ports are owned or reserved, refuse a fourth Create with exactly `Server full`, then force/return a refreshed room list.
 
 ### Fixed worker roster and recovery
 
-- [ ] Model exactly three port slots: UDP 7778, 7779, and 7780. Each is `recovering`, `free`, `starting`, or `owned(roomId, generation, pid)`.
-- [ ] At manager startup, mark all three `recovering`, listen for signed worker re-registration, and disable Create until the roster is reconciled. Never assume empty in-memory state means a port is free.
-- [ ] Workers send signed heartbeats every 1 second. Authenticate re-registration with a host recovery credential plus manager challenge, room ID, generation, fixed port, process identity, heartbeat sequence, and fresh nonces; rotate to a fresh control session key after success.
-- [ ] Accept only one live identity per port/generation. Reject stale generations, replayed heartbeats, duplicate room IDs, mismatched process/port claims, and unsigned state.
-- [ ] Before declaring an unregistered port free, observe the recovery window and verify no worker owns/binds it. A late claimant must not collide with a newly spawned worker.
-- [ ] On manager crash/restart, preserve worker processes and ENet matches. Rebuild listings from authenticated reports, including waiting rooms; active matches remain non-joinable.
-- [ ] On worker heartbeat/control loss, mark the room unavailable immediately, retain its port lease while ownership is uncertain, and reconcile rather than spawning over it.
-- [ ] On confirmed worker exit, remove its listing and release its fixed port. The worker itself owns the 60-second continuous-empty close timer.
+- [x] Model exactly three port slots: UDP 7778, 7779, and 7780. Each is `recovering`, `free`, `starting`, or `owned(roomId, generation, pid)`.
+- [x] At manager startup, mark all three `recovering`, listen for signed worker re-registration, and disable Create until the roster is reconciled. Never assume empty in-memory state means a port is free.
+- [x] Workers send signed heartbeats every 1 second. Authenticate re-registration with a host recovery credential plus manager challenge, room ID, generation, fixed port, process identity, heartbeat sequence, and fresh nonces; rotate to a fresh control session key after success.
+- [x] Accept only one live identity per port/generation. Reject stale generations, replayed heartbeats, duplicate room IDs, mismatched process/port claims, and unsigned state.
+- [x] Before declaring an unregistered port free, observe the recovery window and verify no worker owns/binds it. A late claimant must not collide with a newly spawned worker.
+- [x] On manager crash/restart, preserve worker processes and ENet matches. Rebuild listings from authenticated reports, including waiting rooms; active matches remain non-joinable.
+- [x] On worker heartbeat/control loss, mark the room unavailable immediately, retain its port lease while ownership is uncertain, and reconcile rather than spawning over it.
+- [x] On confirmed worker exit, remove its listing and release its fixed port. The worker itself owns the 60-second continuous-empty close timer.
 
 ### Create, reserve, and admission
 
-- [ ] Create chooses only a reconciled-free fixed port, derives room name from the requesting leader name (max 16), generates a fresh room ID/generation/control session, and spawns one non-duplicate Godot worker.
-- [ ] Keep the new room hidden while starting. Wait for authenticated readiness, reserve the creator first, and send the creator ticket only to that creator's WSS connection.
-- [ ] Do not list the room or accept later reservations until a signed `creator_admitted` event arrives. On spawn/readiness/reservation failure, terminate only that incomplete worker and release its port after exit.
-- [ ] Join validates the latest worker generation and `waiting` state, asks that worker to reserve atomically, and issues no ticket until the worker accepts.
-- [ ] Send `{roomId, generation, udpEndpoint, ticketId, secret, expiresAt}` only as a direct WSS response to the requesting client. Never place it in synchronized state, listings, URLs, query strings, logs, metrics, or errors.
-- [ ] Treat worker rejection, timeout, stale generation, and state change as normal explicit errors followed by list refresh. Never optimistically decrement capacity or issue a local ticket.
-- [ ] No rejoin is offered during an active match. The next Join is permitted only after the same worker reports `waiting` after match completion.
+- [x] Create chooses only a reconciled-free fixed port, derives room name from the requesting leader name (max 16), generates a fresh room ID/generation/control session, and spawns one non-duplicate Godot worker.
+- [x] Keep the new room hidden while starting. Wait for authenticated readiness, reserve the creator first, and send the creator ticket only to that creator's WSS connection.
+- [x] Do not list the room or accept later reservations until a signed `creator_admitted` event arrives. On spawn/readiness/reservation failure, terminate only that incomplete worker and release its port after exit.
+- [x] Join validates the latest worker generation and `waiting` state, asks that worker to reserve atomically, and issues no ticket until the worker accepts.
+- [x] Send `{roomId, generation, udpEndpoint, ticketId, secret, ttlMs}` only as a direct WSS response to the requesting client, where `ttlMs` is the worker-reported bounded monotonic lifetime. Never place it in synchronized state, listings, URLs, query strings, logs, metrics, or errors. (The signed internal `reserve` command still uses `expiresAt` between the directory and worker.)
+- [x] Treat worker rejection, timeout, stale generation, and state change as normal explicit errors followed by list refresh. Never optimistically decrement capacity or issue a local ticket.
+- [x] No rejoin is offered during an active match. The next Join is permitted only after the same worker reports `waiting` after match completion.
 
 ### Independent lifetimes
 
-- [ ] A client WSS drop/reconnect affects only directory UX and undelivered pending reservations. It never removes an admitted ENet player, triggers the technical timeout, or stops a worker.
-- [ ] A manager crash does not send a parent-death signal or service-group kill to workers. Workers continue and re-register with the restarted manager.
-- [ ] Configure service supervision so `Restart=on-failure` restarts the Node manager while preserving spawned workers on manager failure. A normal operator stop must first issue authenticated graceful shutdown to workers and wait/escalate deliberately.
-- [ ] Keep lifecycle semantics testable: manager crash preserves workers; explicit whole-service shutdown stops them; machine shutdown may terminate all processes.
+- [ ] A manager crash does not send a parent-death signal or service-group kill to workers. Workers continue and re-register with the restarted manager. (Verified locally by killing and restarting the manager during play; the Linux systemd parent-death and service-group semantics remain open on the deployment host.)
+- [ ] Configure service supervision so `Restart=on-failure` restarts the Node manager while preserving spawned workers on manager failure. (Template only: the systemd unit and polkit templates exist and were never executed on Linux. A normal operator stop must first issue authenticated graceful shutdown to workers and wait/escalate deliberately — this escalation is also unverified on Linux.)
+- [x] Keep lifecycle semantics testable: manager crash preserves workers; explicit whole-service shutdown stops them; machine shutdown may terminate all processes.
 
 ## Related Code Files
 
@@ -81,14 +82,14 @@ dependencies: [2]
 | Create | `/Users/nangsontay/Hold-til-Dawn/multiplayer-server/src/worker-manager.ts` | Fixed roster, spawn, recovery, authenticated control, heartbeat reconciliation, and port release. |
 | Create | `/Users/nangsontay/Hold-til-Dawn/multiplayer-server/src/config.ts` | Validated WSS/proxy, fixed ports, Godot path, timeouts, and redacted secret config. |
 | Create | `/Users/nangsontay/Hold-til-Dawn/multiplayer-server/test/manager.integration.test.ts` | Real manager, real worker, Colyseus client, crash recovery, and admission tests. |
-| Create | `/Users/nangsontay/Hold-til-Dawn/deploy/hold-til-dawn-multiplayer.service` | Manager restart policy that preserves workers on manager failure and supports explicit whole-service stop. |
-| Modify | `/Users/nangsontay/Hold-til-Dawn/.gitignore` | Ignore Node output and local runtime/secret files, not lockfiles. |
+| Create | [Deployment templates](../../multiplayer-server/deploy/) | Manager and fixed worker systemd units, worker-unit authorization, and TLS proxy configuration. |
+| Create | [Server ignore rules](../../multiplayer-server/.gitignore) | Ignore Node output, installed dependencies, and local runtime files. |
 
-Phase 3 owns only these files. It consumes but does not edit Phase 2 files.
+Phase 3 consumes the existing Phase 2 worker and protocol. The integration suite extends its ENet test client.
 
 - [ ] Run the Node directory and the three allowed worker instances as separate service units on the Linux host. Key each worker unit by fixed port; its service identity exclusively owns the slot even while starting or paused before UDP bind. The manager can start only those units. A directory restart leaves worker units running; a deliberate whole-service stop drains rooms and explicitly stops each owned unit. A LAN test launcher may supervise the same executables locally.
-- [ ] Test a delayed worker before bind across a manager restart. An existing or activating unit must never be replaced until its exit is confirmed. Also test creator WSS loss just before/after ticket delivery: hold only through TTL, then close an unpublished worker that never admitted its creator. Release the port after confirmed exit.
-- [ ] Scope idempotent Create/Join request IDs to the caller and operation. Duplicate clicks or retries return the prior live reservation or its terminal result. Send actual free-seat availability and room-creation availability even while a provisional room is hidden. Only the intended session receives its ticket. On worker death invalidate pending admissions before a new generation can occupy that slot.
+- [x] Test a delayed worker before bind across a manager restart. An existing or activating unit must never be replaced until its exit is confirmed. Also test creator WSS loss just before/after ticket delivery: hold only through TTL, then close an unpublished worker that never admitted its creator. Release the port after confirmed exit.
+- [x] Scope idempotent Create/Join request IDs to the caller and operation. Duplicate clicks or retries return the prior live reservation or its terminal result. Send actual free-seat availability and room-creation availability even while a provisional room is hidden. Only the intended session receives its ticket. On worker death invalidate pending admissions before a new generation can occupy that slot.
 
 ## Test Matrix
 
@@ -110,3 +111,5 @@ Disable new Create/Join, allow or deliberately stop live workers, then stop the 
 ## Next Steps
 
 Phase 4 may migrate the player client only after real-process tests prove creator-first ordering, waiting-only admission, the three-room limit, WSS/ENet lifetime separation, and manager-crash recovery. Deployment docs must record WSS endpoint, UDP 7778-7780, recovery health, logs, and graceful whole-service stop without recording secrets.
+
+See the [Phase 3 report](reports/phase-03-report.md) for the verified local results, directory messages, and deployment steps.

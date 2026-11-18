@@ -1,7 +1,7 @@
 ---
 title: "Move multiplayer to a developer-hosted Colyseus lobby and Godot match servers"
 description: "Players create or join a room from the game. One headless Godot worker runs each match over ENet on the developer’s server."
-status: pending
+status: implemented
 priority: P1
 branch: main
 tags: [multiplayer, backend, infra]
@@ -29,7 +29,7 @@ Players open the game, choose **Create Room** or **Join Room**, and enter the ex
 | 4 | [Move the game menus to the hosted flow](phase-04-client-migration.md) | Two clients reach the existing crew and play through a creator departure. |
 | 5 | [Verify and release the complete stack](phase-05-release-verification.md) | Exported clients complete cross-network playtests; capacity, cleanup and rollback pass. |
 
-Each phase depends on the preceding one. All implementation tasks are pending. Recheck the owning files before each phase. The service and worker can run together locally using the same room and admission contract as the hosted build. Only endpoint, certificate trust, executable path and port configuration should differ.
+Each phase depends on the preceding one. All five phases are implemented and locally verified; recheck the owning files before each release gate. The exported-client, Linux/systemd, public TLS/DNS and Singapore VM gates are still open. The service and worker can run together locally using the same room and admission contract as the hosted build. Only endpoint, certificate trust, executable path and port configuration should differ.
 
 ## Release contract
 

@@ -1,7 +1,7 @@
 ---
 phase: 5
 title: "Verify concurrency, recovery and hosted rollout"
-status: pending
+status: in-progress
 priority: P1
 dependencies: [4]
 ---
@@ -9,10 +9,13 @@ dependencies: [4]
 
 **Outcome.** One developer-operated host supports three independent matches. [GDD §7.3](../../GDD_Assignment1.pdf) targets a Singapore VM with 4 vCPU and 4 GB RAM. Test the intended host before publishing a build.
 
-- [ ] Package a Colyseus service, headless executable and matching imported assets. Expose WSS with valid TLS and DNS, plus UDP 7778–7780 directly to workers. Keep management private. At cold boot update DNS automatically, change the host IP, and verify an existing exported client can connect without rebuilding. Document certificate renewal. Restarting the lobby must preserve live workers; a deliberate whole-host shutdown drains and cleans up owned workers.
-- [ ] Create a repeatable integration runner under `tests/` using actual workers and Godot clients. Capture outcomes and always release test ports/processes. Run both [phase 1 checks](phase-01-start.md) plus a separate exported Windows/macOS test with an external player.
-- [ ] Run the matrix below. Record build, hardware, duration, workload, CPU, memory, tick overruns, bandwidth, snapshot age, gaps between updates and action acknowledgement. Compare clean and lossy networks with full gameplay data. The [benchmark fixture](../261118-1143-multiplayer-benchmark/trace/README.md) is useful for repeatable load but omits production fields.
-- [ ] Update [README](../../README.md) with player and operator paths, server and LAN override, ports, health checks, DNS, releases, log locations and recovery. Log room ID and worker generation, keep admission secrets private. Rehearse draining new allocations, allowing active matches to finish, and deploying or restoring a version-matched client/service/worker set.
+- [x] Build the local Colyseus and imported worker asset package, plus scripts and templates for Linux, cold-boot DNS, renewal, drain and rollback.
+- [x] Run the repeatable local runner with real Godot workers and clients. Verify both phase 1 checks and record the simulation flake. Measure clean and impaired three-room load and exercise local recovery.
+- [x] Update the [README](../../README.md) with player and operator paths, health, ports, DNS, releases, logs, recovery and rollback.
+- [ ] Install the Linux release on a clean host and verify systemd, public TLS and DNS, cold-boot IP changes, and the Linux drain and rollback rehearsal.
+- [ ] Run the Windows and macOS exports with an external player. Verify target-VM capacity and a full-duration five-night match.
+
+[Local results and the outstanding release gates](reports/phase-05-report.md)
 
 | Test | Pass condition |
 |---|---|
