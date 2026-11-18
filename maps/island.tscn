@@ -1,0 +1,14 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://maps/map_prop.gd" id="1"]
+[ext_resource type="Texture2D" path="res://art/nature/Rock_Medium_1_0.png" id="2"]
+
+[node name="IslandLayout" type="Node2D"]
+
+[node name="ExampleRock" type="Sprite2D" parent="."]
+position = Vector2(960, 320)
+texture = ExtResource("2")
+centered = false
+offset = Vector2(-52.41931, -58.05166)
+script = ExtResource("1")
+solid_radius = 24.0

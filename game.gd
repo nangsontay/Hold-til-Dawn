@@ -1,10 +1,12 @@
 class_name GameSim
 extends RefCounted
 ## Server-only match rules (GDD chapters 2-3). Clients never run this; they get snapshot().
-## ponytail: balance values are consts here instead of a .tres resource; move them when designers tune without code.
+## Playtest tuning is editable in config/playtest.tres. Geometry is shared by every peer.
+const TUNING = preload("res://config/playtest.tres")
+const Geometry = preload("res://world_geometry.gd")
 
 const T := 32.0  # px per tile
-const HALF := Vector2(7.5, 5.0) * T  # base: 15 x 10 tile rectangle (BAL-21)
+const HALF := Vector2(5.5, 3.5) * T  # base: 11 x 7 tile rectangle (team change; GDD BAL-21 says 15 x 10)
 const SAFE_D := 20.0 * T  # safe zone: within 20 tiles of the nearest base wall
 const ISLAND := 72.0 * T
 const DOOR_DIR := [Vector2(-1, 0), Vector2(0, -1), Vector2(1, 0)]  # A west, B north, C east (outward); no south door
@@ -12,19 +14,31 @@ const DOOR_POS := [Vector2(-HALF.x, 0), Vector2(0, -HALF.y), Vector2(HALF.x, 0)]
 const DOOR_NAMES := ["A", "B", "C"]
 const PAD_DIST := 5.5 * T  # pad centre in front of each door (island map, fig. 4.1)
 const PAD_R := 4.0 * T
+const TOWER_HP := 300.0  # BAL-28 / AGT-12
+const TOWER_DPS := 8.0
+const TOWER_RANGE := 6.0 * T
+const TOWER_LIGHT := 6.0 * T  # night light radius, seen by every player
+const TOWER_BAND := Vector2(3.0, 8.0) * T  # placed 3-8 tiles in front of a door ...
+const TOWER_SIDE := 3.0 * T  # ... and at most 3 tiles to either side of its lane
+const TOWER_COST := {"wood": 10, "metal": 5}  # recipe table; unlocked by the first boss kill (MEC-25)
 
-const DAY_MIN := 180.0  # BAL-02
+static var DAY_MIN: float = TUNING.day_min
 const DAY_MAX := 360.0
-const DUSK := 15.0  # BAL-05
+static var DUSK: float = TUNING.dusk_seconds
 const NIGHT_LEN := [600.0, 720.0, 600.0, 720.0, 600.0]  # BAL-03
 const BASE_HP := 1000.0  # BAL-20
 const DOOR_HP := 500.0  # BAL-21
 const MAX_ENEMIES := 60  # BAL-33
-const SPAWN_MUL := 3.0  # playtest-only x3 on the FML-04 budget (not in the GDD); GDD value is 1.0
-const SPAWN_ALL_SIDES := false  # GDD 4.3: night spawns in a band in front of each active door; true = every side (playtest option)
-const ROAM_MUL := 2.0  # playtest-only x2 on the FML-16 roamer chance (not in the GDD); GDD value is 1.0
-const DROP_MUL := 3.0  # playtest-only x3 on BAL-41 drop chances (not in the GDD); GDD value is 1.0
-const NODE_MUL := 2  # playtest-only x2 on the BAL-17 node count per type (not in the GDD); GDD value is 1
+static var SPAWN_MUL: float = TUNING.spawn_multiplier
+const SPAWN_ALL_SIDES := true  # Night waves can arrive from anywhere around the island, including the south.
+static var ENEMY_SPEED_MUL: float = TUNING.enemy_speed
+static var FIRST_WAVE_DELAY: float = TUNING.first_wave
+static var WAVE_INTERVAL: float = TUNING.wave_interval
+static var FINAL_WAVE_INTERVAL: float = TUNING.final_wave_interval
+const WAVE_MIN_DISTANCE := 8.0  # tiles from the base; close enough for the first attackers to arrive quickly
+static var ROAM_MUL: float = TUNING.roamer_multiplier
+static var DROP_MUL: float = TUNING.drop_multiplier
+static var NODE_MUL: int = TUNING.node_multiplier
 
 const ROLES := ["Scout", "Healer", "Engineer"]
 const ROLE_HP := [90.0, 100.0, 110.0]  # BAL-06
@@ -66,6 +80,9 @@ const RECIPES := [  # name, cost, unlock tier, effect, value, engineer only
 	["Metal armour", {"metal": 24}, 2, "armour", 3, false],
 ]
 
+var world = Geometry.new()
+var _wall_cache: Array = []
+var _wall_key := ""
 var phase := "lobby"  # lobby, day, dusk, night, result
 var t := 0.0  # time left in phase
 var elapsed := 0.0  # time into the night
@@ -92,6 +109,8 @@ var wave := 0
 var next_wave := 0.0
 var carry := 0.0
 var boss_spawned := false
+var towers := [null, null, null]  # one per door: {door, pos, hp, wrecked, pause, target}
+var free_tower := true  # MEC-28: the match starts with one free tower to place
 var ext := -1.0
 var pad_clear := [0.0, 0.0, 0.0]
 var msg := ""
@@ -99,6 +118,7 @@ var msg_t := 0.0
 var next_id := 0
 var n0 := 1
 var rng := RandomNumberGenerator.new()
+const Bots := preload("res://bots.gd")  # bot teammates for demos and solo tests (not in the GDD)
 
 
 func leader() -> int:
@@ -109,7 +129,7 @@ func add_player(id: int, pname: String, role: int) -> void:
 	# ponytail: no joining mid-match (GDD: rejoin is out of scope).
 	if phase != "lobby" or players.size() >= 5 or players.has(id):
 		return
-	players[id] = {"id": id, "name": pname.substr(0, 16), "role": clampi(role, 0, 2), "pos": Vector2.ZERO, "tp": 0}
+	players[id] = {"id": id, "name": pname.substr(0, 16), "role": clampi(role, 0, 2), "pos": Vector2.ZERO, "tp": 0, "bot": false}
 	order.append(id)
 	_reset_player(players[id])
 
@@ -118,20 +138,41 @@ func remove_player(id: int) -> void:
 	players.erase(id)
 	order.erase(id)
 	votes.erase(id)
-	if players.is_empty() and phase != "lobby":
-		_to_lobby()
+	if humans() == 0:  # the last person left: bots do not play on alone
+		for b in players.keys():
+			players.erase(b)
+			order.erase(b)
+		if phase != "lobby":
+			_to_lobby()
 
 
-func input(id: int, pos: Vector2, aim: float, atk: bool, inter: bool, ent: bool, tp: int) -> void:
+func humans() -> int:
+	return players.values().filter(func(p): return not p.bot).size()
+
+
+func input(id: int, pos: Vector2, aim: float, atk: bool, inter: bool, ent: bool, tp: int, sequence := 0) -> void:
 	var p = players.get(id)
-	if p == null:
+	if p == null or not pos.is_finite() or not is_finite(aim):
 		return
+	if sequence > 0 and sequence <= p.input_sequence:
+		return
+	p.input_sequence = sequence
 	p.aim = aim
 	p.atk = atk
 	p.inter = inter
 	p.ent = ent
 	if tp == p.tp and p.state == 0:  # ignore stale positions sent before a server teleport
-		p.pos = pos.limit_length(ISLAND)
+		var travel: Vector2 = (pos - p.pos).limit_length(p.move_credit)
+		p.move_credit = maxf(0.0, p.move_credit - travel.length())
+		p.pos = move_actor(p.pos, p.pos + travel, 0.3 * T)
+		for e in enemies:
+			var delta: Vector2 = p.pos - e.pos
+			var need: float = 0.3 * T + e.r * 0.6
+			if delta.length_squared() < need * need:
+				p.pos = e.pos + (delta.normalized() if delta.length_squared() > 0.001 else Vector2.DOWN) * need
+		p.pos = move_actor(p.pos, p.pos, 0.3 * T)
+		if phase == "night" and not p.inside and not doors.any(func(d): return d <= 0):
+			p.pos = push_out(p.pos, 0.4 * T)
 
 
 func action(id: int, kind: String, arg) -> void:
@@ -151,8 +192,16 @@ func action(id: int, kind: String, arg) -> void:
 				var err := start_match()
 				if err != "":
 					_say(err)
+		"add_bot":
+			if id == leader():
+				Bots.add(self)
+		"remove_bot":
+			if id == leader():
+				Bots.remove(self)
 		"craft":
 			craft(p, int(arg))
+		"tower":
+			_build_tower(p)
 		"bandage":
 			if p.state == 0 and p.inv.bandage > 0 and p.hp < p.maxhp and p.channel <= 0:
 				p.channel = 2.0
@@ -185,6 +234,8 @@ func start_match() -> String:
 	base_hp = BASE_HP
 	doors = [DOOR_HP, DOOR_HP, DOOR_HP]
 	unlock = 0
+	towers = [null, null, null]
+	free_tower = true
 	shown_unlock = 0
 	bosses_killed = 0
 	enemies.clear()
@@ -209,6 +260,8 @@ func tick(dt: float) -> void:
 		return
 	for i in 3:
 		door_pause[i] -= dt
+	world.rebuild(nodes, towers)
+	Bots.tick(self, dt)
 	_tick_players(dt)
 	if phase == "night":
 		elapsed += dt
@@ -216,6 +269,7 @@ func tick(dt: float) -> void:
 	elif phase == "day":
 		_tick_roamers(dt)
 	_tick_enemies(dt)
+	_tick_towers(dt)
 	_tick_proj(dt)
 	_tick_tele(dt)
 	_tick_drops(dt)
@@ -225,7 +279,7 @@ func tick(dt: float) -> void:
 	if _team_wiped():  # lose condition 2 holds by day too (downed by roamers)
 		_end(false, "Team wiped")
 	elif phase == "day":
-		if t <= 0 or (DAY_MAX - t >= DAY_MIN and votes.size() >= ceili(0.6 * players.size())):
+		if t <= 0 or (DAY_MAX - t >= DAY_MIN and votes.size() >= ceili(0.6 * humans())):
 			_dusk()
 	elif phase == "dusk" and t <= 0:
 		_night()
@@ -279,7 +333,7 @@ func snapshot() -> Dictionary:
 	for id in players:
 		var p = players[id]
 		ps[id] = [p.name, p.role, p.pos, p.hp, p.maxhp, p.state, p.bleed, p.inv, p.weapon, p.armour,
-			p.flasks, p.swing > 0, p.aim, p.channel, p.revive_p, p.tp, p.note if p.note_t > 0 else "", p.kills, p.dmg, p.inside, p.entry, p.gather_acc]
+			p.flasks, p.swing > 0, p.aim, p.channel, p.revive_p, p.tp, p.note if p.note_t > 0 else "", p.kills, p.dmg, p.inside, p.entry, p.gather_acc, p.activity, p.activity_target, p.input_sequence]
 	return {
 		"ph": phase, "t": t, "k": k, "base": base_hp, "doors": doors, "active": active, "ps": ps,
 		"en": enemies.map(func(e): return [e.id, e.type, e.pos, e.hp, e.maxhp, e.r]),
@@ -289,9 +343,11 @@ func snapshot() -> Dictionary:
 		"nodes": nodes.map(func(nd): return [nd.type, nd.pos, nd.amount]),
 		"drops": drops.map(func(d): return [d.pos, d.item, d.n, d.ttl]),
 		"msg": msg if msg_t > 0 or phase == "result" else "",
-		"unlock": unlock, "votes": votes.size(), "need": ceili(0.6 * players.size()),
+		"unlock": unlock, "votes": votes.size(), "need": ceili(0.6 * humans()),
 		"leader": leader(), "mode": mode, "ext": ext, "pads": pad_clear,
 		"broken": broken, "dpause": door_pause.map(func(v): return v > 0), "inside_en": _enemy_inside(),
+		"tw": towers.filter(func(tw): return tw != null).map(func(tw): return [tw.door, tw.pos, tw.hp, tw.wrecked, tw.target != null, tw.target if tw.target != null else Vector2.ZERO]),
+		"free_tower": free_tower,
 	}
 
 
@@ -302,6 +358,9 @@ func _dawn() -> void:
 	t = DAY_MAX
 	votes.clear()
 	broken = [false, false, false]
+	for tw in towers:  # like a door, a wrecked tower can be repaired in full again by day
+		if tw != null:
+			tw.wrecked = false
 	for nd in nodes:
 		nd.amount = 5
 	for p in players.values():
@@ -334,7 +393,11 @@ func _dusk() -> void:
 			e.state = 0
 			e.threat.clear()
 			e.door = _nearest_active_door(e.pos)
-	_say("Dusk: night falls in 15 s - everyone out of the base")
+	if free_tower and k == 1:  # MEC-28: an unplaced free tower appears in front of the door drawn for night 1
+		free_tower = false
+		var d: int = active[0]
+		_place_tower(d, DOOR_POS[d] + DOOR_DIR[d] * 5.0 * T)
+	_say("Dusk: night falls in %d s - everyone out of the base" % DUSK)
 
 
 func _night() -> void:
@@ -342,7 +405,7 @@ func _night() -> void:
 	t = NIGHT_LEN[k - 1]
 	elapsed = 0.0
 	wave = 0
-	next_wave = 30.0
+	next_wave = FIRST_WAVE_DELAY
 	carry = 0.0
 	boss_spawned = false
 	ext = -1.0
@@ -460,11 +523,19 @@ func _reset_player(p) -> void:
 	p.roam_t = ROAM_CHECK
 	p.note = ""
 	p.note_t = 0.0
+	p.bot_cd = 0.0
+	p.activity = "idle"
+	p.activity_target = Vector2.ZERO
+	p.move_credit = SPEED * 0.1
+	p.input_sequence = 0
+	p.bot_node = -1  # index of the resource node a bot is gathering
 	_teleport(p, Vector2(rng.randf_range(-2, 2), rng.randf_range(-2, 2)) * T)
 
 
 func _tick_players(dt: float) -> void:
 	for p in players.values():
+		p.activity = "idle"
+		p.move_credit = minf(SPEED * (1.2 if p.role == 0 else 1.0) * 0.2, p.move_credit + SPEED * (1.2 if p.role == 0 else 1.0) * dt)
 		p.invuln -= dt
 		p.atk_cd -= dt
 		p.swing -= dt
@@ -477,6 +548,7 @@ func _tick_players(dt: float) -> void:
 		if p.state != 0:
 			continue
 		if p.channel > 0:
+			p.activity = "heal"
 			if p.atk:
 				p.channel = 0.0  # attacking cancels the bandage and keeps it
 			else:
@@ -523,11 +595,11 @@ func _tick_entry(p, dt: float) -> void:  # MEC-15 / BAL-26: hold F 2 s at a clos
 
 func _attack(p) -> void:
 	p.atk_cd = 1.0 / (1.5 * (1.25 if p.role == 0 else 1.0))
-	p.swing = 0.15
+	p.swing = 0.25
 	var dir := Vector2.from_angle(p.aim)
 	for e in enemies:
 		var d: Vector2 = e.pos - p.pos
-		if d.length() <= 1.5 * T + e.r and (d.length() < 0.5 * T or absf(dir.angle_to(d)) <= PI / 4):
+		if d.length() <= 1.5 * T + e.r and (d.length() < 0.5 * T or dir.dot(d.normalized()) >= cos(PI / 4)) and line_clear(p.pos, e.pos):
 			_hit(e, WEAPON_DMG[p.weapon], p)
 	enemies = enemies.filter(func(e): return e.hp > 0)
 
@@ -554,7 +626,9 @@ func _hit(e, dmg: float, p) -> void:
 
 func _interact(p, dt: float) -> void:
 	for q in players.values():  # 1) revive
-		if q.state == 1 and q.id != p.id and q.pos.distance_to(p.pos) <= 1.5 * T:
+		if q.state == 1 and q.id != p.id and q.pos.distance_to(p.pos) <= 1.5 * T and line_clear(p.pos, q.pos):
+			p.activity = "revive"
+			p.activity_target = q.pos
 			p.revive_p += dt / (10.0 if p.role == 1 else 20.0)
 			if p.revive_p >= 1.0:
 				p.revive_p = 0.0
@@ -571,6 +645,8 @@ func _interact(p, dt: float) -> void:
 				var cap: float = DOOR_HP * 0.3 if broken[i] else DOOR_HP
 				if (broken[i] and _enemy_inside()) or door_pause[i] > 0 or doors[i] >= cap or p.inv.wood <= 0:
 					return
+				p.activity = "repair"
+				p.activity_target = dp
 				var amt := 15.0 * dt
 				doors[i] = minf(cap, doors[i] + amt)
 				p.repair_acc += amt
@@ -578,8 +654,24 @@ func _interact(p, dt: float) -> void:
 					p.repair_acc -= 10.0
 					p.inv.wood -= 1
 				return
+		for tw in towers:  # ... and a tower the same way (BAL-23 / BAL-28)
+			if tw != null and p.pos.distance_to(tw.pos) <= 1.5 * T:
+				var tcap: float = TOWER_HP * 0.3 if tw.wrecked else TOWER_HP
+				if (tw.wrecked and _enemy_near(tw.pos, TOWER_LIGHT)) or tw.pause > 0 or tw.hp >= tcap or p.inv.wood <= 0:
+					return
+				p.activity = "repair"
+				p.activity_target = tw.pos
+				var tamt := 15.0 * dt
+				tw.hp = minf(tcap, tw.hp + tamt)
+				p.repair_acc += tamt
+				if p.repair_acc >= 10.0:
+					p.repair_acc -= 10.0
+					p.inv.wood -= 1
+				return
 	for nd in nodes:  # 3) gather (MEC-08): hold E standing still; moving or a hit resets the unit in progress
-		if nd.amount > 0 and nd.pos.distance_to(p.pos) <= 1.5 * T:
+		if nd.amount > 0 and nd.pos.distance_to(p.pos) <= 1.5 * T and line_clear(p.pos, nd.pos, nd.pos):
+			p.activity = "gather"
+			p.activity_target = nd.pos
 			if p.gather_acc > 0 and p.pos.distance_to(p.gather_pos) > 4.0:
 				p.gather_acc = 0.0
 			if p.gather_acc == 0.0:
@@ -626,7 +718,7 @@ func _flask(p, aim_point: Vector2) -> void:
 func _tick_waves() -> void:
 	if elapsed >= next_wave:
 		wave += 1
-		next_wave += 45.0 if k == 5 else 90.0
+		next_wave += FINAL_WAVE_INTERVAL if k == 5 else WAVE_INTERVAL
 		_spawn_wave()
 	if (k == 2 or k == 4) and not boss_spawned and elapsed >= 300.0:
 		boss_spawned = true
@@ -646,7 +738,10 @@ func _spawn_wave() -> void:  # FML-04
 			break
 		var ty: int = can[rng.randi() % can.size()]
 		budget -= ENEMY[ty][3]
-		_spawn(ty, active[i % active.size()], rng.randf_range(25.0, 35.0))  # BAL-34, section 4.3
+		var dist := rng.randf_range(WAVE_MIN_DISTANCE, (ISLAND - HALF.length()) / T - 2.0) if SPAWN_ALL_SIDES else rng.randf_range(25.0, 35.0)
+		var e := _spawn(ty, active[i % active.size()], dist)
+		if SPAWN_ALL_SIDES:
+			e.door = _nearest_active_door(e.pos)
 		i += 1
 	carry = budget if budget < 10 else 0.0
 
@@ -657,10 +752,11 @@ func _spawn(ty: int, door: int, dist_tiles: float, any_side := SPAWN_ALL_SIDES) 
 	var e := {
 		"id": next_id, "type": ty, "pos": _spawn_pos(door, dist_tiles, any_side),
 		"hp": s[0] * g * MODE_MUL[mode][1], "dmg": s[1] * g * MODE_MUL[mode][2],
-		"spd": minf(4.25, s[2] * pow(1.08, k - 1)) * T, "door": door, "state": 0, "cd": 0.0,
+		"spd": minf(4.25, s[2] * pow(1.08, k - 1)) * T * ENEMY_SPEED_MUL, "door": door, "state": 0, "cd": 0.0,
 		"threat": {}, "target": 0, "anchor": Vector2.ZERO, "nodmg": 0.0,
 		"r": (0.625 if ty == WRECKER else 0.5) * T,
 	}
+	e.pos = world.resolve(e.pos, e.r)
 	e.maxhp = e.hp
 	next_id += 1
 	enemies.append(e)
@@ -691,15 +787,19 @@ func _boss():
 
 func _tick_enemies(dt: float) -> void:  # FML-09 state machine: 0 approach, 1 retaliate, 2 lock door, 3 lock base
 	for e in enemies:
+		var old_pos: Vector2 = e.pos
+		e.nav_t = e.get("nav_t", 0.0) - dt
 		e.cd -= dt
 		e.nodmg += dt
 		if e.type == SPITTER:
 			_tick_spitter(e, dt)
+			e.pos = move_actor(old_pos, e.pos, e.r)
 			continue
 		if e.state == 4:  # daytime roamer: wander until someone comes within day sight
 			var seen = _nearest_player(e.pos, ROAM_SIGHT)
 			if seen == null:
 				_wander(e, dt)
+				e.pos = move_actor(old_pos, e.pos, e.r)
 				continue
 			e.state = 1
 			e.target = seen.id
@@ -715,6 +815,24 @@ func _tick_enemies(dt: float) -> void:  # FML-09 state machine: 0 approach, 1 re
 				target_p = null
 				if e.state == 4:
 					continue
+		if e.state == 0 and phase == "night":  # MEC-28: walking into a standing tower's light, it attacks the tower first
+			var lit = _tower_in_light(e.pos)
+			if lit != null:
+				e.state = 5
+				e.tw = lit.door
+		if e.state == 5:  # locked on a tower: ignores players until the tower falls, then walks on to its door
+			var tw = towers[e.tw]
+			if tw == null or tw.hp <= 0:
+				e.state = 0
+			else:
+				if e.pos.distance_to(tw.pos) > e.r + 0.7 * T + 2.0:
+					e.pos += (_enemy_waypoint(e, tw.pos) - e.pos).normalized() * minf(e.spd * dt, e.pos.distance_to(tw.pos))
+				elif e.cd <= 0:
+					_tower_attack(e, tw)
+				if e.type == BOSS:
+					_boss_slam(e, dt)
+				e.pos = push_out(move_actor(old_pos, e.pos, e.r), e.r)
+				continue
 		if (e.state == 0 or e.state == 2) and doors[e.door] <= 0:
 			e.state = 3
 		var door_pos: Vector2 = DOOR_POS[e.door]
@@ -730,12 +848,13 @@ func _tick_enemies(dt: float) -> void:  # FML-09 state machine: 0 approach, 1 re
 			arrived = e.pos.length() <= 2.5 * T
 			outside = false
 		if not arrived:
-			var way := _route(e.pos, goal, e.r) if outside else goal
+			var way := _enemy_waypoint(e, goal, outside)
 			e.pos += (way - e.pos).normalized() * minf(e.spd * dt, e.pos.distance_to(goal))
 		elif e.cd <= 0:
 			_enemy_attack(e, target_p)
 		if e.type == BOSS:
 			_boss_slam(e, dt)
+		e.pos = move_actor(old_pos, e.pos, e.r)
 		if outside:
 			e.pos = push_out(e.pos, e.r)
 	_separate()
@@ -745,7 +864,8 @@ func _enemy_attack(e, p) -> void:
 	var boss: bool = e.type == BOSS
 	if e.state == 1:
 		if not boss:  # bosses hurt players only through the telegraphed slam
-			_hurt(p, e.dmg)
+			if line_clear(e.pos, p.pos):
+				_hurt(p, e.dmg)
 		e.cd = 2.0
 		return
 	var d: float = e.dmg * (2.0 if e.type == WRECKER else 1.0)
@@ -762,6 +882,100 @@ func _enemy_attack(e, p) -> void:
 			_say("Door %s broken - BREACH!" % DOOR_NAMES[e.door])
 	base_hp = maxf(0.0, base_hp)
 	e.cd = 4.0 if boss else 2.0
+
+
+func _tower_attack(e, tw) -> void:  # towers take door damage: Wreckers x2, bosses their door blow (BAL-28, BAL-37)
+	tw.hp = maxf(0.0, tw.hp - e.dmg * (2.0 if e.type == WRECKER else 1.0))
+	tw.pause = 2.0  # FML-08: a hit blocks repair for 2 s
+	e.cd = 4.0 if e.type == BOSS else 2.0
+	if tw.hp <= 0 and not tw.wrecked:
+		tw.wrecked = true
+		_say("Tower at door %s destroyed - its light is out" % DOOR_NAMES[tw.door])
+
+
+# --- towers (AGT-12, MEC-11, MEC-28) -------------------------------------
+
+static func tower_slot(pos: Vector2) -> int:
+	## The door whose tower band (3-8 tiles in front of it, 3 to either side) holds pos, else -1.
+	for i in 3:
+		var rel: Vector2 = pos - DOOR_POS[i]
+		var dd: Vector2 = DOOR_DIR[i]
+		var along := rel.dot(dd)
+		if along >= TOWER_BAND.x and along <= TOWER_BAND.y and absf(rel.dot(Vector2(-dd.y, dd.x))) <= TOWER_SIDE:
+			return i
+	return -1
+
+
+func _build_tower(p) -> void:
+	if p.role != 2 or p.state != 0 or p.inside:
+		_note(p, "Only an Engineer can build towers")
+		return
+	var i := tower_slot(p.pos)
+	if i < 0:
+		_note(p, "Stand 3-8 tiles in front of a door to build a tower")
+		return
+	if towers[i] != null:
+		_note(p, "Door %s already has a tower" % DOOR_NAMES[i])
+		return
+	if free_tower:
+		free_tower = false
+	else:
+		if unlock < 2:
+			_note(p, "More towers unlock after the first boss")
+			return
+		for res in TOWER_COST:
+			if p.inv[res] < TOWER_COST[res]:
+				_note(p, "A tower costs 10 wood + 5 metal")
+				return
+		for res in TOWER_COST:
+			p.inv[res] -= TOWER_COST[res]
+	_place_tower(i, p.pos)
+	_note(p, "Tower built at door %s" % DOOR_NAMES[i])
+
+
+func _place_tower(door: int, pos: Vector2) -> void:
+	towers[door] = {"door": door, "pos": pos, "hp": TOWER_HP, "wrecked": false, "pause": 0.0, "target": null}
+
+
+func _tick_towers(dt: float) -> void:
+	## A standing tower shoots the nearest enemy within 6 tiles at 8 DPS, day or night.
+	for tw in towers:
+		if tw == null:
+			continue
+		tw.pause -= dt
+		tw.target = null
+		if tw.hp <= 0:
+			continue
+		var best = null
+		var bd := TOWER_RANGE
+		for e in enemies:
+			var d: float = e.pos.distance_to(tw.pos)
+			if e.hp > 0 and d <= bd and line_clear(tw.pos, e.pos, tw.pos):
+				bd = d
+				best = e
+		if best != null:
+			tw.target = best.pos
+			best.hp -= TOWER_DPS * dt
+			best.nodmg = 0.0
+			if best.hp <= 0:
+				_drop(best)
+				if best.type == BOSS:
+					boss_dead = true
+	enemies = enemies.filter(func(e): return e.hp > 0)
+
+
+func _tower_in_light(pos: Vector2):
+	for tw in towers:
+		if tw != null and tw.hp > 0 and pos.distance_to(tw.pos) <= TOWER_LIGHT:
+			return tw
+	return null
+
+
+func _enemy_near(pos: Vector2, radius: float) -> bool:
+	for e in enemies:
+		if e.pos.distance_to(pos) <= radius:
+			return true
+	return false
 
 
 func _boss_slam(e, dt: float) -> void:
@@ -783,12 +997,12 @@ func _tick_spitter(e, dt: float) -> void:
 	elif best == null:
 		var front: Vector2 = DOOR_POS[e.door] + DOOR_DIR[e.door] * 4 * T
 		if e.pos.distance_to(front) > 0.5 * T:
-			e.pos += (_route(e.pos, front, e.r) - e.pos).normalized() * e.spd * dt
+			e.pos += (_enemy_waypoint(e, front) - e.pos).normalized() * e.spd * dt
 			e.pos = push_out(e.pos, e.r)
 	elif bd > 5.5 * T:
-		e.pos += (_route(e.pos, best.pos, e.r) - e.pos).normalized() * e.spd * dt
+		e.pos += (_enemy_waypoint(e, best.pos) - e.pos).normalized() * e.spd * dt
 		e.pos = push_out(e.pos, e.r)
-	elif e.cd <= 0:
+	elif e.cd <= 0 and line_clear(e.pos, best.pos):
 		e.cd = 2.0
 		proj.append({"pos": e.pos, "vel": (best.pos - e.pos).normalized() * 8 * T, "dmg": e.dmg, "ttl": 1.0})
 
@@ -838,7 +1052,7 @@ func _roamer_count() -> int:
 func _wander(e, dt: float) -> void:
 	if e.pos.distance_to(e.wander) < 4.0:
 		e.wander = e.home + Vector2.from_angle(rng.randf() * TAU) * rng.randf_range(0.0, 3.0) * T
-	e.pos += (e.wander - e.pos).normalized() * minf(e.spd * 0.4 * dt, e.pos.distance_to(e.wander))
+	e.pos += (_enemy_waypoint(e, e.wander) - e.pos).normalized() * minf(e.spd * 0.4 * dt, e.pos.distance_to(e.wander))
 	e.pos = push_out(e.pos, e.r)
 
 
@@ -848,7 +1062,7 @@ func _nearest_player(pos: Vector2, radius: float):
 	for p in players.values():
 		if p.state == 0 and not p.inside:
 			var d: float = p.pos.distance_to(pos)
-			if d <= bd:
+			if d <= bd and line_clear(pos, p.pos):
 				bd = d
 				best = p
 	return best
@@ -893,13 +1107,21 @@ func _tick_drops(dt: float) -> void:  # MEC-23: walk over to collect, not from i
 
 func _tick_proj(dt: float) -> void:
 	for b in proj:
-		b.pos += b.vel * dt
-		b.ttl -= dt
+		var start: Vector2 = b.pos
+		var end: Vector2 = start + b.vel * minf(dt, maxf(0.0, b.ttl))
+		var first := obstacle_hit(start, end, 3.5)
+		var victim = null
 		for p in players.values():
-			if p.state == 0 and p.pos.distance_to(b.pos) < 0.5 * T:
-				_hurt(p, b.dmg)
-				b.ttl = 0.0
-				break
+			if p.state != 0: continue
+			var hit := Geometry.circle_hit(start, end, p.pos, 0.5 * T + 3.5)
+			if hit < first:
+				first = hit
+				victim = p
+		b.pos = start.lerp(end, first) if first < INF else end
+		b.ttl -= dt
+		if first < INF:
+			if victim != null: _hurt(victim, b.dmg)
+			b.ttl = 0.0
 	proj = proj.filter(func(b): return b.ttl > 0)
 
 
@@ -914,18 +1136,33 @@ func _tick_tele(dt: float) -> void:
 
 
 func _separate() -> void:
-	# ponytail: O(n^2) push-apart, fine at the 60-enemy cap; spatial hash if the cap grows.
+	# Broad phase: circles cover every overlapping cell, including negative coordinates.
+	var cells := {}
+	var pairs := {}
 	for i in enemies.size():
-		for j in range(i + 1, enemies.size()):
-			var a = enemies[i]
-			var b = enemies[j]
-			var d: Vector2 = b.pos - a.pos
-			var min_d: float = a.r + b.r
-			var l := d.length()
-			if l < min_d and l > 0.01:
-				var push := d / l * (min_d - l) * 0.5
-				a.pos -= push
-				b.pos += push
+		var e = enemies[i]
+		var lo := Vector2i(((e.pos - Vector2.ONE * e.r) / 64.0).floor())
+		var hi := Vector2i(((e.pos + Vector2.ONE * e.r) / 64.0).floor())
+		for y in range(lo.y, hi.y + 1):
+			for x in range(lo.x, hi.x + 1):
+				var cell := Vector2i(x, y)
+				for j in cells.get(cell, []): pairs[Vector2i(j, i)] = true
+				if not cells.has(cell): cells[cell] = []
+				cells[cell].append(i)
+	for pair: Vector2i in pairs:
+		var a = enemies[pair.x]
+		var b = enemies[pair.y]
+		var d: Vector2 = b.pos - a.pos
+		var need: float = a.r + b.r
+		if d.length_squared() >= need * need: continue
+		var length := d.length()
+		var normal := d / length if length > 0.001 else Vector2.RIGHT
+		var push := normal * (need - length) * 0.5
+		a.pos -= push
+		b.pos += push
+	# Resolve scenery once per body after all pair corrections, not once per pair.
+	for e in enemies:
+		e.pos = move_actor(e.pos, e.pos, e.r)
 
 
 # --- helpers ------------------------------------------------------------
@@ -1086,7 +1323,12 @@ func _gen_nodes() -> void:
 		for i in (4 + 3 * n0) * NODE_MUL:
 			var lo := 3 * T if type < 3 else SAFE_D + 3 * T
 			var hi := SAFE_D - T if type < 3 else ISLAND
-			nodes.append({"type": type, "pos": _rand_zone_point(lo, hi), "amount": 5})
+			var spot := _rand_zone_point(lo, hi)
+			for attempt in 100:
+				if world.resolve(spot, T).distance_to(spot) < 0.01 and nodes.all(func(n): return n.pos.distance_to(spot) > 2.5 * T): break
+				spot = _rand_zone_point(lo, hi)
+			nodes.append({"type": type, "pos": spot, "amount": 5})
+	world.rebuild(nodes, towers)
 
 
 func _pad_is_clear(i: int) -> bool:
@@ -1113,7 +1355,8 @@ func _nearest_door(pos: Vector2) -> int:
 
 
 func _teleport(p, pos: Vector2) -> void:
-	p.pos = pos
+	p.pos = world.resolve(pos, 0.3 * T)
+	p.nav_t = 0.0
 	p.tp += 1
 
 
@@ -1125,3 +1368,42 @@ func _say(s: String) -> void:
 func _note(p, s: String) -> void:
 	p.note = s
 	p.note_t = 3.0
+
+
+func obstacle_hit(a: Vector2, b: Vector2, radius := 0.0, ignore := Vector2.INF) -> float:
+	var hit: float = world.first_hit(a, b, radius, true, ignore)
+	for w: Rect2 in movement_walls():
+		hit = minf(hit, Geometry.segment_box(a, b, w.grow(radius)))
+	return hit
+
+
+func line_clear(a: Vector2, b: Vector2, ignore := Vector2.INF) -> bool:
+	return obstacle_hit(a, b, 0.0, ignore) == INF
+
+
+func move_actor(from: Vector2, to: Vector2, radius: float) -> Vector2:
+	var solid_walls := movement_walls()
+	return collide(world.move_body(from, to.limit_length(ISLAND), radius, solid_walls), radius, doors.map(func(d): return phase != "night" or d <= 0))
+
+
+func navigate(from: Vector2, to: Vector2, radius: float, outside := true) -> Vector2:
+	var barriers: Array = [Rect2(-HALF, HALF * 2)] if outside else movement_walls()
+	return world.waypoint(from, to, radius, barriers)
+
+
+func movement_walls() -> Array:
+	var open := doors.map(func(d): return phase != "night" or d <= 0)
+	var key := str(open)
+	if key != _wall_key:
+		_wall_key = key
+		_wall_cache = walls(open)
+	return _wall_cache
+
+
+func _enemy_waypoint(e, goal: Vector2, outside := true) -> Vector2:
+	if e.get("nav_t", 0.0) <= 0 or not e.has("nav_way") or e.pos.distance_to(e.nav_way) < 4.0 or e.get("nav_revision", -1) != world.revision or e.get("nav_goal", Vector2.INF).distance_to(goal) > T:
+		e.nav_way = navigate(e.pos, goal, e.r, outside)
+		e.nav_goal = goal
+		e.nav_revision = world.revision
+		e.nav_t = 0.4
+	return e.nav_way
