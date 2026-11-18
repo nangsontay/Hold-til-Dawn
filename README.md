@@ -1,11 +1,11 @@
 # Hold 'til Dawn (prototype)
 
-Godot **4.7.2 .NET** with the **.NET 8 SDK** (or a compatible newer SDK). All game scripts, tests and art tools are C#. Rules from the GDD live in the `GameSim` class (server only); the `Main` class is network, input, drawing and HUD. Both are split into files per team member: see [docs/code-ownership.md](docs/code-ownership.md).
+Godot **4.7.2 .NET** with the **.NET 8 SDK** (or a compatible newer SDK). All game scripts, tests and art tools are C#. Rules from the GDD live in the `GameSim` class (server only); the `Main` class is network, input, drawing and HUD. Both are split into partial files per team member; each file starts with an `Owner:` comment.
 
 ## Run
 - Install the [Godot .NET editor and .NET SDK](https://docs.godotengine.org/en/stable/tutorials/scripting/c_sharp/c_sharp_basics.html), then run `dotnet build`. The regular Godot editor cannot run C# projects. Commands below use the .NET Godot executable as `godot`.
-- **Play locally / host:** open the project in Godot, press Play, choose a role, click **Host**. Others click **Join by IP** with the host's IP (UDP 7777).
-- **Dedicated server:** `godot --headless --path . -- --server`, then every player joins by IP.
+- **Play:** open the project in Godot, press Play, choose a role, click **PLAY**, add bot teammates in the lobby, then **Start**.
+- **Multiplayer is removed for now** so the team can finish the gameplay first. The networked version (ENet host/join, dedicated server, network test) is kept in git commit `cf44b5f` ("Port to C#"). `GameSim` still exposes the same API (`AddPlayer`, `RemovePlayer`, `Input`, `Action`, `Tick`, `Snapshot`) so the network layer can be added back on top.
 - The lobby leader (first to join) picks the mode and presses **Start** (needs at least one Engineer).
 
 ## Controls
@@ -31,8 +31,7 @@ Day-skip vote (FML-14): press V by day to vote or withdraw. Votes count once 180
 - Players and enemies in `art/chars/` are 32x32 pixel art (Wrecker 40x40) of the GDD characters (CHR-01..03 Scout, Healer, Engineer; CHR-05..07 Grunt, Spitter, Wrecker), drawn by `tools/PixelChars.cs` (pixel maps, GDD palette, outline, 4 directions, idle + walk); see `art/chars/CREDITS.txt`. The PNGs can be repainted by hand. A boss is a big tinted Wrecker for now; a coloured ring at a player's feet shows the role.
 
 ## Dev
-- C# solution: `HoldTilDawn.sln`; build with `dotnet build`. Run all regression checks with `powershell -File tools/Test.ps1 -Godot <path-to-Godot-.NET-console.exe>` (includes a local multiplayer check on UDP 17777). The full simulation suite advances many minutes of game time and can take several minutes.
-- Migration details and file mapping: [docs/csharp-migration.md](docs/csharp-migration.md).
+- C# solution: `HoldTilDawn.sln`; build with `dotnet build`. Run all regression checks with `powershell -File tools/Test.ps1 -Godot <path-to-Godot-.NET-console.exe>` (geometry and rules; the network suite is in git commit `cf44b5f` ("Port to C#")). The full simulation suite advances many minutes of game time and can take several minutes.
 - Settings (one file per owner, edit in Godot's Inspector, restart the game after a change): `config/gameplay/gameplay.tres` (vote delay, dusk), `config/ai/ai.tres` (enemy speed, wave timing, spawn/roamer/drop multipliers), `config/world/world.tres` (resource nodes), `config/display/display.tres` (camera follow). Defaults follow the GDD (180 s minimum before the skip vote, 15 s dusk, waves at 30 s then every 90 s / 45 s, speed and spawn/roamer/drop/node multipliers at 1); raise the multipliers or lower `DayMin` only for local playtests.
 - Editable landmarks: open `maps/island.tscn` in Godot's 2D editor. Duplicate `ExampleRock`, move it, choose a nature PNG in Texture, set a uniform Scale, and adjust `Solid Radius` / `Blocks Attacks` in the Inspector. Position is the ground anchor; the script aligns nature textures automatically. Keep these Sprite2D objects as direct children with zero rotation. The procedural forest remains, and every peer reads the same landmark scene. Restart after map edits.
 - Combat: solid scenery and intact base walls block melee, enemy sight, tower fire and Spitter projectiles. Projectiles test their complete movement segment and stop at the nearest obstacle/player. Destroyed towers remain physical wrecks. Harvested resource colliders disappear until dawn.
@@ -40,7 +39,7 @@ Day-skip vote (FML-14): press V by day to vote or withdraw. Votes count once 180
 - F3 toggles collision outlines for playtesting. Enemy separation and scenery queries use spatial buckets; the renderer culls against the actual camera view at every zoom level.
 - Geometry checks: `godot --headless --path . tests/GeometryCheck.tscn` (shared scenery, navigation, swept hits, blocked attacks and movement validation).
 - `-- --autolobby` opens the crew lobby with 2 bots for UI previews (`--bots=N` to change). The menu and lobby also support `--shot` screenshots.
-- `-- --autohost` hosts and starts at once with 2 bot teammates (`--bots=N` to change, 0 for none); add `--night` to jump to night 1. `-- --autojoin` joins 127.0.0.1 and starts.
+- `-- --autoplay` (or the old `--autohost`) starts a match at once with 2 bot teammates (`--bots=N` to change, 0 for none); add `--night` to jump to night 1.
 - `--shot=<file.png>` saves a screenshot after `--shot-at=<seconds>` (default 4) and quits; `--at=<x>,<y>` puts you at that tile first.
 - F9 (host, debug build) ends the current phase.
 - Rules check: `godot --headless --path . tests/SimCheck.tscn`

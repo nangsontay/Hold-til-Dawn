@@ -29,22 +29,7 @@ try {
     Invoke-Suite 'tests/GeometryCheck.tscn' 'GEOMETRY ALL OK' 'geometry.log'
     Invoke-Suite 'tests/SimCheck.tscn' 'ALL OK' 'simulation.log'
 
-    $godotExecutable = (Get-Command $Godot -ErrorAction Stop).Source
-    $serverArguments = @('--headless', '--path', ('"' + $projectPath + '"'),
-        '--log-file', ('"' + (Join-Path $logDirectory 'network-server.log') + '"'),
-        'tests/NetworkCheck.tscn', '--quit-after', '1800', '--', '--network-server')
-    $serverOptions = @{ FilePath = $godotExecutable; ArgumentList = $serverArguments; PassThru = $true }
-    if ($env:OS -eq 'Windows_NT') { $serverOptions.WindowStyle = 'Hidden' }
-    $testServer = Start-Process @serverOptions
-    try {
-        Invoke-Suite 'tests/NetworkCheck.tscn' 'NETWORK ALL OK' 'network-client.log'
-    }
-    finally {
-        if (-not $testServer.HasExited) {
-            if ($env:OS -eq 'Windows_NT') { & taskkill.exe /PID $testServer.Id /T /F | Out-Null }
-            else { Stop-Process -Id $testServer.Id -ErrorAction SilentlyContinue }
-        }
-    }
+    # Multiplayer is removed for now; the network suite lives in git commit cf44b5f (tests/NetworkCheck.cs).
     Write-Output 'All C# checks passed.'
 }
 finally { Pop-Location }

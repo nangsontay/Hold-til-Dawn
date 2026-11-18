@@ -7,7 +7,7 @@ using HoldTilDawn;
 
 // Owner: Pham Minh Hieu. Server-only match rules (GDD chapters 2-3): the public API used by the network
 // (AddPlayer, RemovePlayer, Input, Action, Tick, Snapshot), core constants, match state and crafting.
-// GameSim is split into partial files by owner; see docs/code-ownership.md. Clients never run this; they get Snapshot().
+// GameSim is split into partial files by owner; each file starts with an Owner comment. Clients never run this; they get Snapshot().
 public partial class GameSim : RefCounted
 {
     public static float DAY_MIN = GameplaySettings.Current.DayMin;

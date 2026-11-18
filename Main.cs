@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 using HoldTilDawn;
 
 // Owner: Mai Thien Ngon. Client: menu, lobby, camera, prediction, world drawing and the HUD shell.
-// Main is split into partial files by owner; see docs/code-ownership.md. Rules live in GameSim (server only).
+// Main is split into partial files by owner; each file starts with an Owner comment. Rules live in GameSim (server only).
 public partial class Main : Node2D
 {
     public static readonly dynamic T = GameSim.T;
@@ -103,7 +103,6 @@ public partial class Main : Node2D
     public dynamic Menu = Gd.Wrap(new VBoxContainer());
     public dynamic NameEdit = Gd.Wrap(new LineEdit());
     public dynamic RoleOpt = Gd.Wrap(new OptionButton());
-    public dynamic IpEdit = Gd.Wrap(new LineEdit());
     public dynamic Status = Gd.Wrap(new Label());
     public dynamic LobbyPanel = Gd.Wrap(new PanelContainer());
     public dynamic Lobby = Gd.Wrap(new VBoxContainer());
@@ -125,15 +124,6 @@ public partial class Main : Node2D
 
     public override void _Ready()
     {
-        Gd.Connect(Gd.Wrap(Multiplayer), "peer_disconnected", (Action<dynamic[]>)(SignalArgs => { OnPeerLeft(SignalArgs[0]); }));
-        Gd.Connect(Gd.Wrap(Multiplayer), "connected_to_server", (Action<dynamic[]>)(SignalArgs => { OnConnected(); }));
-        Gd.Connect(Gd.Wrap(Multiplayer), "connection_failed", (Action<dynamic[]>)(SignalArgs => { BackToMenu("Could not connect"); }));
-        Gd.Connect(Gd.Wrap(Multiplayer), "server_disconnected", (Action<dynamic[]>)(SignalArgs => { BackToMenu("Server stopped"); }));
-        if (((Gd.Static(typeof(DisplayServer), "get_name") == "headless") || Gd.Contains(Gd.Static(typeof(OS), "get_cmdline_user_args"), "--server")))
-        {
-            this.Host(false);
-            return;
-        }
         this.BuildScene();
         this.BuildUi();
         dynamic Args = Gd.Static(typeof(OS), "get_cmdline_user_args");
@@ -153,9 +143,9 @@ public partial class Main : Node2D
                 ShotPos = (Gd.MakeVector2(Gd.ToFloat(Gd.At(Xy, 0)), Gd.ToFloat(Gd.At(Xy, 1))) * T);
             }
         }
-        if ((Gd.Contains(Args, "--autohost") || Gd.Contains(Args, "--autolobby")))
+        if ((Gd.Contains(Args, "--autoplay") || Gd.Contains(Args, "--autohost") || Gd.Contains(Args, "--autolobby")))
         {
-            this.Host(true);
+            this.StartLocal();
             dynamic Nb = 2;
             foreach (dynamic A in Gd.Iter(Args))
             {
@@ -181,9 +171,51 @@ public partial class Main : Node2D
                 Sim.Elapsed = Gd.Maxf(0.0f, (GameSim.FIRST_WAVE_DELAY - 0.5f));
             }
         }
-        else if (Gd.Contains(Args, "--autojoin"))
+    }
+
+    // --- local match (multiplayer removed for now; GameSim keeps the same API for adding it back) ---------
+    public void StartLocal()
+    {
+        Sim = new GameSim();
+        MyId = 1;
+        Sim.AddPlayer(1, this.GetPlayerName(), RoleOpt.Selected);
+    }
+
+    public void BackToMenu(dynamic Why)
+    {
+        Sim = null;
+        Snap = new GDict {  };
+        MyId = 0;
+        Gd.Clear(PendingInputs);
+        InputSequence = 0;
+        Status.Text = Why;
+    }
+
+    public void Act(dynamic Kind, dynamic Arg = null)
+    {
+        Arg ??= 0;
+        if (Gd.Truth(Sim))
         {
-            this.Join();
+            Sim.Action(MyId, Kind, Arg);
+        }
+    }
+
+    public override void _PhysicsProcess(double delta)
+    {
+        dynamic Dt = (float)delta;
+        if (Gd.Truth(Sim))
+        {
+            Sim.Tick(Dt);
+            Frame += 1;
+            // the renderer reads a snapshot 20 times per second, as a client would
+            if (((Frame % 3) == 0))
+            {
+                this.OnSnap(Gd.FromVariant(Sim.Snapshot()));
+            }
+        }
+        if (((MyId != 0) && Gd.Truth(Gd.Has(Snap, "ps"))))
+        {
+            this.Move(Dt);
         }
     }
 
@@ -232,10 +264,6 @@ public partial class Main : Node2D
             if (Gd.Truth(Sim))
             {
                 Sim.Input(MyId, LocalPos, Aim, Atk, Inter, Ent, LocalTp, InputSequence);
-            }
-            else
-            {
-                RpcId(1, "CInput", LocalPos, Aim, Atk, Inter, Ent, LocalTp, InputSequence);
             }
         }
     }
@@ -429,10 +457,6 @@ public partial class Main : Node2D
         if ((Ph == "lobby"))
         {
             this.LobbyUi();
-            if ((Gd.Contains(Gd.Static(typeof(OS), "get_cmdline_user_args"), "--autojoin") && (MyId == Snap.Leader) && Gd.Truth(Gd.Has(Snap.Ps, MyId))))
-            {
-                this.Act("start");
-            }
         }
         Hud.QueueRedraw();
         Gd.Native(this, "queue_redraw");
@@ -554,7 +578,7 @@ public partial class Main : Node2D
                 dynamic P = Gd.At(Snap.Ps, Id);
                 Eng = (Gd.Truth(Eng) || (Gd.At(P, 1) == 2));
                 Row.Name.Text = (Gd.At(P, 0) + ((Id == MyId) ? (dynamic)("  / YOU") : ""));
-                Row.Meta.Text = (Gd.At(GameSim.ROLES, Gd.At(P, 1)) + ((Id < 0) ? (dynamic)("  ·  AI teammate") : "  ·  Connected"));
+                Row.Meta.Text = (Gd.At(GameSim.ROLES, Gd.At(P, 1)) + ((Id < 0) ? (dynamic)("  ·  AI teammate") : "  ·  You"));
                 Row.Badge.Text = ((Id == Snap.Leader) ? (dynamic)("LEADER") : ((Id < 0) ? (dynamic)("BOT") : "CREW"));
                 Row.Badge.AddThemeColorOverride("font_color", Gd.At(ROLE_COL, Gd.At(P, 1)));
                 Row.Icon.Texture = this.Portrait(Gd.At(P, 1));
@@ -564,7 +588,7 @@ public partial class Main : Node2D
             {
                 Row.Name.Text = "Open crew slot";
                 Row.Name.Modulate = Gd.MakeColor("64788A");
-                Row.Meta.Text = "Invite a friend or add a bot";
+                Row.Meta.Text = "Add a bot to fill this slot";
                 Row.Badge.Text = Gd.Format("%02d", (I + 1));
                 Row.Badge.AddThemeColorOverride("font_color", Gd.MakeColor("435768"));
             }
@@ -578,7 +602,7 @@ public partial class Main : Node2D
         LobbyHint.Modulate = (Gd.Truth(Eng) ? (dynamic)(Gd.MakeColor("89A498")) : Gd.MakeColor("F2B544"));
         if (!(Gd.Truth(Gd.Has(Snap.Ps, MyId))))
         {
-            LobbyHint.Text = "Lobby full or match running. Rejoin later.";
+            LobbyHint.Text = "Lobby full.";
         }
         LobbyRole.Disabled = !(Gd.Truth(Gd.Has(Snap.Ps, MyId)));
         if ((Gd.Truth(Gd.Has(Snap.Ps, MyId)) && !(Gd.Truth(LobbyRole.HasFocus()))))
@@ -1566,7 +1590,7 @@ public partial class Main : Node2D
         Lobby.AddThemeConstantOverride("separation", 8);
         LobbyPanel.AddThemeStyleboxOverride("panel", this.UiStyle(Gd.MakeColor("0D1823"), Gd.MakeColor("3C505A"), 1, 16));
         Menu.AddChild(this.UiLabel("YOUR WATCH BEGINS HERE", 10, GOLD));
-        Menu.AddChild(this.UiLabel("Join the watch", 32, Colors.White, true));
+        Menu.AddChild(this.UiLabel("Take the watch", 32, Colors.White, true));
         Menu.AddChild(this.UiLabel("CALLSIGN", 10, Gd.MakeColor("8499AC")));
         NameEdit.PlaceholderText = "Your name";
         NameEdit.Text = Gd.Format("Player%d", GD.RandRange(1, 99));
@@ -1583,37 +1607,9 @@ public partial class Main : Node2D
         Menu.AddChild(this.UiLabel("CHOOSE YOUR ROLE", 10, Gd.MakeColor("8499AC")));
         Menu.AddChild(RoleOpt);
         Menu.AddChild(this.RoleCard(RoleOpt));
-        dynamic HostBtn = this.UiButton("HOST A CREW  >", true);
-        Gd.Connect(HostBtn, "pressed", (Action<dynamic[]>)(SignalArgs => { Host(true); }));
-        Menu.AddChild(HostBtn);
-        dynamic Divider = Gd.Wrap(new HBoxContainer());
-        Divider.AddThemeConstantOverride("separation", 10);
-        foreach (dynamic I in Gd.Iter(3))
-        {
-            if ((I == 1))
-            {
-                Divider.AddChild(this.UiLabel("OR JOIN FRIENDS", 10, Gd.MakeColor("8499AC")));
-            }
-            else
-            {
-                dynamic Line = Gd.Wrap(new HSeparator());
-                Line.SizeFlagsHorizontal = Gd.EnumValue(typeof(Control), "SIZE_EXPAND_FILL", 3);
-                Line.SizeFlagsVertical = Gd.EnumValue(typeof(Control), "SIZE_SHRINK_CENTER", 4);
-                Divider.AddChild(Line);
-            }
-        }
-        Menu.AddChild(Divider);
-        dynamic JoinRow = Gd.Wrap(new HBoxContainer());
-        IpEdit.Text = "127.0.0.1";
-        IpEdit.PlaceholderText = "Host IP address";
-        IpEdit.SizeFlagsHorizontal = Gd.EnumValue(typeof(Control), "SIZE_EXPAND_FILL", 3);
-        { var Component1 = IpEdit.CustomMinimumSize; Component1.X = 0; IpEdit.CustomMinimumSize = Component1; }
-        JoinRow.AddChild(IpEdit);
-        dynamic JoinBtn = this.UiButton("JOIN  >");
-        { var Component2 = JoinBtn.CustomMinimumSize; Component2.X = 76; JoinBtn.CustomMinimumSize = Component2; }
-        Gd.Connect(JoinBtn, "pressed", (Action<dynamic[]>)(SignalArgs => { Join(); }));
-        JoinRow.AddChild(JoinBtn);
-        Menu.AddChild(JoinRow);
+        dynamic PlayBtn = this.UiButton("PLAY  >", true);
+        Gd.Connect(PlayBtn, "pressed", (Action<dynamic[]>)(SignalArgs => { StartLocal(); }));
+        Menu.AddChild(PlayBtn);
         Status.AddThemeFontSizeOverride("font_size", 11);
         Status.AddThemeColorOverride("font_color", Gd.MakeColor("F2B544"));
         Status.AutowrapMode = Gd.EnumValue(typeof(TextServer), "AUTOWRAP_WORD_SMART", 3);
@@ -1657,7 +1653,7 @@ public partial class Main : Node2D
             Names.AddThemeConstantOverride("separation", 1);
             Names.SizeFlagsHorizontal = Gd.EnumValue(typeof(Control), "SIZE_EXPAND_FILL", 3);
             dynamic Pname = this.UiLabel("Open crew slot", 13);
-            dynamic Meta = this.UiLabel("Invite a friend or add a bot", 10, Gd.MakeColor("8499AC"));
+            dynamic Meta = this.UiLabel("Add a bot to fill this slot", 10, Gd.MakeColor("8499AC"));
             Names.AddChild(Pname);
             Names.AddChild(Meta);
             Row.AddChild(Names);
@@ -1667,7 +1663,7 @@ public partial class Main : Node2D
             Crew.AddChild(Card);
             Gd.Append(Roster, new GDict { { "icon", Icon }, { "name", Pname }, { "meta", Meta }, { "badge", Badge } });
         }
-        Crew.AddChild(this.UiLabel("Invite friends using your host's IP address.", 11, Gd.MakeColor("8499AC")));
+        Crew.AddChild(this.UiLabel("Solo for now: add AI teammates on the right (multiplayer comes later).", 11, Gd.MakeColor("8499AC")));
         dynamic Setup = Gd.Wrap(new VBoxContainer());
         { var Component6 = Setup.CustomMinimumSize; Component6.X = 248; Setup.CustomMinimumSize = Component6; }
         Setup.AddThemeConstantOverride("separation", 8);
