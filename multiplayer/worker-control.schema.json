@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Hold 'til Dawn match worker control v1",
+  "description": "The directory listens on IPv4 loopback. Each worker connects and retains ENet and simulation ownership across TCP sessions.",
+  "$comment": "The schema validates a decoded JSON envelope. x-protocol specifies framing and payload contracts.",
+  "type": "array",
+  "minItems": 9,
+  "maxItems": 9,
+  "prefixItems": [
+    {"const": "1"},
+    {"enum": ["worker", "manager"]},
+    {"$ref": "#/$defs/token"},
+    {"$ref": "#/$defs/token"},
+    {"enum": ["7778", "7779", "7780"]},
+    {"type": "string", "pattern": "^[1-9][0-9]*$"},
+    {"$ref": "#/$defs/token"},
+    {"type": "string", "pattern": "^[A-Za-z0-9+/]*={0,2}$"},
+    {"$ref": "#/$defs/hex32"}
+  ],
+  "$defs": {
+    "token": {"type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}$"},
+    "hex32": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "ticketId": {"type": "string", "pattern": "^[0-9a-f]{32}$"},
+    "reserve": {
+      "type": "object",
+      "required": ["requestId", "identity", "name", "role", "creator", "expiresAt"],
+      "properties": {
+        "requestId": {"$ref": "#/$defs/token"},
+        "identity": {"$ref": "#/$defs/token"},
+        "name": {"type": "string", "minLength": 1, "maxLength": 64},
+        "role": {"enum": [0, 1, 2]},
+        "creator": {"type": "boolean"},
+        "expiresAt": {"type": "integer", "minimum": 1, "maximum": 9007199254740991}
+      }
+    },
+    "state": {
+      "type": "object",
+      "required": ["name", "state", "mode", "humans", "pending", "bots", "capacity", "available", "creatorAdmitted", "leader", "pid", "protocol", "content"],
+      "properties": {
+        "name": {"type": "string", "maxLength": 16},
+        "state": {"enum": ["waiting", "playing", "timeout", "result"]},
+        "mode": {"enum": [0, 1, 2]},
+        "humans": {"type": "integer", "minimum": 0, "maximum": 5},
+        "pending": {"type": "integer", "minimum": 0, "maximum": 5},
+        "bots": {"type": "integer", "minimum": 0, "maximum": 5},
+        "capacity": {"const": 5},
+        "available": {"type": "integer", "minimum": 0, "maximum": 5},
+        "creatorAdmitted": {"type": "boolean"},
+        "leader": {"type": "integer", "minimum": 0},
+        "pid": {"type": "integer", "minimum": 1},
+        "protocol": {"const": 1},
+        "content": {"const": "island-1"},
+        "sequence": {"type": "integer", "minimum": 1}
+      }
+    }
+  },
+  "x-protocol": {
+    "launch": {
+      "args": ["--headless", "--", "--match-worker"],
+      "environment": {
+        "MATCH_ROOM_ID": "Opaque room token.",
+        "MATCH_GENERATION": "Opaque unique generation token assigned before spawn.",
+        "MATCH_ROOM_NAME": "Initial creator name, stripped and truncated to 16 characters.",
+        "MATCH_UDP_PORT": "Exactly 7778, 7779, or 7780.",
+        "CONTROL_ENDPOINT": "127.0.0.1:<TCP port>.",
+        "ADMISSION_SECRET_FILE": "Protected file readable by the manager and worker containing 32 bytes as 64 lowercase hexadecimal characters, optionally followed by a newline."
+      },
+      "readiness": "A bound UDP socket is not readiness. Wait for signed ready. The worker exits nonzero on invalid initial configuration, bind failure, failed control authentication, or a 5 second initial control deadline."
+    },
+    "framing": "4-byte unsigned big-endian byte length, then 1 to 8192 UTF-8 bytes containing the JSON envelope. Close the TCP session on malformed frame, invalid MAC, wrong context, unexpected counter, or handshake error.",
+    "envelopeFields": ["version", "direction", "roomId", "generation", "udpPort", "counter", "type", "body", "mac"],
+    "envelopeSigning": "HMAC-SHA-256 over UTF-8 lines hold-til-dawn/control, version, direction, roomId, generation, udpPort, counter, type, body, joined by LF with no final LF. body is canonical padded RFC 4648 Base64 of UTF-8 JSON object bytes as sent. Sign the encoded body bytes unchanged. mac is lowercase hexadecimal. Counters are canonical decimal strings and must increase by exactly one in each direction.",
+    "registration": [
+      "Worker hello (counter 1, host recovery key) with {pid, nonce, reportSequence}. nonce is 32 fresh random bytes in lowercase hex. reportSequence is the last emitted heartbeat sequence, initially 0.",
+      "Manager challenge (counter 1, host recovery key) with {workerNonce, managerNonce}. Echo hello.nonce; managerNonce is 32 fresh random bytes in lowercase hex. Verify against the expected room, generation, UDP port and process lease before replying.",
+      "Both derive the session key as HMAC-SHA-256 with the raw host recovery key over UTF-8 lines hold-til-dawn/session, 1, roomId, generation, udpPort, pid, reportSequence, workerNonce, managerNonce with no final LF. Use raw digest bytes as the new key. pid and reportSequence use decimal.",
+      "Worker register (counter 2, session key) with {pid, reportSequence}. Manager registered (counter 2, session key) with {}. Both must verify the derived key before processing later records.",
+      "Worker ready with a state projection, then heartbeat with state and sequence. Retain the last observed sequence for the generation when reconciling duplicate or stale publishers. Restarted managers reconstruct from authenticated state and retain port leases until process ownership is reconciled.",
+      "After initial readiness the worker reconnects every 250 ms after control loss, with fresh nonces and counters. Keep the signed ping response flowing at least once per second, normally in reply to each heartbeat. Five seconds with no authenticated inbound traffic invalidates the control session. The worker survives control loss. New reservations and ENet admission are suspended until authenticated again, and outstanding tickets continue expiring."
+    ],
+    "managerCommands": {
+      "reserve": "Payload matches #/$defs/reserve. requestId must be unique for a new operation, scoped to caller and operation by the manager. Retry the identical payload with its original expiresAt. expiresAt is Unix milliseconds, strictly in the future and at most 30000 ms from the worker clock. Ticket lifetime then uses the monotonic worker clock.",
+      "cancel": "Payload {ticketId}. A cancel releases a pending ticket only.",
+      "ping": "Payload {}. Sent at least once per second or in reply to each heartbeat.",
+      "close": "Payload {}. Graceful intentional room shutdown. Only send after authenticating the current generation."
+    },
+    "workerEvents": {
+      "ready": "Payload matches #/$defs/state. Emitted once per established session.",
+      "heartbeat": "Payload matches #/$defs/state plus required sequence. Emitted as the state projection changes and at least every 1000 ms while online. available counts physical slots including held vacancies. Only expose it for joining when waiting and creatorAdmitted is true.",
+      "creator_admitted": "Payload matches #/$defs/state. A re-registering worker can report creatorAdmitted=true after the event was lost.",
+      "reservation": "Payload {requestId, code}; for reserved only adds {ticketId, secret, expiresAt}. secret is 32 random bytes encoded as lowercase hexadecimal. Handle room_started as a terminal response including for an already delivered reservation. Do not expose or log credentials except the direct Phase 3 WSS response to their intended client.",
+      "cancellation": "Payload {ticketId, code}, with code cancelled or unknown_ticket.",
+      "closing": "Payload {code: closed}. A port can be released after the worker process actually exits.",
+      "error": "Payload {code: unknown_command}."
+    },
+    "reservationCodes": ["reserved", "invalid_request", "expired", "recovering", "request_conflict", "room_started", "creator_pending", "creator_exists", "full", "identity_in_use", "busy", "unavailable", "cancelled", "admitted", "insertion_failed"],
+    "enetAdmission": {
+      "version": 1,
+      "content": "island-1-client-2",
+      "versionPolicy": "The admission content string identifies the client build, including map compatibility and the required input acknowledgement field. Bump the protocol on incompatible ENet wire changes.",
+      "rpcRoot": "/root/Main",
+      "procedure": [
+        "After connecting, c_admission_begin(protocol, content, ticketId, clientNonce). ticketId is 16 bytes and clientNonce is 32 fresh random bytes, both lowercase hex. One challenge attempt per ENet connection.",
+        "The worker responds s_admission_challenge(roomId, generation, challenge) or s_admission_result(code). Match roomId and generation against the WSS assignment before proving. challenge is 32 random bytes in lowercase hex.",
+        "c_admission_prove(proof) sends lowercase hex HMAC-SHA-256 using raw ticket secret bytes over UTF-8 lines version, roomId, generation, ticketId, decimal ENet peer ID, clientNonce, challenge, joined by LF with no final LF. Neither admission RPC carries the secret.",
+        "The worker sends s_admission_result(admitted) after inserting the player. Failure codes are invalid_attempt, incompatible_content, room_unavailable, invalid_ticket, unavailable, invalid_proof, insertion_failed.",
+        "A connection has 5000 ms to admit; a challenge has at most 3000 ms within that deadline. There are 13 ENet transport slots to serve up to five humans and bound unadmitted connections. In active play and technical timeouts continue sending c_input on the existing 20 Hz cadence for liveness."
+      ],
+      "actions": "c_action continues to carry (kind, arg). Ready uses (ready, bool); technical timeout votes use (timeout_vote, [step, bool]) where step is continue or bot and true selects Continue or Bot. A vote can change until its stage closes. The admitted s_snap dictionary retains existing fields and adds seed, result, storage and room. room contains name, state, ready and bots (peer-ID arrays), timeout, remainingMs, vacancies (names), votes (affirmative), votesCast, noEngineer and inputAcks (highest received input sequence by admitted peer, including while frozen). Clients continue sending c_input while admitted and use the transport acknowledgement independently of the simulated movement acknowledgement in ps. Resume increments the teleport serial to reject inputs sampled before the pause."
+    }
+  }
+}

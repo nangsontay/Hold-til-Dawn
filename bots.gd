@@ -1,5 +1,5 @@
 extends RefCounted
-## Bot teammates for demos and solo playtests (not in the GDD). They run on the server inside GameSim and
+## Demo bots and managed-match replacements. They run on the server inside GameSim and
 ## follow the same rules as people: a bot only sets what a player's input sets (where it stands, aim,
 ## attack, hold E) or calls the same actions (bandage, flask, craft). No planning, just priorities:
 ##   dodge a boss slam > revive a downed teammate > heal (Healer) > fight > repair a door (Engineer)
@@ -13,6 +13,10 @@ const SIGHT_DAY := 6.0 * T  # by day a bot fights what comes this close
 const LEASH := 8.0 * T  # at dusk and night a bot fights within this distance of its post
 const FLASK_AT := 0.55  # the Healer throws a flask at a teammate below this share of HP
 const BANDAGE_AT := 0.4
+const STACK_LIMIT := 20
+const CARRY_SLOTS := 12
+const STORAGE_SLOTS := 40
+const WORKBENCH := Vector2(0, 1.6 * T)
 const BODY := 0.4 * T  # same circle the client uses against walls
 const BENCH_SPOTS := [Vector2(-2.5, 1.6), Vector2(2.5, 1.6), Vector2(-3.5, 0.6), Vector2(3.5, 0.6)]  # tiles
 
@@ -50,6 +54,20 @@ static func remove(sim) -> void:
 			return
 
 
+static func replace(p: Dictionary) -> void:
+	p.bot = true
+	p.replacement = true
+	p.nav_t = 0.0
+	p.bot_node = -1
+
+
+static func free_stack_space(inventory: Dictionary, item: String, slots: int) -> int:
+	for amount: int in inventory.values():
+		slots -= ceili(float(amount) / STACK_LIMIT)
+	var remainder: int = int(inventory.get(item, 0)) % STACK_LIMIT
+	return maxi(0, slots) * STACK_LIMIT + (STACK_LIMIT - remainder if remainder > 0 else 0)
+
+
 static func tick(sim, dt: float) -> void:
 	var playing: bool = sim.phase in ["day", "dusk", "night"]
 	var slot := 0
@@ -62,8 +80,69 @@ static func tick(sim, dt: float) -> void:
 		p.nav_t = p.get("nav_t", 0.0) - dt
 		p.bot_cd -= dt
 		if playing and p.state == 0:
-			_think(sim, p, slot, dt)
+			if p.get("replacement", false):
+				_think_replacement(sim, p, dt)
+			else:
+				_think(sim, p, slot, dt)
 		slot += 1
+
+
+static func _think_replacement(sim, p, dt: float) -> void:
+	var day: bool = sim.phase == "day"
+	if sim.phase == "night" and GameSim.inside_base(p.pos, BODY):
+		var door: int = sim._nearest_door(p.pos)
+		sim._teleport(p, GameSim.DOOR_POS[door] + GameSim.DOOR_DIR[door] * T)
+		p.inside = false
+		return
+	if GameSim.wall_dist(p.pos) > GameSim.SAFE_D:
+		var edge: Vector2 = p.pos.clamp(-GameSim.HALF, GameSim.HALF)
+		_move(sim, p, edge + (p.pos - edge).limit_length(GameSim.SAFE_D - T), dt)
+		return
+	if p.role == 1:
+		var down = _nearest(sim, p, func(q):
+			return q.state == 1 and GameSim.wall_dist(q.pos) <= GameSim.SAFE_D and (sim.phase != "night" or not GameSim.inside_base(q.pos, BODY)), 8.0 * T)
+		if down != null:
+			p.inter = p.pos.distance_to(down.pos) <= T and sim.line_clear(p.pos, down.pos)
+			if not p.inter:
+				_move(sim, p, down.pos, dt)
+			return
+	if p.hp < BANDAGE_AT * p.maxhp and p.inv.bandage > 0 and p.channel <= 0:
+		sim.action(p.id, "bandage", 0)
+	if p.channel > 0:
+		return
+	if p.role == 2 and p.inv.wood > 0 and _repair(sim, p, dt):
+		return
+	if day:
+		if not ["wood", "stone", "herb"].any(func(item): return free_stack_space(p.inv, item, CARRY_SLOTS) > 0):
+			if p.pos.distance_to(WORKBENCH) > T:
+				_move(sim, p, WORKBENCH, dt)
+			else:
+				for item in GameSim.RES:
+					var amount: int = mini(p.inv[item], free_stack_space(sim.storage, item, STORAGE_SLOTS))
+					sim.storage[item] = sim.storage.get(item, 0) + amount
+					p.inv[item] -= amount
+		else:
+			_gather(sim, p, dt)
+		return
+	var door: int = sim.active[0]
+	var fewest := 6
+	for i: int in sim.active:
+		var count := 0
+		for q in sim.players.values():
+			if q.id != p.id and q.state == 0 and q.pos.distance_to(GameSim.DOOR_POS[i]) <= 6.0 * T:
+				count += 1
+		if count < fewest:
+			door = i
+			fewest = count
+	var door_pos: Vector2 = GameSim.DOOR_POS[door]
+	var foe = _foe(sim, p, door_pos)
+	if foe != null:
+		p.atk = p.pos.distance_to(foe.pos) <= 1.5 * T + foe.r
+		if not p.atk:
+			_move(sim, p, foe.pos, dt)
+		p.aim = (foe.pos - p.pos).angle()
+	else:
+		_move(sim, p, door_pos + GameSim.DOOR_DIR[door] * 2.0 * T, dt)
 
 
 static func _think(sim, p, slot: int, dt: float) -> void:
@@ -141,6 +220,8 @@ static func _foe(sim, p, post: Vector2):
 			ok = d <= SIGHT_DAY or e.get("target", 0) == p.id
 		else:
 			ok = d <= 2.5 * T or e.pos.distance_to(post) <= LEASH or GameSim.inside_base(e.pos)
+		if p.get("replacement", false):
+			ok = e.pos.distance_to(post) <= 6.0 * T and not GameSim.inside_base(e.pos, BODY)
 		if ok and d < best_d and sim.line_clear(p.pos, e.pos):
 			best_d = d
 			best = e
@@ -166,7 +247,7 @@ static func _repair(sim, p, dt: float) -> bool:
 		var cap: float = GameSim.DOOR_HP * (0.3 if sim.broken[i] else 1.0)
 		if sim.doors[i] >= cap - 1.0 or sim.door_pause[i] > 0 or (sim.broken[i] and sim._enemy_inside()):
 			continue
-		if best < 0 or p.pos.distance_to(GameSim.DOOR_POS[i]) < p.pos.distance_to(GameSim.DOOR_POS[best]):
+		if best < 0 or (sim.doors[i] < sim.doors[best] if p.get("replacement", false) else p.pos.distance_to(GameSim.DOOR_POS[i]) < p.pos.distance_to(GameSim.DOOR_POS[best])):
 			best = i
 	if best < 0:
 		return false
@@ -180,7 +261,7 @@ static func _repair(sim, p, dt: float) -> bool:
 
 static func _gather(sim, p, dt: float) -> void:
 	var i: int = p.bot_node
-	if i < 0 or i >= sim.nodes.size() or sim.nodes[i].amount <= 0:
+	if i < 0 or i >= sim.nodes.size() or not _can_gather_node(p, sim.nodes[i]):
 		i = _pick_node(sim, p)
 		p.bot_node = i
 	if i < 0:
@@ -193,6 +274,11 @@ static func _gather(sim, p, dt: float) -> void:
 		p.inter = true  # hold E standing still (MEC-08)
 
 
+static func _can_gather_node(p, nd) -> bool:
+	return nd.type != 3 and nd.amount > 0 and (not p.get("replacement", false) or (
+		GameSim.wall_dist(nd.pos) <= GameSim.SAFE_D and free_stack_space(p.inv, GameSim.RES[nd.type], CARRY_SLOTS) > 0))
+
+
 static func _pick_node(sim, p) -> int:
 	## Nearest safe-zone node (no metal), its favourite resource counted as 12 tiles closer; one bot per node.
 	var taken := []
@@ -203,7 +289,7 @@ static func _pick_node(sim, p) -> int:
 	var best_s := INF
 	for i in sim.nodes.size():
 		var nd = sim.nodes[i]
-		if nd.type == 3 or nd.amount <= 0 or i in taken:
+		if i in taken or not _can_gather_node(p, nd):
 			continue
 		var s: float = p.pos.distance_to(nd.pos) - (12.0 * T if nd.type == GATHER[p.role] else 0.0)
 		if s < best_s:
@@ -243,12 +329,19 @@ static func _move(sim, p, goal: Vector2, dt: float) -> void:
 	if step.length() < 1.0:
 		return
 	var spd: float = GameSim.SPEED * (1.2 if p.role == 0 else 1.0)
+	var started_in_zone := GameSim.wall_dist(p.pos) <= GameSim.SAFE_D
 	p.pos = sim.move_actor(p.pos, p.pos + step.normalized() * minf(spd * dt, step.length()), 0.3 * T)
 	p.aim = step.angle()
 	p.pos = p.pos.limit_length(GameSim.ISLAND)
 	var night: bool = sim.phase == "night"
 	p.pos = GameSim.collide(p.pos, BODY, sim.doors.map(func(d): return not night or d <= 0))
-	if night and not p.inside and not sim.doors.any(func(d): return d <= 0):
+	if p.get("replacement", false):
+		if started_in_zone:
+			var edge: Vector2 = p.pos.clamp(-GameSim.HALF, GameSim.HALF)
+			p.pos = edge + (p.pos - edge).limit_length(GameSim.SAFE_D)
+		if night:
+			p.pos = GameSim.push_out(p.pos, BODY)
+	elif night and not p.inside and not sim.doors.any(func(d): return d <= 0):
 		p.pos = GameSim.push_out(p.pos, BODY)
 
 

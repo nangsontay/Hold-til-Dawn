@@ -5,6 +5,10 @@ extends Node2D
 ## Dedicated server: godot --headless --path . -- --server
 
 const PORT := 7777
+const MatchWorker = preload("res://match-worker.gd")
+const LobbyClient = preload("res://multiplayer/lobby-client.gd")
+const WORKER_LIVE_MS := 4800  # Leave time for packet polling and menu processing within the 5 s deadline.
+enum Connection { DIRECTORY, RESERVING, CONNECTING, ADMITTED, CREW, MATCH }
 const T := GameSim.T
 const ROLE_COL := [Color("2BB3B1"), Color("F2F2F2"), Color("FF7A1A")]
 const RES_COL := [Color("A0703C"), Color("9AA0A8"), Color("3DBE5A"), Color("C9834A")]
@@ -50,6 +54,19 @@ const BODY_R := 0.3 * T  # a player's feet
 const ENEMY_BODY := 0.6  # times the enemy's radius: small enough that every enemy still reaches you to hit
 
 var sim: GameSim  # only on the server
+var worker: MatchWorker
+var directory: LobbyClient
+var directory_open := false
+var directory_url := ""
+var connection := Connection.DIRECTORY
+var admission := {}
+var admission_deadline := 0
+var worker_linked := false
+var proof_sent := false
+var last_worker_packet := 0
+var last_worker_ack := 0
+var worker_ack := 0
+var notice := ""
 var snap := {}
 var my_id := 0
 var local_pos := Vector2.ZERO
@@ -74,7 +91,7 @@ var gen_flash := 0.0
 var door_flash := [0.0, 0.0, 0.0]
 var craft_open := false
 var deco: Array = []  # [pos, sprite, scale, tint]: trees, rocks and bushes
-var geometry = GameSim.Geometry.new()
+var geometry: GameSim.Geometry
 var camera_focus := Vector2.ZERO
 var camera_tp := -1
 var anim_state := {}
@@ -82,7 +99,7 @@ var debug_geometry := false
 var scatter: Array = []  # [pos, sprite, scale]: flat grass, flowers, pebbles
 var spr := {}  # sprite name -> [Texture2D, anchor px]
 var nvar := {}  # model name -> number of turned variants baked
-var ground_tex := NoiseTexture2D.new()
+var ground_tex: NoiseTexture2D
 var csheet := {}  # character -> Texture2D: rows right, down, left, up; columns idle 0-1, walk 0-3
 var cinfo := {}  # chars.json: frames {anim: [first column, count]}, fps, chars {name: {size, anchor}}
 var cmove := {}  # character key -> [last foot, clock when it last moved, facing angle]
@@ -97,31 +114,43 @@ var shot_at := 4.0
 var shot_pos = null
 var clock := 0.0
 
-var cam := Camera2D.new()
-var tint := CanvasModulate.new()
-var my_light := PointLight2D.new()
-var beacon := PointLight2D.new()
-var menu_panel := PanelContainer.new()
-var menu := VBoxContainer.new()
-var name_edit := LineEdit.new()
-var role_opt := OptionButton.new()
-var ip_edit := LineEdit.new()
-var status := Label.new()
-var lobby_panel := PanelContainer.new()
-var lobby := VBoxContainer.new()
-var lobby_text := Label.new()
-var lobby_role := OptionButton.new()
-var mode_opt := OptionButton.new()
-var start_btn := Button.new()
-var bot_row := HBoxContainer.new()
-var hud := Control.new()
-var banner := Label.new()
-var front := Control.new()
+var cam: Camera2D
+var tint: CanvasModulate
+var my_light: PointLight2D
+var beacon: PointLight2D
+var menu_panel: PanelContainer
+var menu: VBoxContainer
+var name_edit: LineEdit
+var role_opt: OptionButton
+var status: Label
+var play_btn: Button
+var directory_controls: VBoxContainer
+var create_btn: Button
+var refresh_btn: Button
+var cancel_btn: Button
+var room_rows: Array = []
+var lobby_panel: PanelContainer
+var lobby: VBoxContainer
+var lobby_text: Label
+var lobby_role: OptionButton
+var mode_opt: OptionButton
+var start_btn: Button
+var ready_btn: Button
+var bot_row: HBoxContainer
+var hud: Control
+var banner: Label
+var front: Control
 var roster: Array = []
-var lobby_hint := Label.new()
-var lobby_count := Label.new()
+var lobby_hint: Label
+var lobby_count: Label
 var role_cards: Array = []
 var bot_buttons: Array[Button] = []
+var vote_panel: PanelContainer
+var vote_title: Label
+var vote_details: Label
+var vote_warning: Label
+var vote_buttons: Array[Button] = []
+var vote_choice := -1
 var portraits := {}
 const ROLE_INFO := [
 	["FAST & FEARLESS", "Move faster. Strike faster.\nScout the island and lead the fight."],
@@ -131,16 +160,31 @@ const ROLE_INFO := [
 
 
 func _ready() -> void:
+	multiplayer.peer_connected.connect(_on_peer_connected)
 	multiplayer.peer_disconnected.connect(_on_peer_left)
 	multiplayer.connected_to_server.connect(_on_connected)
-	multiplayer.connection_failed.connect(_back_to_menu.bind("Could not connect"))
-	multiplayer.server_disconnected.connect(_back_to_menu.bind("Server stopped"))
-	if DisplayServer.get_name() == "headless" or "--server" in OS.get_cmdline_user_args():
+	multiplayer.connection_failed.connect(_worker_disconnected)
+	multiplayer.server_disconnected.connect(_worker_disconnected)
+	var args := OS.get_cmdline_user_args()
+	var headless := DisplayServer.get_name() == "headless"
+	if "--match-worker" in args:
+		_host_worker()
+		return
+	if OS.is_debug_build() and ("--server" in args or (headless and "--headless-client" not in args)):
 		_host(false)
+		return
+	if headless:
+		if not OS.is_debug_build():
+			get_tree().quit(1)
+			return
+		geometry = GameSim.Geometry.new()
+		_setup_directory(args)
 		return
 	_build_scene()
 	_build_ui()
-	var args := OS.get_cmdline_user_args()
+	_setup_directory(args)
+	if not OS.is_debug_build():
+		return
 	for a in args:
 		if a.begins_with("--shot="):
 			shot_path = a.substr(7)
@@ -171,10 +215,31 @@ func _ready() -> void:
 
 # --- network ------------------------------------------------------------
 
+func _host_worker() -> void:
+	var config := MatchWorker.config_from_environment()
+	if DisplayServer.get_name() != "headless" or config.is_empty():
+		push_error("Invalid managed match worker configuration")
+		get_tree().quit(1)
+		return
+	var peer := ENetMultiplayerPeer.new()
+	if peer.create_server(config.udp, MatchWorker.TRANSPORT_PEERS) != OK:
+		push_error("Could not bind managed match worker UDP port")
+		get_tree().quit(1)
+		return
+	sim = GameSim.new()
+	worker = MatchWorker.new(sim, config, Time.get_ticks_msec())
+	multiplayer.server_relay = false
+	multiplayer.multiplayer_peer = peer
+
+
 func _host(play: bool) -> void:
 	var peer := ENetMultiplayerPeer.new()
 	if peer.create_server(PORT, 5) != OK:
-		status.text = "UDP port %d is busy" % PORT
+		var why := "UDP port %d is busy" % PORT
+		if status:
+			status.text = why
+		else:
+			push_error(why)
 		return
 	multiplayer.multiplayer_peer = peer
 	sim = GameSim.new()
@@ -187,71 +252,316 @@ func _host(play: bool) -> void:
 
 func _join() -> void:
 	var peer := ENetMultiplayerPeer.new()
-	if peer.create_client(ip_edit.text.strip_edges(), PORT) != OK:
-		status.text = "Bad address"
+	if peer.create_client("127.0.0.1", PORT) != OK:
+		_set_notice("Could not connect to the local server")
 		return
 	multiplayer.multiplayer_peer = peer
-	status.text = "Connecting..."
+	_set_notice("Connecting…")
+
+
+func _setup_directory(args: PackedStringArray) -> void:
+	directory_url = LobbyClient.endpoint(args, OS.is_debug_build())
+	directory = LobbyClient.new()
+	directory.changed.connect(_directory_ui)
+	directory.assigned.connect(_on_assignment)
+	directory.rejected.connect(_reservation_rejected)
+
+
+func _exit_tree() -> void:
+	if directory:
+		directory.close()
+
+
+func _open_directory() -> void:
+	directory_open = true
+	_set_notice("")
+	if directory.state in [LobbyClient.State.CLOSED, LobbyClient.State.OFFLINE, LobbyClient.State.DEGRADED]:
+		directory.open(directory_url)
+	_directory_ui()
+
+
+func _request_room(room_id := "") -> void:
+	if connection != Connection.DIRECTORY:
+		return
+	if not directory.request(room_id, _name(), role_opt.selected if role_opt else 2):
+		_set_notice("Room is no longer available" if not room_id.is_empty() else "")
+		return
+	connection = Connection.RESERVING
+	_set_notice("Reserving a seat…")
+
+
+func _reservation_rejected(code: String) -> void:
+	if connection == Connection.CONNECTING and code == "room_started":
+		_back_to_menu("Match already running")
+		return
+	if connection != Connection.RESERVING:
+		return
+	connection = Connection.DIRECTORY
+	_set_notice(str({
+		"server_full": "Server full",
+		"server_draining": "Server maintenance",
+		"full": "Room full",
+		"expired": "Seat reservation expired",
+		"room_started": "Match already running",
+		"client_incompatible": "Update the game to join this server",
+		"reservation_timeout": "Seat reservation timed out",
+		"lobby_offline": "Server offline",
+		"degraded": "Server offline",
+		"invalid_assignment": "Invalid room assignment",
+	}.get(code, "Room is no longer available")))
+
+
+func _on_assignment(ticket: Dictionary) -> void:
+	if connection != Connection.RESERVING:
+		return
+	var endpoint = ticket.get("udpEndpoint")
+	var remaining = ticket.get("ttlMs")
+	if not endpoint is Dictionary or not endpoint.get("host") is String \
+			or not MatchWorker.Protocol.integer(endpoint.get("port"), 7778, 7780) \
+			or not MatchWorker.Protocol.integer(remaining, 1, MatchWorker.TICKET_MS) \
+			or not MatchWorker.Protocol.token(ticket.get("roomId")) or not MatchWorker.Protocol.token(ticket.get("generation")) \
+			or not MatchWorker.Protocol.is_hex(ticket.get("ticketId"), 16) or not MatchWorker.Protocol.is_hex(ticket.get("secret"), 32):
+		_back_to_menu("Invalid room assignment")
+		return
+	var deadline := Time.get_ticks_msec() + int(remaining)
+	var error := join_managed(endpoint.host, int(endpoint.port), ticket.roomId, ticket.generation, ticket.ticketId, ticket.secret)
+	if error != OK:
+		_back_to_menu("Could not reach the match worker. UDP may be blocked.")
+		return
+	admission_deadline = mini(admission_deadline, deadline)
+	_set_notice("Connecting to the match worker…")
 
 
 func _on_connected() -> void:
 	my_id = multiplayer.get_unique_id()
-	c_join.rpc_id(1, _name(), role_opt.selected)
+	if connection == Connection.CONNECTING and not admission.is_empty():
+		_configure_enet_timeout((multiplayer.multiplayer_peer as ENetMultiplayerPeer).get_peer(1))
+		worker_linked = true
+		c_admission_begin.rpc_id(1, MatchWorker.PROTOCOL, MatchWorker.CLIENT_BUILD, admission.ticket, admission.nonce)
+	elif connection == Connection.DIRECTORY and OS.is_debug_build():
+		c_join.rpc_id(1, _name(), role_opt.selected if role_opt else 0)
+
+
+func join_managed(host: String, port: int, room: String, generation: String, ticket: String, secret: String) -> Error:
+	if port not in [7778, 7779, 7780] or not MatchWorker.Protocol.token(room) or not MatchWorker.Protocol.token(generation) \
+			or not MatchWorker.Protocol.is_hex(ticket, 16) or not MatchWorker.Protocol.is_hex(secret, 32) \
+			or host.is_empty() or host.length() > 253 or ["/", "@", "?", "#", " ", "\n", "\r", "\t"].any(func(c): return host.contains(c)):
+		return ERR_INVALID_PARAMETER
+	var nonce := MatchWorker.Protocol.random_hex(32)
+	if nonce.length() != 64:
+		return ERR_UNAVAILABLE
+	var peer := ENetMultiplayerPeer.new()
+	var error := peer.create_client(host, port)
+	if error == OK:
+		connection = Connection.CONNECTING
+		worker_linked = false
+		proof_sent = false
+		admission = {"room": room, "generation": generation, "ticket": ticket, "secret": secret, "nonce": nonce}
+		admission_deadline = Time.get_ticks_msec() + MatchWorker.HANDSHAKE_MS
+		multiplayer.multiplayer_peer = peer
+	return error
+
+
+func _on_peer_connected(id: int) -> void:
+	if worker:
+		_configure_enet_timeout((multiplayer.multiplayer_peer as ENetMultiplayerPeer).get_peer(id))
+		worker.connected(id, Time.get_ticks_msec())
+
+
+func _configure_enet_timeout(peer: ENetPacketPeer) -> void:
+	peer.ping_interval(MatchWorker.ENET_PING_MS)
+	peer.set_timeout(8, MatchWorker.ENET_TIMEOUT_MIN_MS, MatchWorker.ENET_TIMEOUT_MAX_MS)
 
 
 func _on_peer_left(id: int) -> void:
-	if sim:
+	if worker:
+		worker.disconnected(id, Time.get_ticks_msec())
+	elif sim:
 		sim.remove_player(id)
 
 
 func _back_to_menu(why: String) -> void:
+	var was_admitted := connection >= Connection.ADMITTED
+	if directory:
+		directory.cancel_request()
+	connection = Connection.DIRECTORY
+	admission.clear()
+	admission_deadline = 0
+	worker_linked = false
+	proof_sent = false
+	last_worker_packet = 0
+	last_worker_ack = 0
+	worker_ack = 0
+	if multiplayer.multiplayer_peer:
+		multiplayer.multiplayer_peer.close()
 	multiplayer.multiplayer_peer = null
 	sim = null
 	snap = {}
 	my_id = 0
+	local_tp = -1
+	camera_tp = -1
+	send_acc = 0.0
 	pending_inputs.clear()
 	input_sequence = 0
-	status.text = why
+	vote_choice = -1
+	craft_open = false
+	for history in [shown_p, shown_e, prev_hp, prev_php, prev_pos, flash, cmove, slash_t, anim_state, popups, fx]:
+		history.clear()
+	_set_notice(why)
+	if directory_open and was_admitted:
+		directory.refresh()
+
+
+func _worker_disconnected() -> void:
+	if connection == Connection.CONNECTING:
+		_back_to_menu("Match worker disconnected during admission" if worker_linked else "Could not reach the match worker. UDP may be blocked.")
+	else:
+		_back_to_menu("Connection to the match worker lost")
+
+
+func _set_notice(why: String) -> void:
+	notice = why
+	_directory_ui()
 
 
 @rpc("any_peer", "call_remote", "reliable")
 func c_join(pname: String, role: int) -> void:
-	if sim:
+	if sim and not worker:
 		sim.add_player(multiplayer.get_remote_sender_id(), pname, role)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func c_admission_begin(protocol: int, content: String, ticket: String, nonce: String) -> void:
+	if not worker:
+		return
+	var id := multiplayer.get_remote_sender_id()
+	var reply := worker.challenge(id, protocol, content, ticket, nonce, Time.get_ticks_msec())
+	if reply.code == "challenge":
+		s_admission_challenge.rpc_id(id, reply.roomId, reply.generation, reply.challenge)
+	else:
+		s_admission_result.rpc_id(id, reply.code)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func c_admission_prove(proof: String) -> void:
+	if worker:
+		var id := multiplayer.get_remote_sender_id()
+		s_admission_result.rpc_id(id, worker.admit(id, proof, Time.get_ticks_msec()))
+
+
+@rpc("authority", "call_remote", "reliable")
+func s_admission_challenge(room: String, generation: String, challenge: String) -> void:
+	_on_admission_challenge(room, generation, challenge)
+
+
+func _on_admission_challenge(room: String, generation: String, challenge: String) -> void:
+	if connection != Connection.CONNECTING or admission.is_empty():
+		return
+	if room != admission.room or generation != admission.generation or not MatchWorker.Protocol.is_hex(challenge, 32):
+		_back_to_menu("Invalid worker challenge")
+		return
+	var proof := MatchWorker.ticket_proof(admission.secret, room, generation, admission.ticket, my_id, admission.nonce, challenge)
+	admission.clear()
+	proof_sent = true
+	c_admission_prove.rpc_id(1, proof.hex_encode())
+
+
+@rpc("authority", "call_remote", "reliable")
+func s_admission_result(code: String) -> void:
+	_on_admission_result(code)
+
+
+func _on_admission_result(code: String) -> void:
+	if connection != Connection.CONNECTING:
+		return
+	admission.clear()
+	admission_deadline = 0
+	if code != "admitted" or not proof_sent:
+		_back_to_menu(str({
+			"incompatible_content": "Game build does not match the worker",
+			"room_unavailable": "Room closed to admission",
+			"room_started": "Match already running",
+			"invalid_ticket": "Seat reservation is no longer valid",
+			"invalid_proof": "Worker rejected the seat credential",
+		}.get(code, "Could not join the room")))
+		return
+	if directory:
+		directory.finish_request()
+	connection = Connection.ADMITTED
+	last_worker_packet = Time.get_ticks_msec()
+	last_worker_ack = last_worker_packet
+	_set_notice("Entering the crew…")
 
 
 @rpc("any_peer", "call_remote", "unreliable_ordered")
 func c_input(pos: Vector2, aim: float, atk: bool, inter: bool, ent: bool, tp: int, sequence: int) -> void:
-	if sim:
-		sim.input(multiplayer.get_remote_sender_id(), pos, aim, atk, inter, ent, tp, sequence)
+	var id := multiplayer.get_remote_sender_id()
+	if sim and pos.is_finite() and is_finite(aim) and (not worker or worker.receive_input(id, sequence, Time.get_ticks_msec())):
+		sim.input(id, pos, aim, atk, inter, ent, tp, sequence)
 
 
 @rpc("any_peer", "call_remote", "reliable")
 func c_action(kind: String, arg: Variant) -> void:
-	if sim:
+	if worker:
+		worker.action(multiplayer.get_remote_sender_id(), kind, arg, Time.get_ticks_msec())
+	elif sim:
 		sim.action(multiplayer.get_remote_sender_id(), kind, arg)
 
 
 @rpc("authority", "call_remote", "unreliable_ordered")
 func s_snap(d: Dictionary) -> void:
+	if my_id == 0 or connection in [Connection.RESERVING, Connection.CONNECTING]:
+		return
+	if connection >= Connection.ADMITTED:
+		if not d.get("room") is Dictionary or not d.get("ps") is Dictionary or not d.ps.has(my_id):
+			return
+		var room: Dictionary = d.room
+		if room.get("state") not in ["waiting", "playing", "timeout", "result"] or not room.get("inputAcks") is Dictionary:
+			return
+		var now := Time.get_ticks_msec()
+		last_worker_packet = now
+		var ack: int = room.inputAcks.get(my_id, 0)
+		if ack > worker_ack and ack <= input_sequence:
+			last_worker_ack = now
+			worker_ack = ack
+		connection = Connection.CREW if room.state == "waiting" else Connection.MATCH
 	_on_snap(d)
 
 
 func _act(kind: String, arg: Variant = 0) -> void:
 	if sim:
 		sim.action(my_id, kind, arg)
-	elif my_id != 0:
+	elif my_id != 0 and connection != Connection.CONNECTING:
 		c_action.rpc_id(1, kind, arg)
 
 
 func _physics_process(dt: float) -> void:
+	var now := Time.get_ticks_msec()
+	if directory:
+		directory.tick(now)
+	if admission_deadline > 0 and now >= admission_deadline:
+		_back_to_menu("Room admission timed out" if worker_linked else "Could not reach the match worker. UDP may be blocked.")
+	if connection >= Connection.ADMITTED and now - mini(last_worker_packet, last_worker_ack) >= WORKER_LIVE_MS:
+		_back_to_menu("Connection to the match worker lost")
 	if sim:
-		sim.tick(dt)
+		if worker:
+			worker.update_control(now, int(Time.get_unix_time_from_system() * 1000.0))
+			for peer in worker.update_game(dt, now):
+				multiplayer.disconnect_peer(peer)
+			if worker.exit_code >= 0:
+				if worker.exit_code != 0:
+					push_error("Managed match worker control authentication failed")
+				multiplayer.multiplayer_peer.close()
+				get_tree().quit(worker.exit_code)
+				return
+		else:
+			sim.tick(dt)
 		frame += 1
 		if frame % 3 == 0:  # 20 Hz snapshots
-			var d := sim.snapshot()
-			if not multiplayer.get_peers().is_empty():
-				s_snap.rpc(d)
+			var d := worker.snapshot(now) if worker else sim.snapshot()
+			for peer in (worker.admitted.keys() if worker else multiplayer.get_peers()):
+				if sim.players.has(peer):
+					s_snap.rpc_id(peer, d)
 			if my_id == 1:
 				_on_snap(d)
 	if my_id != 0 and snap.has("ps"):
@@ -266,16 +576,18 @@ func _move(dt: float) -> void:
 		local_tp = me[15]
 		local_pos = me[2]
 		pending_inputs.clear()
-	var playing: bool = snap.ph in ["day", "dusk", "night"]
+	var paused: bool = not snap.get("room", {}).get("timeout", "").is_empty()
+	var playing: bool = snap.ph in ["day", "dusk", "night"] and not paused
 	if playing and me[5] == 0:
 		var dir := Vector2(_key(KEY_D) - _key(KEY_A), _key(KEY_S) - _key(KEY_W))
 		var destination := local_pos + dir.normalized() * GameSim.SPEED * (1.2 if me[1] == 0 else 1.0) * dt
 		local_pos = geometry.move_body(local_pos, destination, BODY_R, GameSim.walls(_doors_open()))
 		local_pos = _bump(local_pos, BODY_R)
-	local_pos = local_pos.limit_length(GameSim.ISLAND)
-	local_pos = GameSim.collide(local_pos, 0.4 * T, _doors_open())
-	if snap.ph == "night" and not _breach() and not me[19]:  # nobody shelters inside at night (except the Engineer, MEC-15)
-		local_pos = GameSim.push_out(local_pos, 0.4 * T)
+	if not paused:
+		local_pos = local_pos.limit_length(GameSim.ISLAND)
+		local_pos = GameSim.collide(local_pos, 0.4 * T, _doors_open())
+		if snap.ph == "night" and not _breach() and not me[19]:  # nobody shelters inside at night (except the Engineer, MEC-15)
+			local_pos = GameSim.push_out(local_pos, 0.4 * T)
 	send_acc += dt
 	if send_acc >= 0.05:
 		send_acc = 0.0
@@ -284,9 +596,10 @@ func _move(dt: float) -> void:
 		var inter := playing and Input.is_physical_key_pressed(KEY_E)
 		var ent := playing and Input.is_physical_key_pressed(KEY_F)
 		input_sequence += 1
-		pending_inputs[input_sequence] = local_pos
-		if pending_inputs.size() > 128:
-			pending_inputs.erase(pending_inputs.keys()[0])
+		if playing:
+			pending_inputs[input_sequence] = local_pos
+			if pending_inputs.size() > 128:
+				pending_inputs.erase(pending_inputs.keys()[0])
 		if sim:
 			sim.input(my_id, local_pos, aim, atk, inter, ent, local_tp, input_sequence)
 		else:
@@ -294,9 +607,15 @@ func _move(dt: float) -> void:
 
 
 func _unhandled_input(ev: InputEvent) -> void:
-	if ev is InputEventKey and ev.pressed and not ev.echo and ev.keycode == KEY_F3:
+	if OS.is_debug_build() and ev is InputEventKey and ev.pressed and not ev.echo and ev.keycode == KEY_F3:
 		debug_geometry = not debug_geometry
+	if ev is InputEventKey and ev.pressed and not ev.echo and ev.physical_keycode == KEY_ESCAPE:
+		if connection != Connection.DIRECTORY or my_id != 0:
+			_back_to_menu("Left the room" if my_id != 0 and connection != Connection.CONNECTING else "Join cancelled")
+		return
 	if my_id == 0 or not snap.has("ph"):
+		return
+	if not snap.get("room", {}).get("timeout", "").is_empty():
 		return
 	if ev is InputEventKey and ev.pressed and not ev.echo:
 		match ev.physical_keycode:
@@ -309,9 +628,8 @@ func _unhandled_input(ev: InputEvent) -> void:
 			KEY_C:
 				craft_open = not craft_open
 			KEY_F9:
-				_act("skip")
-			KEY_ESCAPE:
-				_back_to_menu("Left the match")
+				if OS.is_debug_build():
+					_act("skip")
 			_:
 				var n: int = ev.physical_keycode - KEY_1
 				if craft_open and n >= 0 and n < GameSim.RECIPES.size():
@@ -325,6 +643,11 @@ func _unhandled_input(ev: InputEvent) -> void:
 # --- hit feedback (derived from snapshot diffs, no extra network) -------
 
 func _on_snap(d: Dictionary) -> void:
+	var step: String = d.get("room", {}).get("timeout", "")
+	var prior_step: String = snap.get("room", {}).get("timeout", "")
+	if step != prior_step:
+		vote_choice = -1
+		craft_open = false
 	var same: bool = d.get("ph") == snap.get("ph") and d.get("k") == snap.get("k")
 	if same and d.ph in ["day", "dusk", "night"]:  # roamers fight by day too
 		var seen := {}
@@ -372,7 +695,11 @@ func _on_snap(d: Dictionary) -> void:
 	for id in d.get("ps", {}):
 		prev_php[id] = d.ps[id][3]
 	geometry.rebuild(d.get("nodes", []).map(func(n): return {"type": n[0], "pos": n[1], "amount": n[2]}), d.get("tw", []).map(func(tw): return {"pos": tw[1]}))
-	if mine != null and mine[15] == local_tp and mine.size() > 24:
+	if mine != null and (mine[15] != local_tp or not step.is_empty() or not prior_step.is_empty()):
+		local_tp = mine[15]
+		local_pos = mine[2]
+		pending_inputs.clear()
+	elif mine != null and mine.size() > 24:
 		var acknowledged: int = mine[24]
 		if pending_inputs.has(acknowledged):
 			var correction: Vector2 = mine[2] - pending_inputs[acknowledged]
@@ -399,13 +726,13 @@ func _sparks(pos: Vector2, n: int, col: Color, speed := 160.0) -> void:
 # --- per-frame ----------------------------------------------------------
 
 func _process(dt: float) -> void:
-	if sim and my_id == 0:
-		return  # dedicated server draws nothing
+	if not cam:
+		return
 	clock += dt
 	var ph: String = snap.get("ph", "")
 	var in_game := ph in ["day", "dusk", "night", "result"]
 	menu_panel.visible = ph == ""
-	lobby_panel.visible = ph == "lobby"
+	lobby_panel.visible = ph == "lobby" and (connection == Connection.CREW or not directory_open)
 	banner.visible = in_game
 	front.visible = not in_game
 	if front.visible:
@@ -414,10 +741,11 @@ func _process(dt: float) -> void:
 	var me_now = snap.get("ps", {}).get(my_id)
 	if ph != "day" and ph != "dusk" and not (ph == "night" and me_now != null and me_now[19]):
 		craft_open = false
-	banner.text = snap.get("msg", "")
-	if ph == "lobby":
+	banner.text = "Match ended by vote" if ph == "result" and snap.get("result") == "no_winner" else snap.get("msg", "")
+	_timeout_ui()
+	if lobby_panel.visible:
 		_lobby_ui()
-		if "--autojoin" in OS.get_cmdline_user_args() and my_id == snap.leader and snap.ps.has(my_id):
+		if OS.is_debug_build() and "--autojoin" in OS.get_cmdline_user_args() and my_id == snap.leader and snap.ps.has(my_id):
 			_act("start")
 	hud.queue_redraw()
 	queue_redraw()
@@ -495,6 +823,11 @@ func _process(dt: float) -> void:
 func _lobby_ui() -> void:
 	var eng := false
 	var ids: Array = snap.ps.keys()
+	var managed := connection == Connection.CREW
+	var room: Dictionary = snap.get("room", {})
+	var ready: Array = room.get("ready", [])
+	var bots: Array = room.get("bots", [])
+	var humans := ids.size() - bots.size()
 	for i in roster.size():
 		var row: Dictionary = roster[i]
 		var occupied := i < ids.size()
@@ -502,38 +835,128 @@ func _lobby_ui() -> void:
 		if occupied:
 			var id: int = ids[i]
 			var p: Array = snap.ps[id]
+			var bot: bool = id < 0 or id in room.get("bots", [])
 			eng = eng or p[1] == 2
 			row.name.text = p[0] + ("  / YOU" if id == my_id else "")
-			row.meta.text = GameSim.ROLES[p[1]] + ("  ·  AI teammate" if id < 0 else "  ·  Connected")
-			row.badge.text = "LEADER" if id == snap.leader else ("BOT" if id < 0 else "CREW")
+			var readiness := "Ready" if id in ready else "Not ready"
+			row.meta.text = GameSim.ROLES[p[1]] + ("  ·  " + readiness if managed and not bot else "")
+			row.badge.text = "LEADER" if id == snap.leader else ("BOT" if bot else "CREW")
 			row.badge.add_theme_color_override("font_color", ROLE_COL[p[1]])
 			row.icon.texture = _portrait(p[1])
 			row.name.modulate = Color.WHITE
 		else:
 			row.name.text = "Open crew slot"
 			row.name.modulate = Color("64788A")
-			row.meta.text = "Invite a friend or add a bot"
-			row.badge.text = "%02d" % (i + 1)
-			row.badge.add_theme_color_override("font_color", Color("435768"))
+			row.meta.text = ""
+			row.badge.text = ""
 	lobby_count.text = "%d / 5 CREW" % ids.size()
 	lobby_text.text = snap.get("msg", "")
 	var leader: bool = my_id == snap.leader
 	start_btn.text = "START EXPEDITION  >" if leader else "WAITING FOR LEADER"
-	start_btn.disabled = not leader or not eng
-	lobby_hint.text = "Crew ready. Hold the light together." if eng else "An Engineer is required to start."
-	lobby_hint.modulate = Color("89A498") if eng else Color("F2B544")
+	var reason := ""
+	var dev_start := managed and OS.is_debug_build() and not bots.is_empty() and not ready.is_empty()
+	if dev_start:
+		start_btn.text = "DEVELOPMENT START  >" if leader else "WAITING FOR LEADER"
+	if not eng:
+		reason = "An Engineer is required to start."
+	elif managed and ready.size() != humans and not dev_start:
+		var waiting := humans - ready.size()
+		reason = "1 player still needs to mark Ready." if waiting == 1 else "%d players still need to mark Ready." % waiting
+	start_btn.disabled = not leader or not reason.is_empty()
+	lobby_hint.text = reason
+	lobby_hint.modulate = Color("F2B544")
 	if not snap.ps.has(my_id):
 		lobby_hint.text = "Lobby full or match running. Rejoin later."
 	lobby_role.disabled = not snap.ps.has(my_id)
-	if snap.ps.has(my_id) and not lobby_role.has_focus():
+	if snap.ps.has(my_id):
 		lobby_role.selected = snap.ps[my_id][1]
 	mode_opt.disabled = not leader
-	bot_row.visible = leader
-	bot_buttons[0].disabled = ids.size() >= 5
-	bot_buttons[1].disabled = not ids.any(func(id): return id < 0)
-	if not mode_opt.has_focus():
-		mode_opt.selected = snap.mode
+	mode_opt.selected = snap.mode
+	ready_btn.visible = managed
+	ready_btn.disabled = not snap.ps.has(my_id)
+	ready_btn.text = "Mark not ready" if my_id in ready else "Mark ready"
+	if OS.is_debug_build():
+		bot_row.visible = leader
+		bot_buttons[0].disabled = ids.size() >= 5
+		bot_buttons[1].disabled = not ids.any(func(id): return id < 0 or id in bots)
 	_update_role_cards()
+
+
+func _directory_ui() -> void:
+	if not directory or not status:
+		return
+	var online := directory.state == LobbyClient.State.ONLINE
+	var offline := directory.state in [LobbyClient.State.CLOSED, LobbyClient.State.OFFLINE, LobbyClient.State.DEGRADED]
+	var idle := connection == Connection.DIRECTORY
+	play_btn.visible = not directory_open
+	directory_controls.visible = directory_open
+	create_btn.visible = online
+	create_btn.disabled = not idle or not directory.create_available
+	refresh_btn.visible = online or offline
+	refresh_btn.disabled = not idle
+	refresh_btn.text = "Refresh" if online else "Retry"
+	cancel_btn.visible = connection in [Connection.RESERVING, Connection.CONNECTING, Connection.ADMITTED]
+	var detail := notice
+	if directory_open and idle:
+		if offline:
+			detail = "Server offline" if notice.is_empty() or notice == "Server offline" else notice + "\nServer offline"
+		elif directory.state == LobbyClient.State.CONNECTING:
+			detail = "Connecting…"
+		elif directory.create_code == "server_full" and detail != "Server full":
+			detail = "Server full" if notice.is_empty() else "Server full\n" + notice
+		elif directory.create_code == "server_draining" and detail != "Server maintenance":
+			detail = "Server maintenance" if notice.is_empty() else "Server maintenance\n" + notice
+		elif online and directory.rooms.is_empty() and notice.is_empty():
+			detail = "No rooms available."
+	status.text = detail
+	var ids := directory.rooms.keys()
+	for i in room_rows.size():
+		var row: Dictionary = room_rows[i]
+		row.panel.visible = online and i < ids.size()
+		row.id = ids[i] if row.panel.visible else ""
+		if row.panel.visible:
+			var room: Dictionary = directory.rooms[row.id]
+			var state := str({"waiting": "Waiting", "playing": "Running", "timeout": "Paused",
+				"result": "Results", "recovering": "Recovering"}.get(room.state))
+			if room.state == "waiting" and room.available == 0:
+				state = "Full"
+			row.heading.text = room.name
+			row.info.text = "%d/5  ·  %s  ·  %s" % [room.humans, GameSim.MODES[room.mode], state]
+			row.join.disabled = not idle or not room.joinable
+
+
+func _cast_timeout_vote(yes: bool) -> void:
+	var step: String = snap.get("room", {}).get("timeout", "")
+	if step in ["continue", "bot"]:
+		vote_choice = int(yes)
+		_act("timeout_vote", [step, yes])
+
+
+func _timeout_ui() -> void:
+	var room: Dictionary = snap.get("room", {})
+	var step: String = room.get("timeout", "")
+	vote_panel.visible = not step.is_empty()
+	if not vote_panel.visible:
+		return
+	var seconds := ceili(room.remainingMs / 1000.0)
+	var names := ", ".join(PackedStringArray(room.vacancies))
+	var choosing := step in ["continue", "bot"]
+	if step == "connection":
+		vote_title.text = "Waiting for connection"
+		vote_details.text = "The match is paused while a crew member’s connection recovers."
+	else:
+		vote_title.text = "Technical timeout  ·  %ds" % seconds if choosing else "Resume in %ds" % seconds
+		vote_details.text = "Disconnected players\n" + names
+	vote_warning.visible = room.noEngineer and step != "connection"
+	var labels := ["Continue", "End match"] if step == "continue" else ["Bot", "No bot"]
+	var counts: Array = [room.votes, room.votesCast - room.votes]
+	for i in vote_buttons.size():
+		var button := vote_buttons[i]
+		button.visible = choosing
+		button.text = "%s  (%d)" % [labels[i], counts[i]]
+		button.modulate = Color("E7C27B") if vote_choice == 1 - i else Color.WHITE
+	vote_panel.size.y = 0
+	vote_panel.position = ((get_viewport_rect().size - vote_panel.size) * 0.5).round()
 
 
 func _capture_shot(path: String) -> void:
@@ -806,7 +1229,8 @@ func _player_ui(id: int, p: Array, foot: Vector2, font: Font) -> void:
 	var top := foot - Vector2(0, (10.0 if p[5] == 1 else CHAR_H) + 2)  # just above the head
 	if id != my_id:
 		_bar(top, T, p[3] / p[4], Color("3DBE5A"))
-	var label: String = p[0] + ("  DOWN %d" % p[6] if p[5] == 1 else "")
+	var bot: bool = id < 0 or id in snap.get("room", {}).get("bots", [])
+	var label: String = p[0] + ("  BOT" if bot else "") + ("  DOWN %d" % p[6] if p[5] == 1 else "")
 	var lp := top + Vector2(-2 * T, -6)
 	draw_string_outline(font, lp, label, HORIZONTAL_ALIGNMENT_CENTER, 4 * T, 7, 2, INK)
 	draw_string(font, lp, label, HORIZONTAL_ALIGNMENT_CENTER, 4 * T, 7, NEON_RED if p[5] == 1 else Color.WHITE)
@@ -1045,13 +1469,15 @@ func _draw_hud() -> void:
 
 	# left: team list
 	var y := 120.0
+	var bots: Array = snap.get("room", {}).get("bots", [])
 	for id in snap.ps:
 		var p = snap.ps[id]
 		var col: Color = ROLE_COL[p[1]]
 		_panel(c, Rect2(8, y - 16, 150, 32))
 		c.draw_circle(Vector2(24, y), 12, INK)
 		c.draw_circle(Vector2(24, y), 10, col if p[5] == 0 else col.darkened(0.6))
-		_text(c, Vector2(40, y - 3), p[0] + (" (you)" if id == my_id else ""), 11, Color.WHITE)
+		var tag := " BOT" if id < 0 or id in bots else (" (you)" if id == my_id else "")
+		_text(c, Vector2(40, y - 3), p[0] + tag, 11, Color.WHITE)
 		if p[5] == 0:
 			c.draw_rect(Rect2(40, y + 3, 110, 5), INK)
 			c.draw_rect(Rect2(40, y + 3, 110 * p[3] / p[4], 5), Color("3DBE5A"))
@@ -1217,6 +1643,12 @@ func _diamond(ci: CanvasItem, center: Vector2, r: float, col: Color) -> void:
 # --- setup --------------------------------------------------------------
 
 func _build_scene() -> void:
+	geometry = GameSim.Geometry.new()
+	ground_tex = NoiseTexture2D.new()
+	cam = Camera2D.new()
+	tint = CanvasModulate.new()
+	my_light = PointLight2D.new()
+	beacon = PointLight2D.new()
 	RenderingServer.set_default_clear_color(Color("0E1726"))  # sea
 	var env := Environment.new()
 	env.background_mode = Environment.BG_CANVAS
@@ -1291,6 +1723,23 @@ func _build_scene() -> void:
 
 
 func _build_ui() -> void:
+	menu_panel = PanelContainer.new()
+	menu = VBoxContainer.new()
+	name_edit = LineEdit.new()
+	role_opt = OptionButton.new()
+	status = Label.new()
+	lobby_panel = PanelContainer.new()
+	lobby = VBoxContainer.new()
+	lobby_text = Label.new()
+	lobby_role = OptionButton.new()
+	mode_opt = OptionButton.new()
+	start_btn = Button.new()
+	ready_btn = _ui_button("Mark ready")
+	bot_row = HBoxContainer.new()
+	hud = Control.new()
+	banner = Label.new()
+	front = Control.new()
+	lobby_hint = Label.new()
 	var ui_var := FontVariation.new()  # Pixelify Sans is a variable font: a little bolder reads better on the dark HUD
 	ui_var.base_font = load(FONT_UI)
 	ui_var.variation_opentype = {"wght": 560}
@@ -1320,7 +1769,6 @@ func _build_ui() -> void:
 	menu.add_theme_constant_override("separation", 8)
 	lobby.add_theme_constant_override("separation", 8)
 	lobby_panel.add_theme_stylebox_override("panel", _ui_style(Color("0D1823"), Color("3C505A"), 1, 16))
-	menu.add_child(_ui_label("YOUR WATCH BEGINS HERE", 10, GOLD))
 	menu.add_child(_ui_label("Join the watch", 32, Color.WHITE, true))
 	menu.add_child(_ui_label("CALLSIGN", 10, Color("8499AC")))
 	name_edit.placeholder_text = "Your name"
@@ -1334,31 +1782,10 @@ func _build_ui() -> void:
 	menu.add_child(_ui_label("CHOOSE YOUR ROLE", 10, Color("8499AC")))
 	menu.add_child(role_opt)
 	menu.add_child(_role_card(role_opt))
-	var host_btn := _ui_button("HOST A CREW  >", true)
-	host_btn.pressed.connect(_host.bind(true))
-	menu.add_child(host_btn)
-	var divider := HBoxContainer.new()
-	divider.add_theme_constant_override("separation", 10)
-	for i in 3:
-		if i == 1:
-			divider.add_child(_ui_label("OR JOIN FRIENDS", 10, Color("8499AC")))
-		else:
-			var line := HSeparator.new()
-			line.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-			line.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-			divider.add_child(line)
-	menu.add_child(divider)
-	var join_row := HBoxContainer.new()
-	ip_edit.text = "127.0.0.1"
-	ip_edit.placeholder_text = "Host IP address"
-	ip_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	ip_edit.custom_minimum_size.x = 0
-	join_row.add_child(ip_edit)
-	var join_btn := _ui_button("JOIN  >")
-	join_btn.custom_minimum_size.x = 76
-	join_btn.pressed.connect(_join)
-	join_row.add_child(join_btn)
-	menu.add_child(join_row)
+	play_btn = _ui_button("Play", true)
+	play_btn.pressed.connect(_open_directory)
+	menu.add_child(play_btn)
+	_build_directory_ui()
 	status.add_theme_font_size_override("font_size", 11)
 	status.add_theme_color_override("font_color", Color("F2B544"))
 	status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -1369,8 +1796,7 @@ func _build_ui() -> void:
 	var lobby_header := HBoxContainer.new()
 	var lobby_titles := VBoxContainer.new()
 	lobby_titles.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	lobby_titles.add_child(_ui_label("EXPEDITION / CREW ASSEMBLY", 10, GOLD))
-	lobby_titles.add_child(_ui_label("Nobody holds alone.", 30, Color.WHITE, true))
+	lobby_titles.add_child(_ui_label("Crew", 30, Color.WHITE, true))
 	lobby_header.add_child(lobby_titles)
 	lobby_count = _ui_label("0 / 5 CREW", 12, Color("9CB9B2"))
 	lobby_count.size_flags_vertical = Control.SIZE_SHRINK_CENTER
@@ -1385,7 +1811,6 @@ func _build_ui() -> void:
 	crew.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	crew.add_theme_constant_override("separation", 7)
 	columns.add_child(crew)
-	crew.add_child(_ui_label("THE CREW", 10, Color("8499AC")))
 	for i in 5:
 		var card := PanelContainer.new()
 		card.add_theme_stylebox_override("panel", _ui_style(Color("152330"), Color("2C4050"), 1, 6))
@@ -1402,7 +1827,7 @@ func _build_ui() -> void:
 		names.add_theme_constant_override("separation", 1)
 		names.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		var pname := _ui_label("Open crew slot", 13)
-		var meta := _ui_label("Invite a friend or add a bot", 10, Color("8499AC"))
+		var meta := _ui_label("", 10, Color("8499AC"))
 		names.add_child(pname)
 		names.add_child(meta)
 		row.add_child(names)
@@ -1411,7 +1836,6 @@ func _build_ui() -> void:
 		row.add_child(badge)
 		crew.add_child(card)
 		roster.append({"icon": icon, "name": pname, "meta": meta, "badge": badge})
-	crew.add_child(_ui_label("Invite friends using your host's IP address.", 11, Color("8499AC")))
 	var setup := VBoxContainer.new()
 	setup.custom_minimum_size.x = 248
 	setup.add_theme_constant_override("separation", 8)
@@ -1425,14 +1849,19 @@ func _build_ui() -> void:
 		mode_opt.add_item(m)
 	mode_opt.item_selected.connect(func(i): _act("mode", i))
 	setup.add_child(mode_opt)
-	for b in [["Add bot", "add_bot"], ["Remove bot", "remove_bot"]]:  # bot teammates fill empty slots (max 5 players)
-		var bb := _ui_button(b[0])
-		bb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		bb.pressed.connect(_act.bind(b[1]))
-		bot_row.add_child(bb)
-		bot_buttons.append(bb)
+	if OS.is_debug_build():
+		for b in [["Add bot", "add_bot"], ["Remove bot", "remove_bot"]]:
+			var bb := _ui_button(b[0])
+			bb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			bb.pressed.connect(_act.bind(b[1]))
+			bot_row.add_child(bb)
+			bot_buttons.append(bb)
+	bot_row.hide()
 	setup.add_child(bot_row)
+	ready_btn.pressed.connect(func(): _act("ready", my_id not in snap.get("room", {}).get("ready", [])))
+	setup.add_child(ready_btn)
 	lobby_hint.add_theme_font_size_override("font_size", 11)
+	lobby_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	setup.add_child(lobby_hint)
 	_style_primary(start_btn)
 	start_btn.custom_minimum_size.y = 38
@@ -1445,8 +1874,8 @@ func _build_ui() -> void:
 	lobby_text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	lobby_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	bottom.add_child(lobby_text)
-	var leave := _ui_button("<  LEAVE CREW")
-	leave.pressed.connect(_back_to_menu.bind("Left the lobby"))
+	var leave := _ui_button("Leave room")
+	leave.pressed.connect(_back_to_menu.bind("Left the room"))
 	bottom.add_child(leave)
 	lobby.add_child(bottom)
 	_update_role_cards()
@@ -1461,6 +1890,81 @@ func _build_ui() -> void:
 	banner.add_theme_constant_override("outline_size", 5)
 	banner.add_theme_color_override("font_outline_color", INK)
 	root.add_child(banner)
+	_build_timeout_ui(root)
+
+
+func _build_directory_ui() -> void:
+	directory_controls = VBoxContainer.new()
+	directory_controls.add_theme_constant_override("separation", 6)
+	directory_controls.hide()
+	menu.add_child(directory_controls)
+	for i in 3:
+		var panel := PanelContainer.new()
+		panel.add_theme_stylebox_override("panel", _ui_style(Color("152330"), Color("2C4050"), 1, 5))
+		panel.hide()
+		directory_controls.add_child(panel)
+		var line := HBoxContainer.new()
+		panel.add_child(line)
+		var labels := VBoxContainer.new()
+		labels.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		line.add_child(labels)
+		var heading := _ui_label("", 15)
+		heading.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		var info := _ui_label("", 11, Color("A8B7C4"))
+		labels.add_child(heading)
+		labels.add_child(info)
+		var join := _ui_button("Join")
+		line.add_child(join)
+		var row := {"id": "", "panel": panel, "heading": heading, "info": info, "join": join}
+		join.pressed.connect(func():
+			if not row.id.is_empty():
+				_request_room(row.id)
+		)
+		room_rows.append(row)
+	var actions := HBoxContainer.new()
+	directory_controls.add_child(actions)
+	create_btn = _ui_button("Create room", true)
+	create_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	create_btn.pressed.connect(func(): _request_room())
+	actions.add_child(create_btn)
+	refresh_btn = _ui_button("Refresh")
+	refresh_btn.pressed.connect(func():
+		if directory.state != LobbyClient.State.ONLINE:
+			_open_directory()
+		else:
+			_set_notice("")
+			directory.refresh()
+	)
+	actions.add_child(refresh_btn)
+	cancel_btn = _ui_button("Cancel")
+	cancel_btn.pressed.connect(_back_to_menu.bind("Join cancelled"))
+	actions.add_child(cancel_btn)
+
+
+func _build_timeout_ui(root: Control) -> void:
+	vote_panel = PanelContainer.new()
+	vote_panel.custom_minimum_size.x = 330
+	vote_panel.add_theme_stylebox_override("panel", _ui_style(Color("0D1823"), GOLD, 1, 16))
+	vote_panel.hide()
+	root.add_child(vote_panel)
+	var content := VBoxContainer.new()
+	content.add_theme_constant_override("separation", 9)
+	vote_panel.add_child(content)
+	vote_title = _ui_label("", 28, GOLD, true)
+	vote_details = _ui_label("", 14)
+	vote_details.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	vote_warning = _ui_label("No Engineer remains in the crew.", 13, GOLD)
+	for label in [vote_title, vote_details, vote_warning]:
+		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		content.add_child(label)
+	var choices := HBoxContainer.new()
+	content.add_child(choices)
+	for yes in [true, false]:
+		var button := _ui_button("")
+		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		button.pressed.connect(_cast_timeout_vote.bind(yes))
+		choices.add_child(button)
+		vote_buttons.append(button)
 
 
 func _theme() -> Theme:
@@ -1576,6 +2080,7 @@ func _update_role_cards() -> void:
 
 func _layout_frontend() -> void:
 	var vs := front.size
+	menu_panel.size.y = 0
 	menu_panel.position = Vector2(vs.x - 368, maxf(66, (vs.y - menu_panel.size.y) / 2.0 + 4))
 	menu_panel.size.x = 328
 	lobby_panel.size.x = minf(856, vs.x - 64)
@@ -1639,7 +2144,8 @@ func _draw_frontend() -> void:
 
 
 func _name() -> String:
-	return name_edit.text.strip_edges() if name_edit.text.strip_edges() != "" else "Player"
+	var entered := name_edit.text.strip_edges() if name_edit else ""
+	return entered if not entered.is_empty() else "Player"
 
 
 func _key(k: Key) -> float:

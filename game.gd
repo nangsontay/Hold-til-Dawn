@@ -118,32 +118,66 @@ var msg_t := 0.0
 var next_id := 0
 var n0 := 1
 var rng := RandomNumberGenerator.new()
+var seed_at_start := 0
+var managed := false
+var frozen := false
+var result := ""
+var storage := {}
 const Bots := preload("res://bots.gd")  # bot teammates for demos and solo tests (not in the GDD)
 
 
 func leader() -> int:
-	return order[0] if order.size() > 0 else 0
+	for id in order:
+		if not players[id].bot:
+			return id
+	return 0
 
 
-func add_player(id: int, pname: String, role: int) -> void:
-	# ponytail: no joining mid-match (GDD: rejoin is out of scope).
+func add_player(id: int, pname: String, role: int) -> bool:
 	if phase != "lobby" or players.size() >= 5 or players.has(id):
-		return
+		return false
 	players[id] = {"id": id, "name": pname.substr(0, 16), "role": clampi(role, 0, 2), "pos": Vector2.ZERO, "tp": 0, "bot": false}
 	order.append(id)
 	_reset_player(players[id])
+	return true
 
 
 func remove_player(id: int) -> void:
+	_remove_character(id)
+	if not managed and humans() == 0:  # demo bots do not play on alone
+		players.clear()
+		order.clear()
+		if phase != "lobby":
+			_to_lobby()
+
+
+func _remove_character(id: int) -> void:
 	players.erase(id)
 	order.erase(id)
 	votes.erase(id)
-	if humans() == 0:  # the last person left: bots do not play on alone
-		for b in players.keys():
-			players.erase(b)
-			order.erase(b)
-		if phase != "lobby":
-			_to_lobby()
+
+
+func mark_vacant(id: int) -> void:
+	order.erase(id)
+	votes.erase(id)
+	var p: Dictionary = players[id]
+	p.atk = false
+	p.inter = false
+	p.ent = false
+
+
+func resolve_vacancy(id: int, replace: bool, drop_inventory := true) -> void:
+	var p: Dictionary = players[id]
+	if replace:
+		p.awaiting_resume_input = false
+		Bots.replace(p)
+		return
+	if drop_inventory:
+		for item in p.inv:
+			if p.inv[item] > 0:
+				_add_drop(p.pos, item, p.inv[item])
+				drops.back().from_leaver = true
+	_remove_character(id)
 
 
 func humans() -> int:
@@ -151,12 +185,17 @@ func humans() -> int:
 
 
 func input(id: int, pos: Vector2, aim: float, atk: bool, inter: bool, ent: bool, tp: int, sequence := 0) -> void:
+	if frozen or (managed and (phase not in ["day", "dusk", "night"] or sequence <= 0)):
+		return
 	var p = players.get(id)
 	if p == null or not pos.is_finite() or not is_finite(aim):
+		return
+	if managed and tp != p.tp:
 		return
 	if sequence > 0 and sequence <= p.input_sequence:
 		return
 	p.input_sequence = sequence
+	p.awaiting_resume_input = false
 	p.aim = aim
 	p.atk = atk
 	p.inter = inter
@@ -177,15 +216,17 @@ func input(id: int, pos: Vector2, aim: float, atk: bool, inter: bool, ent: bool,
 
 func action(id: int, kind: String, arg) -> void:
 	var p = players.get(id)
-	if p == null:
+	if p == null or frozen:
+		return
+	if managed and phase not in ["day", "dusk", "night"] and kind not in ["role", "mode", "add_bot", "remove_bot"]:
 		return
 	match kind:
 		"role":
-			if phase == "lobby":
+			if phase == "lobby" and arg is int:
 				p.role = clampi(int(arg), 0, 2)
 				_reset_player(p)
 		"mode":
-			if phase == "lobby" and id == leader():
+			if phase == "lobby" and id == leader() and arg is int:
 				mode = clampi(int(arg), 0, 2)
 		"start":
 			if phase == "lobby" and id == leader():
@@ -193,13 +234,14 @@ func action(id: int, kind: String, arg) -> void:
 				if err != "":
 					_say(err)
 		"add_bot":
-			if id == leader():
+			if OS.is_debug_build() and id == leader():
 				Bots.add(self)
 		"remove_bot":
-			if id == leader():
+			if OS.is_debug_build() and id == leader():
 				Bots.remove(self)
 		"craft":
-			craft(p, int(arg))
+			if arg is int:
+				craft(p, arg)
 		"tower":
 			_build_tower(p)
 		"bandage":
@@ -215,7 +257,7 @@ func action(id: int, kind: String, arg) -> void:
 				else:
 					votes[id] = true
 		"skip":  # debug only: host ends the current phase
-			if id == 1 and OS.is_debug_build() and phase in ["day", "dusk", "night"]:
+			if not managed and id == 1 and OS.is_debug_build() and phase in ["day", "dusk", "night"]:
 				enemies.clear()
 				t = 0.0
 
@@ -229,6 +271,7 @@ func start_match() -> String:
 		return "Need at least one Engineer"
 	# ponytail: GDD wants 3-5 players; 1+ allowed so one person can test.
 	rng.randomize()
+	seed_at_start = rng.seed
 	n0 = players.size()
 	k = 1
 	base_hp = BASE_HP
@@ -238,6 +281,13 @@ func start_match() -> String:
 	free_tower = true
 	shown_unlock = 0
 	bosses_killed = 0
+	if managed:
+		result = ""
+		storage.clear()
+		door_pause = [0.0, 0.0, 0.0]
+		ext = -1.0
+		pad_clear = [0.0, 0.0, 0.0]
+		next_id = 0
 	enemies.clear()
 	proj.clear()
 	tele.clear()
@@ -250,7 +300,7 @@ func start_match() -> String:
 
 
 func tick(dt: float) -> void:
-	if phase == "lobby":
+	if frozen or phase == "lobby":
 		return
 	t -= dt
 	msg_t -= dt
@@ -301,7 +351,7 @@ func craft(p, idx: int) -> void:
 		_note(p, "Only an Engineer can do that")
 		return
 	for res in r[1]:
-		if p.inv[res] < r[1][res]:
+		if p.inv[res] + storage.get(res, 0) < r[1][res]:
 			_note(p, "Not enough %s for %s" % [res, r[0]])
 			return
 	var dead := players.values().filter(func(q): return q.state == 2)
@@ -309,7 +359,10 @@ func craft(p, idx: int) -> void:
 		_note(p, "No dead teammate to revive")
 		return
 	for res in r[1]:
-		p.inv[res] -= r[1][res]
+		var carried: int = mini(p.inv[res], r[1][res])
+		p.inv[res] -= carried
+		if carried < r[1][res]:
+			storage[res] -= r[1][res] - carried
 	match r[3]:
 		"armour":
 			p.armour = maxi(p.armour, r[4])
@@ -369,7 +422,14 @@ func _dawn() -> void:
 		if p.role == 1:
 			p.flasks = 3
 	var idx := [0, 1, 2]
-	idx.shuffle()
+	if managed:
+		for i in range(idx.size() - 1, 0, -1):
+			var j := rng.randi_range(0, i)
+			var door: int = idx[j]
+			idx[j] = idx[i]
+			idx[i] = door
+	else:
+		idx.shuffle()
 	active = idx.slice(0, mini(3, k))
 	active.sort()
 	var names := PackedStringArray(active.map(func(i): return DOOR_NAMES[i]))
@@ -429,12 +489,19 @@ func _night_cleared() -> void:
 
 
 func _end(win: bool, why: String) -> void:
+	result = "won" if win else "lost"
 	phase = "result"
 	t = 10.0
 	msg = ("MISSION COMPLETE - " if win else "BEACON LOST - ") + why + " (night %d)" % k
 	enemies.clear()
 	proj.clear()
 	tele.clear()
+
+
+func end_without_winner(why: String) -> void:
+	_end(false, why)
+	result = "no_winner"
+	msg = why
 
 
 func _to_lobby() -> void:
@@ -444,6 +511,13 @@ func _to_lobby() -> void:
 	enemies.clear()
 	proj.clear()
 	tele.clear()
+	if managed:
+		for id in players.keys():
+			if players[id].bot:
+				_remove_character(id)
+		nodes.clear()
+		towers = [null, null, null]
+		world.rebuild(nodes, towers)
 	for p in players.values():
 		_reset_player(p)
 
@@ -528,6 +602,7 @@ func _reset_player(p) -> void:
 	p.activity_target = Vector2.ZERO
 	p.move_credit = SPEED * 0.1
 	p.input_sequence = 0
+	p.awaiting_resume_input = false
 	p.bot_node = -1  # index of the resource node a bot is gathering
 	_teleport(p, Vector2(rng.randf_range(-2, 2), rng.randf_range(-2, 2)) * T)
 
@@ -556,6 +631,8 @@ func _tick_players(dt: float) -> void:
 				if p.channel <= 0 and p.inv.bandage > 0:
 					p.inv.bandage -= 1
 					p.hp = minf(p.maxhp, p.hp + 30.0 * (1.5 if p.role == 1 else 1.0))
+		if p.awaiting_resume_input:
+			continue
 		_tick_entry(p, dt)
 		if p.inside:  # inside at night: no attack, repair or revive
 			p.revive_p = 0.0
@@ -626,7 +703,7 @@ func _hit(e, dmg: float, p) -> void:
 
 func _interact(p, dt: float) -> void:
 	for q in players.values():  # 1) revive
-		if q.state == 1 and q.id != p.id and q.pos.distance_to(p.pos) <= 1.5 * T and line_clear(p.pos, q.pos):
+		if (not p.get("replacement", false) or p.role == 1) and q.state == 1 and q.id != p.id and q.pos.distance_to(p.pos) <= 1.5 * T and line_clear(p.pos, q.pos):
 			p.activity = "revive"
 			p.activity_target = q.pos
 			p.revive_p += dt / (10.0 if p.role == 1 else 20.0)
@@ -669,6 +746,8 @@ func _interact(p, dt: float) -> void:
 					p.inv.wood -= 1
 				return
 	for nd in nodes:  # 3) gather (MEC-08): hold E standing still; moving or a hit resets the unit in progress
+		if p.get("replacement", false) and (phase != "day" or nd.type == 3 or wall_dist(nd.pos) > SAFE_D or Bots.free_stack_space(p.inv, RES[nd.type], Bots.CARRY_SLOTS) == 0):
+			continue
 		if nd.amount > 0 and nd.pos.distance_to(p.pos) <= 1.5 * T and line_clear(p.pos, nd.pos, nd.pos):
 			p.activity = "gather"
 			p.activity_target = nd.pos
@@ -1098,7 +1177,7 @@ func _tick_drops(dt: float) -> void:  # MEC-23: walk over to collect, not from i
 	for d in drops:
 		d.ttl -= dt
 		for p in players.values():
-			if d.ttl > 0 and p.state == 0 and not inside_base(p.pos) and p.pos.distance_to(d.pos) <= 0.8 * T:
+			if d.ttl > 0 and p.state == 0 and (d.get("from_leaver", false) or not inside_base(p.pos)) and p.pos.distance_to(d.pos) <= 0.8 * T:
 				p.inv[d.item] += d.n
 				_note(p, "+%d %s" % [d.n, d.item])
 				d.ttl = 0.0
