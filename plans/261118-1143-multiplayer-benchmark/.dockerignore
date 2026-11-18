@@ -1,0 +1,4 @@
+**
+!Dockerfile
+!colyseus/
+!colyseus/package*.json
