@@ -291,6 +291,8 @@ func _init() -> void:
 
 	# Towers (AGT-12, MEC-11, MEC-28, BAL-28)
 	s = new_match()
+	s.nodes.clear()  # Isolate tower rules from randomly placed line-of-sight blockers.
+	s.world.rebuild(s.nodes, s.towers)
 	var te = s.players[1]
 	var ts = s.players[2]
 	te.pos = G.DOOR_POS[0] + G.DOOR_DIR[0] * 1.5 * 32
@@ -317,6 +319,7 @@ func _init() -> void:
 	var tg = s._spawn(G.GRUNT, 0, 0.0)
 	tg.pos = tw.pos + Vector2(0, 4 * 32)
 	tg.state = 4
+	tg.spd = 0.0  # A stationary target keeps the DPS/range check deterministic.
 	tg.home = tg.pos
 	tg.wander = tg.pos
 	te.pos = Vector2.ZERO
@@ -328,6 +331,7 @@ func _init() -> void:
 	var far_e = s._spawn(G.GRUNT, 0, 0.0)
 	far_e.pos = tw.pos + Vector2(0, 7 * 32)
 	far_e.state = 4
+	far_e.spd = 0.0
 	far_e.home = far_e.pos
 	far_e.wander = far_e.pos
 	var hp0: float = far_e.hp

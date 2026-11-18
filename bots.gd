@@ -4,7 +4,7 @@ extends RefCounted
 ## attack, hold E) or calls the same actions (bandage, flask, craft). No planning, just priorities:
 ##   dodge a boss slam > revive a downed teammate > heal (Healer) > fight > repair a door (Engineer)
 ##   > by day gather, then craft at the workbench near dusk; at dusk and night hold the attacked door.
-## Bots ignore scenery (trees and rocks are client-side only); they gather in the open safe zone.
+## Bots share obstacle collision and navigation with the authoritative simulation.
 
 const T := GameSim.T
 const GATHER := [0, 2, 1]  # favourite resource by role: Scout wood, Healer herb, Engineer stone
@@ -59,6 +59,7 @@ static func tick(sim, dt: float) -> void:
 		p.atk = false
 		p.inter = false
 		p.ent = false
+		p.nav_t = p.get("nav_t", 0.0) - dt
 		p.bot_cd -= dt
 		if playing and p.state == 0:
 			_think(sim, p, slot, dt)
@@ -140,7 +141,7 @@ static func _foe(sim, p, post: Vector2):
 			ok = d <= SIGHT_DAY or e.get("target", 0) == p.id
 		else:
 			ok = d <= 2.5 * T or e.pos.distance_to(post) <= LEASH or GameSim.inside_base(e.pos)
-		if ok and d < best_d:
+		if ok and d < best_d and sim.line_clear(p.pos, e.pos):
 			best_d = d
 			best = e
 	return best
@@ -231,12 +232,18 @@ static func _craft(sim, p) -> void:
 
 static func _move(sim, p, goal: Vector2, dt: float) -> void:
 	## Walks like a player: same speed, same walls, and out of the base at night unless a door is broken.
-	var way := _waypoint(sim, p.pos, goal)
+	var base_way := _waypoint(sim, p.pos, goal)
+	if p.get("nav_t", 0.0) <= 0 or not p.has("nav_way") or p.pos.distance_to(p.nav_way) < 4 or p.get("nav_goal", Vector2.INF).distance_to(base_way) > T or p.get("nav_revision", -1) != sim.world.revision:
+		p.nav_way = sim.navigate(p.pos, base_way, 0.3 * T, false)
+		p.nav_goal = base_way
+		p.nav_revision = sim.world.revision
+		p.nav_t = 0.4
+	var way: Vector2 = p.nav_way
 	var step: Vector2 = way - p.pos
 	if step.length() < 1.0:
 		return
 	var spd: float = GameSim.SPEED * (1.2 if p.role == 0 else 1.0)
-	p.pos += step.normalized() * minf(spd * dt, step.length())
+	p.pos = sim.move_actor(p.pos, p.pos + step.normalized() * minf(spd * dt, step.length()), 0.3 * T)
 	p.aim = step.angle()
 	p.pos = p.pos.limit_length(GameSim.ISLAND)
 	var night: bool = sim.phase == "night"
