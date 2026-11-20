@@ -9,7 +9,8 @@ using FileAccess = Godot.FileAccess;
 // (32 px tile), muted GDD palette, light from the upper left, a dark outline, a soft shadow to the lower right.
 // Shapes are built from a fixed seed, so every run writes the same PNGs.
 // Not part of the game. Run: godot --headless --path . tools/PixelNature.tscn   (then --import once)
-// Writes art/nature/<name>_<variant>.png, art/nature/ground.png and art/nature/index.json
+// Writes art/nature/<name>_<variant>.png, art/nature/ground.png and art/nature/index.json, and the landmarks
+// (tools/PixelLandmarks.cs) to art/landmarks/
 // ({name: [anchor_x, anchor_y, solid_radius_px]}: the anchor is the pixel on the ground point; radius 0 = walk through).
 // The PNGs are plain pixel art and can be repainted by hand; keep the size or update the anchor in index.json.
 public partial class PixelNature : Node
@@ -26,13 +27,11 @@ public partial class PixelNature : Node
     static readonly Color[] HERB = Hex("2E7D3E", "4FB862", "7ACC6C", "9BE37A");
     static readonly Color[] GRASS = Hex("4F6438", "667E45", "819A55", "9CB267");
     static readonly Color[] DRY = Hex("7A6E45", "978B56", "B5A96E", "CFC48A");
-    static readonly Color[] PAINT = Hex("3E4A5C", "55657A", "6F8399", "8FA3B8", "B4C4D4");
-    static readonly Color[] RUST = Hex("4E2A1A", "6E3B22", "8E4E2C", "B0663A", "C9844E");
+    static readonly Color[] ORE_ROCK = Hex("1E2030", "2C2F45", "3D415C", "525876", "6C7394");
+    static readonly Color[] TI = Hex("1E2A78", "2F47B8", "4A72E6", "7FB0FF", "D2E6FF");
+    static readonly Color[] VIOLET = Hex("3A2378", "5838B0", "7C5CE0", "A98CFF", "E2D6FF");
+    static readonly Color[] WOOD_CHIPS = Hex("5A3E26", "A0703C", "C08A50", "E0B070");
     static readonly Color[] CUT = Hex("A0703C", "C08A50", "E0B070");
-    static readonly Color GLASS = new Color("2B3A48");
-    static readonly Color GLINT = new Color("9FB4C4");
-    static readonly Color TYRE = new Color("202228");
-    static readonly Color RIM = new Color("6A6F7C");
     static readonly Color PETAL = new Color("F2F2F2");
     static readonly Color PETAL_SHADE = new Color("C8D2CC");
     static readonly Color INK = new Color("141019");
@@ -50,6 +49,14 @@ public partial class PixelNature : Node
         foreach (string Arg in OS.GetCmdlineUserArgs())
             if (Arg.StartsWith("--out=", StringComparison.Ordinal)) Out = Arg[6..];
         DirAccess.MakeDirRecursiveAbsolute(Out);
+
+        // the landmarks (tools/PixelLandmarks.cs); --landmarks-only skips the rest
+        DrawLandmarks();
+        if (Array.IndexOf(OS.GetCmdlineUserArgs(), "--landmarks-only") >= 0)
+        {
+            GetTree().Quit();
+            return;
+        }
 
         // outer forest (GDD 4.3: only pines and dead trees on the cold island)
         int[][] Pines = { new[] { 36, 56 }, new[] { 40, 62 }, new[] { 44, 68 }, new[] { 38, 60 }, new[] { 42, 66 }, new[] { 34, 52 } };
@@ -79,19 +86,38 @@ public partial class PixelNature : Node
             Save("pebble", I, Pebble(601 + I, 3 + I % 3, 2 + I % 2), 0);
 
         // resource nodes (MEC-08): each kind has a look of its own so it is never mistaken for scenery
+        // and as it is gathered (5 units), broken stages 1..4: <name>_dmg<k>_<variant>
         for (int I = 0; I < 3; I++)
-            Save("node_wood", I, Pine(701 + I, 32 + 2 * I, 50 + 3 * I, FIR, true), 8);
+        {
+            var Tree = Pine(701 + I, 32 + 2 * I, 50 + 3 * I, FIR, true);
+            Save("node_wood", I, Tree, 8);
+            // needles knocked off the crown, never the trunk
+            SaveStages("node_wood", I, Tree, 8, 1.0f, Tree.Anchor.Y - 14, WOOD_CHIPS);
+        }
         for (int I = 0; I < 2; I++)
-            Save("node_stone", I, StoneNode(801 + I), 20);
+        {
+            var Stone = StoneNode(801 + I);
+            Save("node_stone", I, Stone, 20);
+            SaveStages("node_stone", I, Stone, 20, 0.6f, 999, STONE);
+        }
         for (int I = 0; I < 2; I++)
-            Save("node_herb", I, HerbNode(901 + I), 0);
-        Save("node_metal", 0, Wreck(1001), 19);
-        Save("node_metal", 1, ScrapHeap(1002), 19);
+        {
+            var Herb = HerbNode(901 + I);
+            Save("node_herb", I, Herb, 0);
+            SaveStages("node_herb", I, Herb, 0, 1.0f, Herb.Anchor.Y - 3, HERB);
+        }
+        for (int I = 0; I < 2; I++)
+        {
+            var (Ore, Glow) = TitaniumOre(1001 + I);
+            Save("node_titanium", I, Ore, 19);
+            Save("node_titanium_glow", I, Glow, 0);
+            SaveStages("node_titanium", I, Ore, 19, 0.6f, 999, TI, Glow);
+        }
         // what is left of a gathered node until dawn
         Save("stump", 0, Stump(1101), 0);
         Save("rubble", 0, Rubble(1201), 0);
         Save("herb_cut", 0, HerbCut(1301), 0);
-        Save("scrap", 0, ScrapLeft(1401), 0);
+        Save("ore_left", 0, OreLeft(1401), 0);
 
         Ground(1501).SavePng(Out.PathJoin("ground.png"));
         GD.Print("drew ground (256, 256)");
@@ -99,6 +125,133 @@ public partial class PixelNature : Node
         using var Fa = FileAccess.Open(Out.PathJoin("index.json"), FileAccess.ModeFlags.Write);
         Fa.StoreString(Json.Stringify(Index, "\t"));
         GetTree().Quit();
+    }
+
+    // A node being gathered breaks bit by bit. Each stage goes on from the last: pieces knocked out of the top
+    // (Top: how far down the body, 0..1, bites may start; never below MaxY), the broken faces catching the light,
+    // a crack running in from the edge and chips lying on the ground. Stage 4 is all but gone.
+    void SaveStages(string Name, int Variant, Canvas Full, int Radius, float Top, int MaxY, Color[] ChipPal, Canvas Glow = null)
+    {
+        var R = new Random(Name.Length * 1000 + Variant * 37 + 11);
+        var Work = Full.Clone();
+        Work.Unoutline();
+        for (int Stage = 1; Stage <= 4; Stage++)
+        {
+            Break(Work, R, Stage, Top, MaxY, ChipPal);
+            var Out = Work.Clone();
+            Out.Outline(Full.Ink);
+            Save(Name + "_dmg" + Stage, Variant, Out, Radius);
+            if (Glow != null)
+            {
+                var G = Glow.Clone();
+                G.KeepWhere(Work);
+                Save(Name + "_glow_dmg" + Stage, Variant, G, 0);
+            }
+        }
+    }
+
+    static void Break(Canvas C, Random R, int Stage, float Top, int MaxY, Color[] ChipPal)
+    {
+        int Y0 = C.H, Y1 = -1, X0 = C.W, X1 = -1;
+        float Sx = 0, Sy = 0;
+        int Count = 0;
+        for (int Y = 0; Y < C.H; Y++)
+            for (int X = 0; X < C.W; X++)
+                if (C.Solid(X, Y))
+                {
+                    Y0 = Math.Min(Y0, Y); Y1 = Math.Max(Y1, Y); X0 = Math.Min(X0, X); X1 = Math.Max(X1, X);
+                    Sx += X; Sy += Y; Count++;
+                }
+        if (Count == 0) return;
+        var Mid = new Vector2(Sx / Count, Sy / Count);
+        float Size = Math.Clamp(Math.Max(X1 - X0, Y1 - Y0) / 30f, 0.7f, 1.6f);
+        bool Edge(int X, int Y) => C.Solid(X, Y) && (!C.Solid(X - 1, Y) || !C.Solid(X + 1, Y) || !C.Solid(X, Y - 1) || !C.Solid(X, Y + 1));
+        List<Vector2I> Edges(float Down)
+        {
+            var L = new List<Vector2I>();
+            int Lim = Math.Min(MaxY, (int)(Y0 + Down * (Y1 - Y0)));
+            for (int Y = Y0; Y <= Lim; Y++)
+                for (int X = X0; X <= X1; X++)
+                    if (Edge(X, Y)) L.Add(new Vector2I(X, Y));
+            return L;
+        }
+        // pieces knocked out
+        int Bites = Stage >= 3 ? 2 : 1;
+        for (int B = 0; B < Bites; B++)
+        {
+            var L = Edges(Top);
+            if (L.Count == 0) break;
+            var E = L[R.Next(L.Count)];
+            float Rad = (2.0f + Stage * 0.8f + (float)R.NextDouble() * 1.5f) * Size;
+            int Rr = (int)Rad + 2;
+            var Gone = new List<Vector2I>();
+            for (int Y = E.Y - Rr; Y <= E.Y + Rr; Y++)
+                for (int X = E.X - Rr; X <= E.X + Rr; X++)
+                {
+                    if (!C.Solid(X, Y) || Y > MaxY) continue;
+                    float D = new Vector2(X - E.X, Y - E.Y).Length();
+                    if (D <= Rad * (0.75f + 0.5f * Hash(X, Y, Stage * 13 + B))) Gone.Add(new Vector2I(X, Y));
+                }
+            foreach (var P in Gone) C.Clear(P.X, P.Y);
+            // a piece cut off from the foot falls away
+            var Keep = new bool[C.W * C.H];
+            var Todo = new Stack<Vector2I>();
+            for (int Y = Math.Max(0, Math.Min(Y1 - 2, C.Anchor.Y)); Y < C.H; Y++)
+                for (int X = 0; X < C.W; X++)
+                    if (C.Solid(X, Y)) Todo.Push(new Vector2I(X, Y));
+            while (Todo.Count > 0)
+            {
+                var P = Todo.Pop();
+                if (!C.Solid(P.X, P.Y) || Keep[P.Y * C.W + P.X]) continue;
+                Keep[P.Y * C.W + P.X] = true;
+                Todo.Push(new Vector2I(P.X + 1, P.Y)); Todo.Push(new Vector2I(P.X - 1, P.Y));
+                Todo.Push(new Vector2I(P.X, P.Y + 1)); Todo.Push(new Vector2I(P.X, P.Y - 1));
+            }
+            for (int Y = 0; Y < C.H; Y++)
+                for (int X = 0; X < C.W; X++)
+                    if (C.Solid(X, Y) && !Keep[Y * C.W + X]) C.Clear(X, Y);
+            // the fresh break catches the light
+            for (int Y = E.Y - Rr - 1; Y <= E.Y + Rr + 1; Y++)
+                for (int X = E.X - Rr - 1; X <= E.X + Rr + 1; X++)
+                    if (Edge(X, Y) && new Vector2(X - E.X, Y - E.Y).Length() <= Rad + 1.5f)
+                        C.Set(X, Y, C.At(X, Y).Lightened(0.22f));
+        }
+        // a crack running in from the edge toward the middle
+        {
+            var L = Edges(0.8f);
+            if (L.Count > 0)
+            {
+                var S = L[R.Next(L.Count)];
+                var P = new Vector2(S.X + 0.5f, S.Y + 0.5f);
+                var Dir = (Mid - P).Normalized();
+                int Len = (int)((4 + Stage * 2) * Size);
+                for (int I = 0; I < Len; I++)
+                {
+                    int X = (int)P.X, Y = (int)P.Y;
+                    if (!C.Solid(X, Y))
+                    {
+                        if (I > 0) break;
+                    }
+                    else
+                    {
+                        C.Set(X, Y, C.At(X, Y).Darkened(0.5f));
+                        if (C.Solid(X - 1, Y)) C.Set(X - 1, Y, C.At(X - 1, Y).Lightened(0.08f));
+                    }
+                    Dir = Dir.Rotated(((float)R.NextDouble() - 0.5f) * 0.9f);
+                    P += Dir;
+                }
+            }
+        }
+        // chips on the ground
+        for (int K = 0; K < 2; K++)
+        {
+            int Side = (R.Next(2) == 0) ? -1 : 1;
+            int X = C.Anchor.X + Side * (int)((X1 - X0) * 0.25f + 2 + R.Next(5));
+            int Y = Math.Min(C.H - 2, C.Anchor.Y + R.Next(4));
+            if (X < 1 || X >= C.W - 2 || C.Solid(X, Y)) continue;
+            C.Put(X, Y, ChipPal[1 + R.Next(ChipPal.Length - 1)]);
+            if (R.Next(2) == 0 && !C.Solid(X + 1, Y)) C.Put(X + 1, Y, ChipPal[Math.Max(0, ChipPal.Length - 2)]);
+        }
     }
 
     void Save(string Name, int Variant, Canvas C, int Radius)
@@ -685,135 +838,103 @@ public partial class PixelNature : Node
         return C;
     }
 
-    // --- metal: vehicle wrecks and scrap (GDD 4.3) ------------------------------
-    // A rusted car seen from the 3/4 camera: the roof and bonnet on top, the near side panel below, one wheel gone.
-    Canvas Wreck(int Seed)
+    // --- titanium: ore outcrops in the outer zone (GDD 4.3) --------------------------
+    // A dark slate-blue rock with blue and violet crystal prisms growing out of it, so it never reads as the pale
+    // grey stone. Also writes node_titanium_glow_<k>: the crystals alone, which the game pulses over the node, with
+    // the crystal tips marked pure white (where it twinkles).
+    (Canvas Ore, Canvas Glow) TitaniumOre(int Seed)
     {
         var R = new Random(Seed);
-        var C = new Canvas(52, 34);
-        int Rust = R.Next();
-        C.Shadow(28, 28, 22, 4);
-        // wheels peeking out under the side panel (the rear one is missing: just the hub)
-        Disc(C, 13, 27, 4.2f, 2.8f, TYRE);
-        Disc(C, 38, 27, 4.2f, 2.8f, TYRE);
-        C.Put(38, 27, RIM);
-        C.Put(39, 27, RIM);
-        // side panel
-        for (int Y = 17; Y <= 26; Y++)
-            for (int X = 4; X <= 47; X++)
-            {
-                if ((X == 4 || X == 47) && (Y == 17 || Y == 26)) continue;
-                if (Y >= 24 && ((X >= 9 && X <= 17) || (X >= 34 && X <= 42))) continue; // wheel arches
-                int B = Y <= 18 ? 3 : Y >= 25 ? 0 : 1;
-                if (X <= 5) B = Math.Min(4, B + 1);
-                C.Put(X, Y, Paint(B, X, Y, Rust, Y >= 21 ? 0.38f : 0.5f));
-            }
-        // door seams and a dent
-        for (int Y = 18; Y <= 24; Y++) { C.Put(20, Y, PAINT[0]); C.Put(31, Y, PAINT[0]); }
-        C.Put(26, 21, PAINT[0]); C.Put(27, 22, PAINT[0]); C.Put(25, 21, PAINT[3]);
-        // bonnet (right) and boot (left): the flat top
-        for (int Y = 10; Y <= 16; Y++)
-            for (int X = 5; X <= 46; X++)
-            {
-                if ((X == 5 || X == 46) && Y == 10) continue;
-                int B = Y <= 11 ? 4 : 3;
-                C.Put(X, Y, Paint(B, X, Y, Rust, 0.48f));
-            }
-        // cabin: roof on top, windows along its near side, a smashed windscreen
-        for (int Y = 3; Y <= 15; Y++)
-            for (int X = 14; X <= 35; X++)
-            {
-                int Inset = Y <= 4 ? 2 : 0;
-                if (X < 14 + Inset || X > 35 - Inset) continue;
-                Color Col;
-                if (Y >= 11) Col = (X == 14 || X == 25 || X == 35) ? PAINT[1] : GLASS;
-                else if (X >= 33) Col = GLASS;
-                else Col = Paint(Y <= 4 ? 4 : 3, X, Y, Rust, 0.5f);
-                C.Put(X, Y, Col);
-            }
-        C.Put(16, 12, GLINT); C.Put(17, 12, GLINT); C.Put(27, 12, GLINT);
-        C.Put(33, 6, GLINT); C.Put(34, 8, PAINT[4]); C.Put(33, 9, GLINT);
-        // headlight and a rust streak down from the roof
-        C.Put(46, 17, new Color("C8C2A6"));
-        C.Put(45, 17, new Color("8F8A74"));
-        C.Anchor = new Vector2I(26, 21);
-        C.Outline(INK);
-        return C;
+        var C = new Canvas(48, 44);
+        var G = new Canvas(48, 44);
+        float Cx = 22, By = 39;
+        Boulder(C, R, Cx, By - 1, 17, 11, ORE_ROCK, false, 1);
+        if (Seed % 2 == 0) Boulder(C, R, Cx + 13, By + 1, 7, 5, ORE_ROCK, false, 2);
+        else Boulder(C, R, Cx - 13, By + 1, 6, 4, ORE_ROCK, false, 2);
+        // crystals, back ones first
+        int N = 5 + R.Next(2);
+        var List = new List<(float X, float Y, float A, float L, float W, bool Violet)>();
+        for (int I = 0; I < N; I++)
+        {
+            float T = I / (N - 1f) - 0.5f;
+            float X = Cx + T * 22 + (float)(R.NextDouble() - 0.5) * 3;
+            float Y = By - 13 + MathF.Abs(T) * 7 + (float)R.NextDouble() * 2;
+            float A = T * 1.1f + (float)(R.NextDouble() - 0.5) * 0.3f;
+            float L = 17 - MathF.Abs(T) * 14 + (float)R.NextDouble() * 4;
+            float W = 2.6f + (float)R.NextDouble() * 1.2f - MathF.Abs(T) * 0.8f;
+            List.Add((X, Y, A, L, W, R.Next(3) == 0));
+        }
+        List.Sort((P, Q) => P.Y.CompareTo(Q.Y));
+        foreach (var K in List) Crystal(C, G, K.X, K.Y, K.A, K.L, K.W, K.Violet ? VIOLET : TI);
+        // a few chips of crystal lying at the foot
+        foreach (var (X, Y) in new[] { (6, 41), (11, 42), (35, 42), (40, 40) })
+        {
+            C.Put(X, Y, TI[3]);
+            C.Put(X + 1, Y, TI[1]);
+        }
+        C.ShadowUnder(Cx + 4, By, 17, 4);
+        C.Anchor = new Vector2I((int)Cx, (int)(By - 5));
+        G.Anchor = C.Anchor;
+        C.Outline(ORE_ROCK[0].Darkened(0.55f));
+        return (C, G);
     }
 
-    Color Paint(int B, int X, int Y, int Seed, float RustAbove)
+    // One hexagonal prism from its foot (X, Y), leaning by A radians from straight up: the face toward the light
+    // is bright, the far face dark, a pale ridge between them, a pointed tip.
+    static void Crystal(Canvas C, Canvas G, float X, float Y, float A, float L, float W, Color[] Pal)
     {
-        float N = Value(X, Y, 5, Seed);
-        if (N > RustAbove + 0.25f) return RUST[Math.Clamp(B, 0, RUST.Length - 1)];
-        if (N > RustAbove + 0.18f) return RUST[Math.Clamp(B - 1, 0, RUST.Length - 1)];
-        return PAINT[B];
-    }
-
-    // A heap of scrap: a rusty drum, leaning steel sheets and a pipe.
-    Canvas ScrapHeap(int Seed)
-    {
-        var R = new Random(Seed);
-        var C = new Canvas(46, 34);
-        int Rust = R.Next();
-        C.Shadow(25, 28, 19, 4);
-        // back sheet, leaning
-        Sheet(C, new[] { new Vector2(18, 6), new Vector2(38, 10), new Vector2(40, 27), new Vector2(17, 27) }, 3, Rust);
-        // pipe across the front of the sheet
-        var Pipe = new List<(Vector2, Vector2, float, float)> { (new Vector2(14, 25), new Vector2(43, 18), 1.8f, 1.8f) };
-        Raster(C, Pipe, PAINT);
-        // front sheet
-        Sheet(C, new[] { new Vector2(22, 17), new Vector2(36, 15), new Vector2(38, 28), new Vector2(24, 29) }, 2, Rust + 1);
-        // the drum, standing on the left
-        for (int Y = 9; Y <= 27; Y++)
-            for (int X = 4; X <= 15; X++)
+        var Dir = new Vector2(MathF.Sin(A), -MathF.Cos(A));
+        var Side = new Vector2(-Dir.Y, Dir.X);
+        float Tip = W * 1.6f;
+        int X0 = (int)(X - L - W - 2), X1 = (int)(X + L + W + 2), Y0 = (int)(Y - L - W - 2), Y1 = (int)(Y + W + 2);
+        var TipPx = new Vector2I(-1, -1);
+        float TipU = -1;
+        for (int Py = Y0; Py <= Y1; Py++)
+            for (int Px = X0; Px <= X1; Px++)
             {
-                float Dx = (X + 0.5f - 10) / 6f;
-                if (MathF.Abs(Dx) > 1) continue;
-                if (Y <= 11)
-                {
-                    float Dy = (Y + 0.5f - 10.5f) / 2.2f;
-                    if (Dx * Dx + Dy * Dy > 1.05f) continue;
-                    C.Put(X, Y, Dx * Dx + Dy * Dy > 0.5f ? RUST[3] : RUST[1]);
-                    continue;
-                }
-                int B = Dx < -0.5f ? 4 : Dx < 0.1f ? 3 : Dx < 0.6f ? 2 : 1;
-                if (Y == 16 || Y == 22) B = Math.Max(0, B - 2);
-                if (Y >= 26) B = Math.Max(0, B - 1);
-                C.Put(X, Y, RUST[B]);
+                var D = new Vector2(Px + 0.5f - X, Py + 0.5f - Y);
+                float U = D.Dot(Dir), V = D.Dot(Side);
+                if (U < 0 || U > L) continue;
+                float Half = U < L - Tip ? W : W * (L - U) / Tip;
+                if (MathF.Abs(V) > Half) continue;
+                // Side points to the right of the axis; the light comes from the upper left
+                int B;
+                if (MathF.Abs(V) < 0.6f) B = 4;
+                else if (V < 0) B = U > L - Tip ? 4 : 3;
+                else B = U > L - Tip ? 2 : 1;
+                if (V > Half - 0.8f && V > 0) B = 0;
+                C.Put(Px, Py, Pal[B], 2, 9);
+                G.Put(Px, Py, new Color(Pal[Math.Min(4, B + 1)], 0.9f), 3);
+                if (U > TipU) { TipU = U; TipPx = new Vector2I(Px, Py); }
             }
-        // a tyre lying in front
-        Disc(C, 31, 30, 5, 2.4f, TYRE);
-        C.Put(30, 30, RUST[0]); C.Put(31, 30, RUST[0]); C.Put(32, 30, RUST[0]);
-        C.Anchor = new Vector2I(24, 22);
-        C.Outline(INK);
-        return C;
+        if (TipU >= 0) G.Put(TipPx.X, TipPx.Y, Colors.White, 3);
     }
 
-    void Sheet(Canvas C, Vector2[] Pts, int B, int Rust)
-    {
-        for (int Y = 0; Y < C.H; Y++)
-            for (int X = 0; X < C.W; X++)
-            {
-                if (!Inside(Pts, new Vector2(X + 0.5f, Y + 0.5f))) continue;
-                int Bb = B;
-                // the top edge of a sheet catches the light, a riveted seam runs across it
-                if (!Inside(Pts, new Vector2(X + 0.5f, Y - 0.5f))) Bb = 4;
-                else if (!Inside(Pts, new Vector2(X + 1.5f, Y + 0.5f))) Bb = Math.Max(0, B - 2);
-                Color Col = Paint(Bb, X, Y, Rust, 0.45f);
-                C.Put(X, Y, Col);
-            }
-    }
-
-    Canvas ScrapLeft(int Seed)
+    // what is left once mined: dark rubble and a few broken crystal stubs
+    Canvas OreLeft(int Seed)
     {
         var R = new Random(Seed);
-        var C = new Canvas(30, 16);
-        C.Shadow(16, 11, 11, 3);
-        Sheet(C, new[] { new Vector2(5, 7), new Vector2(17, 6), new Vector2(18, 11), new Vector2(6, 12) }, 2, R.Next());
-        Sheet(C, new[] { new Vector2(15, 9), new Vector2(25, 8), new Vector2(25, 12), new Vector2(16, 13) }, 3, R.Next());
-        C.Put(9, 13, PAINT[3]); C.Put(22, 6, RUST[3]); C.Put(23, 6, RUST[1]);
-        C.Anchor = new Vector2I(15, 10);
-        C.Outline(INK);
+        var C = new Canvas(30, 18);
+        C.ShadowUnder(16, 13, 11, 3);
+        foreach (var (X, Y, W) in new[] { (6, 11, 4), (12, 13, 3), (17, 10, 5), (22, 13, 3) })
+        {
+            for (int Dx = 0; Dx < W; Dx++)
+            {
+                C.Put(X + Dx, Y - 1, ORE_ROCK[Dx == 0 ? 4 : 3]);
+                C.Put(X + Dx, Y, ORE_ROCK[Dx == W - 1 ? 1 : 2]);
+            }
+        }
+        foreach (var (X, Y, H) in new[] { (11, 10, 3), (19, 8, 2), (15, 12, 2) })
+        {
+            for (int Dy = 0; Dy < H; Dy++)
+            {
+                C.Put(X, Y - Dy, TI[Dy == H - 1 ? 4 : 3]);
+                C.Put(X + 1, Y - Dy, TI[1]);
+            }
+        }
+        if (R.Next(2) == 0) C.Put(24, 11, VIOLET[3]);
+        C.Anchor = new Vector2I(15, 12);
+        C.Outline(ORE_ROCK[0].Darkened(0.55f));
         return C;
     }
 
@@ -966,8 +1087,44 @@ public partial class PixelNature : Node
         // the same, for shapes drawn before their shadow
         public void ShadowUnder(float Cx, float Cy, float Rx, float Ry) => Shadow(Cx, Cy, Rx, Ry);
 
+        public Color Ink;
+        // what the outline painted over, so a broken stage can take it off, knock pieces out and outline again
+        List<(int I, Color C, byte K)> Under = new();
+
+        public bool Solid(int X, int Y) => In(X, Y) && (Kind[Y * W + X] == 2 || Kind[Y * W + X] == 3);
+        public Color At(int X, int Y) => Px[Y * W + X];
+        public void Set(int X, int Y, Color C) { if (In(X, Y)) Px[Y * W + X] = C; }
+        public void Clear(int X, int Y) { if (In(X, Y)) { Kind[Y * W + X] = 0; Px[Y * W + X] = default; } }
+
+        public Canvas Clone()
+        {
+            var C = new Canvas(W, H) { Anchor = Anchor, Ink = Ink, Under = new(Under) };
+            Array.Copy(Px, C.Px, Px.Length);
+            Array.Copy(Kind, C.Kind, Kind.Length);
+            Array.Copy(Tags, C.Tags, Tags.Length);
+            return C;
+        }
+
+        public void Unoutline()
+        {
+            foreach (var (I, C, K) in Under)
+            {
+                Px[I] = C;
+                Kind[I] = K;
+            }
+            Under.Clear();
+        }
+
+        // keep only the pixels that are still solid on the other canvas (a glow layer over a broken node)
+        public void KeepWhere(Canvas Body)
+        {
+            for (int I = 0; I < W * H; I++)
+                if (Kind[I] != 0 && !Body.Solid(I % W, I / W)) Kind[I] = 0;
+        }
+
         public void Outline(Color Ink)
         {
+            this.Ink = Ink;
             var Marks = new List<int>();
             for (int Y = 0; Y < H; Y++)
                 for (int X = 0; X < W; X++)
@@ -978,6 +1135,7 @@ public partial class PixelNature : Node
                 }
             foreach (int I in Marks)
             {
+                Under.Add((I, Px[I], Kind[I]));
                 Px[I] = Ink;
                 Kind[I] = 4;
             }

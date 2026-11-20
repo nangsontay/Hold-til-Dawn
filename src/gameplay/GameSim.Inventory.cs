@@ -22,18 +22,18 @@ public partial class GameSim : RefCounted
         { "wood", new GArray("Wood", STACK, "res") },
         { "stone", new GArray("Stone", STACK, "res") },
         { "herb", new GArray("Herb", STACK, "res") },
-        { "metal", new GArray("Metal", STACK, "res") },
+        { "titanium", new GArray("Titanium", STACK, "res") },
         { "bandage", new GArray("Bandage", STACK, "use") },
         { "arrow", new GArray("Arrow", STACK, "ammo") },
 
         { "stone_spear", new GArray("Stone spear", 1, "weapon") },
-        { "metal_blade", new GArray("Metal blade", 1, "weapon") },
+        { "titanium_blade", new GArray("Titanium blade", 1, "weapon") },
         { "starter_bow", new GArray("Starter bow", 1, "weapon") },
         { "bow", new GArray("Bow", 1, "weapon") },
         { "hammer", new GArray("Hammer", 1, "weapon") },
         { "light_armour", new GArray("Light armour", 1, "armour") },
         { "stone_armour", new GArray("Stone armour", 1, "armour") },
-        { "metal_armour", new GArray("Metal armour", 1, "armour") },
+        { "titanium_armour", new GArray("Titanium armour", 1, "armour") },
     };
 
     // id -> [damage, attacks per second, reach or range in tiles, ranged, uses arrows] (BAL-08..10, BAL-42)
@@ -41,7 +41,7 @@ public partial class GameSim : RefCounted
         // bare hands (no item): the GDD's basic weapon numbers (BAL-08), so the balance of FML-03 is unchanged
         { "fists", new GArray(15.0f, 1.5f, 1.5f, false, false) },
         { "stone_spear", new GArray(20.0f, 1.5f, 1.5f, false, false) },
-        { "metal_blade", new GArray(26.0f, 1.5f, 1.5f, false, false) },
+        { "titanium_blade", new GArray(26.0f, 1.5f, 1.5f, false, false) },
         { "hammer", new GArray(12.0f, 1.2f, 1.5f, false, false) },
         // team change to BAL-42: the Scout's starter bow has the crafted bow's numbers (BAL-10) but needs no arrows
         { "starter_bow", new GArray(12.0f, 1.0f, 8.0f, true, false) },
@@ -49,7 +49,7 @@ public partial class GameSim : RefCounted
     };
 
     // armour items by tier; ARMOUR holds the matching values (BAL-11)
-    public static readonly GArray ARMOUR_ITEMS = new GArray("", "light_armour", "stone_armour", "metal_armour");
+    public static readonly GArray ARMOUR_ITEMS = new GArray("", "light_armour", "stone_armour", "titanium_armour");
 
     // Team storage inside the base (BAL-18).
     public dynamic Storage = GameSim.EmptySlots(STORAGE_SLOTS);

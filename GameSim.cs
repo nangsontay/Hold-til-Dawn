@@ -22,20 +22,20 @@ public partial class GameSim : RefCounted
     public static readonly dynamic ARMOUR = new GArray(0.0f, 0.15f, 0.3f, 0.45f);
     public static readonly dynamic MODES = new GArray("Easy", "Medium", "Hard");
     public static readonly dynamic MODE_MUL = new GArray(new GArray(0.75f, 0.85f, 0.8f), new GArray(1.0f, 1.0f, 1.0f), new GArray(1.25f, 1.15f, 1.2f));
-    public static readonly dynamic RES = new GArray("wood", "stone", "herb", "metal");
+    public static readonly dynamic RES = new GArray("wood", "stone", "herb", "titanium");
     // [name, cost, unlock tier, what it makes, amount, Engineer only]; "what" is an item id, "base" (repair) or
     // "revive" (Revival kit used at the workbench). Recipe table in GDD section 3.2; walls and towers are built (B).
     public static readonly dynamic RECIPES = new GArray(
         new GArray("Light armour", new GDict { { "wood", 6 } }, 0, "light_armour", 1, false),
         new GArray("Bandage", new GDict { { "herb", 2 } }, 0, "bandage", 1, false),
-        new GArray("Revival kit", new GDict { { "herb", 4 }, { "metal", 4 } }, 0, "revive", 0, false),
+        new GArray("Revival kit", new GDict { { "herb", 4 }, { "titanium", 4 } }, 0, "revive", 0, false),
         new GArray("Base repair +100", new GDict { { "stone", 5 } }, 0, "base", 100, true),
         new GArray("Stone spear", new GDict { { "wood", 8 }, { "stone", 12 } }, 1, "stone_spear", 1, false),
         new GArray("Stone armour", new GDict { { "wood", 8 }, { "stone", 16 } }, 1, "stone_armour", 1, false),
-        new GArray("Bow + 5 arrows", new GDict { { "wood", 6 }, { "metal", 2 } }, 1, "bow", 1, false),
+        new GArray("Bow + 5 arrows", new GDict { { "wood", 6 }, { "titanium", 2 } }, 1, "bow", 1, false),
         new GArray("5 arrows", new GDict { { "wood", 1 } }, 1, "arrow", 5, false),
-        new GArray("Metal blade", new GDict { { "wood", 10 }, { "metal", 20 } }, 2, "metal_blade", 1, false),
-        new GArray("Metal armour", new GDict { { "metal", 24 } }, 2, "metal_armour", 1, false));
+        new GArray("Titanium blade", new GDict { { "wood", 10 }, { "titanium", 20 } }, 2, "titanium_blade", 1, false),
+        new GArray("Titanium armour", new GDict { { "titanium", 24 } }, 2, "titanium_armour", 1, false));
     public dynamic World = new WorldGeometry();
     public dynamic WallCache = new GArray();
     public dynamic WallKey = "";

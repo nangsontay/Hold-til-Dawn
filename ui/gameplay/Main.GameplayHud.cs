@@ -55,7 +55,7 @@ public partial class Main : Node2D
                 }
                 else
                 {
-                    Hint = Gd.Format("B then 3: build a tower at door %s (10 wood + 5 metal)", Gd.At(GameSim.DOOR_NAMES, Slot));
+                    Hint = Gd.Format("B then 3: build a tower at door %s (10 wood + 5 titanium)", Gd.At(GameSim.DOOR_NAMES, Slot));
                 }
             }
         }

@@ -36,7 +36,7 @@ public partial class GameSim : RefCounted
                     return "Too close to a door (3 tiles)";
                 }
             }
-            if ((Gd.Length(Piece) > (ISLAND - (3 * T))))
+            if (!IslandMap.OnGrass((Vector2)Piece, T))
             {
                 return "Too close to the shore";
             }

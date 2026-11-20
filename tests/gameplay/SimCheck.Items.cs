@@ -86,10 +86,10 @@ public partial class SimCheck : Node
         S.Unlock = 1;
         Eng.Pos = (GameSim.WORKBENCH_POS + Gd.MakeVector2(0, 24));
         S.SetCount(Eng, "wood", 7);
-        S.SetCount(Eng, "metal", 2);
+        S.SetCount(Eng, "titanium", 2);
         S.Action(1, "craft", 6);
         this.Run(S, 3.1f);
-        this.Check(((S.Count(Eng, "bow") == 1) && (S.Count(Eng, "arrow") == 5) && (S.Count(Eng, "wood") == 1)), "Bow + 5 arrows costs 6 wood + 2 metal");
+        this.Check(((S.Count(Eng, "bow") == 1) && (S.Count(Eng, "arrow") == 5) && (S.Count(Eng, "wood") == 1)), "Bow + 5 arrows costs 6 wood + 2 titanium");
         S.Action(1, "craft", 7);
         this.Run(S, 3.1f);
         this.Check(((S.Count(Eng, "arrow") == 10) && (S.Count(Eng, "wood") == 0)), "5 arrows cost 1 wood");
@@ -191,7 +191,7 @@ public partial class SimCheck : Node
         dynamic Crafter = Gd.At(S.Players, 1);
         Crafter.Pos = (GameSim.WORKBENCH_POS + Gd.MakeVector2(0, 24));
         S.SetCount(Crafter, "herb", 4);
-        S.SetCount(Crafter, "metal", 4);
+        S.SetCount(Crafter, "titanium", 4);
         S.Action(1, "craft", 2);
         this.Run(S, 3.1f);
         this.Check(((Dead.State == 0) && (Dead.Hp == (0.5f * Dead.Maxhp)) && (Dead.Pos.DistanceTo(Gd.At(GameSim.DOOR_POS, 2)) < (2 * 32))), "a Revival kit brings a teammate back at the nearest door with 50% HP");

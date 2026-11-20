@@ -18,9 +18,9 @@ public partial class Main : Node2D
         ["wood"] = "trees",
         ["stone"] = "rocks",
         ["herb"] = "herb bushes",
-        ["metal"] = "scrap piles",
+        ["titanium"] = "blue crystal ore",
     };
-    static readonly string[] TIER_TITLES = { "BASIC", "STONE TIER  -  after night 1", "METAL TIER  -  after the first boss" };
+    static readonly string[] TIER_TITLES = { "BASIC", "STONE TIER  -  after night 1", "TITANIUM TIER  -  after the first boss" };
     const float CARD_H = 92.0f;
     const float CARD_GAP = 8.0f;
     const float BOX = 52.0f;
@@ -125,7 +125,7 @@ public partial class Main : Node2D
         {
             dynamic S = GameSim.WEAPON_STATS[Id];
             bool Ranged = Gd.Truth(Gd.At(S, 3));
-            Out.Add((Id == "stone_spear") ? "A long thrust that keeps them at reach." : ((Id == "metal_blade") ? "A wide, heavy slash. Best melee weapon." : ((Id == "bow") ? "Shoots toward the cursor. Holds its arrows (up to 30)." : "Shoots toward the cursor; needs no arrows.")));
+            Out.Add((Id == "stone_spear") ? "A long thrust that keeps them at reach." : ((Id == "titanium_blade") ? "A wide, heavy slash. Best melee weapon." : ((Id == "bow") ? "Shoots toward the cursor. Holds its arrows (up to 30)." : "Shoots toward the cursor; needs no arrows.")));
             Out.Add(("Damage " + Num(Gd.At(S, 0)) + "   -   " + Num(Gd.At(S, 1)) + (Ranged ? " shot" : " hit") + ((Gd.Float(Gd.At(S, 1)) == 1.0f) ? "" : "s") + "/s"));
             Out.Add(((Ranged ? "Range " : "Reach ") + Num(Gd.At(S, 2)) + " tiles"));
             return Out;

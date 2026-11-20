@@ -14,7 +14,7 @@ public partial class GameSim : RefCounted
     public static readonly dynamic TOWER_LIGHT = (6.0f * T);
     public static readonly dynamic TOWER_BAND = (Gd.MakeVector2(3.0f, 8.0f) * T);
     public static readonly dynamic TOWER_SIDE = (3.0f * T);
-    public static readonly dynamic TOWER_COST = new GDict { { "wood", 10 }, { "metal", 5 } };
+    public static readonly dynamic TOWER_COST = new GDict { { "wood", 10 }, { "titanium", 5 } };
 
     // --- towers (AGT-12, MEC-11, MEC-28) -------------------------------------
     public static dynamic TowerSlot(dynamic Pos)
@@ -83,7 +83,7 @@ public partial class GameSim : RefCounted
             {
                 if ((this.Count(P, Res) < Gd.At(TOWER_COST, Res)))
                 {
-                    this.Note(P, "A tower costs 10 wood + 5 metal");
+                    this.Note(P, "A tower costs 10 wood + 5 titanium");
                     return;
                 }
             }

@@ -315,7 +315,7 @@ public partial class Bots : RefCounted
 
     public static dynamic PickNode(dynamic Sim, dynamic P)
     {
-        // Nearest safe-zone node (no metal), its favourite resource counted as 12 tiles closer; one bot per node.
+        // Nearest safe-zone node (no titanium), its favourite resource counted as 12 tiles closer; one bot per node.
         dynamic Taken = new GArray();
         foreach (dynamic Q in Gd.Iter(Gd.Values(Sim.Players)))
         {
@@ -352,7 +352,7 @@ public partial class Bots : RefCounted
         }
         P.BotCd = 0.5f;
         bool Dead = Gd.Truth(Gd.Any(Gd.Values(Sim.Players), (Func<dynamic, dynamic>)((Q) => (Q.State == 2))));
-        int HasWeapon = ((Sim.Count(P, "metal_blade") > 0) ? 2 : ((Sim.Count(P, "stone_spear") > 0) ? 1 : 0));
+        int HasWeapon = ((Sim.Count(P, "titanium_blade") > 0) ? 2 : ((Sim.Count(P, "stone_spear") > 0) ? 1 : 0));
         foreach (dynamic Idx in Gd.Iter(new GArray(8, 9, 4, 5, 0, 2, 1, 3)))
         {
             dynamic R = Gd.At(GameSim.RECIPES, Idx);
@@ -360,10 +360,10 @@ public partial class Bots : RefCounted
             bool Useful = Makes switch
             {
                 "stone_spear" => (HasWeapon < 1),
-                "metal_blade" => (HasWeapon < 2),
+                "titanium_blade" => (HasWeapon < 2),
                 "light_armour" => (Sim.ArmourTier(P) < 1),
                 "stone_armour" => (Sim.ArmourTier(P) < 2),
-                "metal_armour" => (Sim.ArmourTier(P) < 3),
+                "titanium_armour" => (Sim.ArmourTier(P) < 3),
                 "bandage" => (Sim.Count(P, "bandage") < 2),
                 "revive" => Dead,
                 "base" => (Sim.BaseHp <= (GameSim.BASE_HP - 100)),
@@ -382,7 +382,7 @@ public partial class Bots : RefCounted
     // harder than the hammer or the starter bow up close.
     public static void Equip(dynamic Sim, dynamic P)
     {
-        foreach (dynamic W in Gd.Iter(new GArray("metal_blade", "stone_spear")))
+        foreach (dynamic W in Gd.Iter(new GArray("titanium_blade", "stone_spear")))
         {
             for (int I = 0; I < Gd.Size(P.Inv); I++)
             {
@@ -431,7 +431,6 @@ public partial class Bots : RefCounted
         float Spd = Gd.Float((GameSim.SPEED * ((P.Role == 0) ? (dynamic)(1.2f) : 1.0f)));
         P.Pos = Sim.MoveActor(P.Pos, (P.Pos + (Step.Normalized() * Gd.Minf((Spd * Dt), Gd.Length(Step)))), (0.3f * T));
         P.Aim = Step.Angle();
-        P.Pos = P.Pos.LimitLength(GameSim.ISLAND);
         bool Night = Gd.Truth((Sim.Phase == "night"));
         P.Pos = GameSim.Collide(P.Pos, BODY, Gd.Map(Sim.Doors, (Func<dynamic, dynamic>)((D) => (!(Gd.Truth(Night)) || (D <= 0)))));
         if ((Gd.Truth(Night) && !(Gd.Truth(P.Inside)) && !(Gd.Truth(Gd.Any(Sim.Doors, (Func<dynamic, dynamic>)((D) => (D <= 0)))))))

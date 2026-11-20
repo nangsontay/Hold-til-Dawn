@@ -84,7 +84,7 @@ public partial class GameSim : RefCounted
         int Door = Gd.Int(Gd.At(Active, (Rng.Randi() % Gd.Size(Active))));
         dynamic E = this.Spawn(GRUNT, Door, 60.0f, false);
         // BAL-34: 60 tiles in front of its door; BAL-39: a Grunt's speed of this night
-        E.Pos = (Gd.At(DOOR_POS, Door) + ((Gd.At(DOOR_DIR, Door) * 60.0f) * T)).LimitLength((ISLAND - (2 * T)));
+        E.Pos = IslandMap.PullInland((Vector2)(Gd.At(DOOR_POS, Door) + ((Gd.At(DOOR_DIR, Door) * 60.0f) * T)), (2 * T));
         this.SetupBoss(E, this.BossKindFor(K));
         this.Say(Gd.Format("%s is heading for door %s!", new GArray(GameSim.BossTitle(E.Kind).ToUpper(), Gd.At(DOOR_NAMES, Door))));
     }
@@ -543,7 +543,8 @@ public partial class GameSim : RefCounted
         if (!(Gd.Truth(AnySide)))
         {
             Vector2 Dd = (Vector2)(Gd.At(DOOR_DIR, Door));
-            return ((Gd.At(DOOR_POS, Door) + ((Dd * DistTiles) * T)) + ((Gd.MakeVector2((-Dd.Y), Dd.X) * Rng.RandfRange((-22.0f), 22.0f)) * T));
+            // the island map's enemy spawn bands: 10 x 10 tiles on the door axis (BAL-34)
+            return IslandMap.PullInland((Vector2)((Gd.At(DOOR_POS, Door) + ((Dd * DistTiles) * T)) + ((Gd.MakeVector2((-Dd.Y), Dd.X) * Rng.RandfRange((-5.0f), 5.0f)) * T)), (2 * T));
         }
         dynamic Dir = Vector2.FromAngle((Rng.Randf() * Mathf.Tau));
         dynamic Pos = (Dir * ((DistTiles * T) + Gd.Length(HALF)));

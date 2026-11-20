@@ -130,13 +130,16 @@ public partial class SimCheck : Node
         if (Gd.Truth(Boss))
         {
             Boss.Hp = 1;
+            // up above ground and not about to dig in (a burrowed Burrower cannot be hit)
+            S.BossAct(Boss, "", 0.0f);
+            Boss.SigCd = 99.0f;
             dynamic Sc = Gd.At(S.Players, 2);
             Sc.Pos = (Boss.Pos - Gd.MakeVector2(32, 0));
             Sc.Aim = 0.0f;
             Sc.Atk = true;
             this.Run(S, 0.2f);
             Sc.Atk = false;
-            this.Check(((S.K == 3) && (S.Unlock == 2)), "killing the boss ends night 2 and unlocks metal tier");
+            this.Check(((S.K == 3) && (S.Unlock == 2)), "killing the boss ends night 2 and unlocks titanium tier");
         }
     }
 
@@ -259,7 +262,7 @@ public partial class SimCheck : Node
         dynamic Pick = Gd.At(S.Players, 2);
         Pick.Pos = Gd.MakeVector2(0, (30 * 32));
         this.Run(S, 0.1f);
-        this.Check((S.Count(Pick, "metal") == 10), "boss drop collected by walking over it (+10 metal)");
+        this.Check((S.Count(Pick, "titanium") == 10), "boss drop collected by walking over it (+10 titanium)");
         Gd.Clear(S.Drops);
         S.AddDrop(Gd.MakeVector2(0, ((30 * 32) + 300)), "wood", 2);
         this.Run(S, 31);
@@ -301,24 +304,49 @@ public partial class SimCheck : Node
             Vector2 Rel = (Vector2)((E.Pos - Gd.At(GameSim.DOOR_POS, E.Door)));
             Vector2 Dd = (Vector2)(Gd.At(GameSim.DOOR_DIR, E.Door));
             dynamic Fwd = (Rel.Dot(Dd) / 32.0f);
-            return ((Fwd >= 24.99f) && (Fwd <= 35.01f) && (Gd.Absf(Rel.Dot(Gd.MakeVector2((-Dd.Y), Dd.X))) <= (22.01f * 32)));
+            return ((Fwd >= 24.99f) && (Fwd <= 35.01f) && (Gd.Absf(Rel.Dot(Gd.MakeVector2((-Dd.Y), Dd.X))) <= (5.01f * 32)));
         };
         dynamic South = (Func<dynamic, dynamic>)((E) => ((Gd.Absf(E.Pos.X) < GameSim.HALF.X) && (E.Pos.Y > GameSim.HALF.Y)));
         this.Check(!(Gd.Truth(Gd.IsEmpty(S.Enemies))), "night wave spawns enemies");
         if (Gd.Truth(GameSim.SPAWN_ALL_SIDES))
         {
-            this.Check(Gd.All(S.Enemies, (Func<dynamic, dynamic>)((E) => ((Gd.Length(E.Pos) <= ((GameSim.ISLAND - (2 * GameSim.T)) + 0.01f)) && (GameSim.WallDist(E.Pos) >= (8 * GameSim.T))))), "wave spawns stay on the island and outside the base");
+            this.Check(Gd.All(S.Enemies, (Func<dynamic, dynamic>)((E) => (IslandMap.OnLand((Vector2)E.Pos) && (GameSim.WallDist(E.Pos) >= (8 * GameSim.T))))), "wave spawns stay on the island and outside the base");
             this.Check((Gd.Truth(Gd.Any(S.Enemies, (Func<dynamic, dynamic>)((E) => (E.Pos.X < (-GameSim.HALF.X))))) && Gd.Truth(Gd.Any(S.Enemies, (Func<dynamic, dynamic>)((E) => (E.Pos.X > GameSim.HALF.X)))) && Gd.Truth(Gd.Any(S.Enemies, (Func<dynamic, dynamic>)((E) => (E.Pos.Y < (-GameSim.HALF.Y))))) && Gd.Truth(Gd.Any(S.Enemies, (Func<dynamic, dynamic>)((E) => (E.Pos.Y > GameSim.HALF.Y))))), "night wave comes from west, east, north and south");
             this.Check((Gd.Truth(Gd.Any(S.Enemies, (Func<dynamic, dynamic>)((E) => (GameSim.WallDist(E.Pos) < (20 * GameSim.T))))) && Gd.Truth(Gd.Any(S.Enemies, (Func<dynamic, dynamic>)((E) => (GameSim.WallDist(E.Pos) > (45 * GameSim.T)))))), "night wave spreads from near the base to the outer island");
             this.Check(Gd.All(S.Enemies, (Func<dynamic, dynamic>)((E) => (E.Door == S.NearestActiveDoor(E.Pos)))), "each enemy heads for its nearest attacked door");
         }
         else
         {
-            this.Check(Gd.All(S.Enemies, InBand), "night spawns in a band 25-35 tiles in front of each active door");
+            this.Check(Gd.All(S.Enemies, InBand), "night spawns in a 10 x 10 tile band 25-35 tiles in front of each active door");
             this.Check(!(Gd.Truth(Gd.Any(S.Enemies, South))), "no night spawn south of the base");
         }
         S.Nodes = KeptNodes;
-        this.Check(Gd.All(S.Nodes, (Func<dynamic, dynamic>)((N) => (!(Gd.Truth(GameSim.InDoorLane(N.Pos))) && Gd.Truth(((N.Type < 3) ? (dynamic)((GameSim.WallDist(N.Pos) <= (20 * 32))) : (GameSim.WallDist(N.Pos) > (20 * 32))))))), "resource nodes in the safe zone, metal beyond it, door corridors clear");
+        // island map (src/world/IslandMap.cs): most wood, stone and herbs round the three clusters in the safe zone,
+        // a few at outer landmarks; all titanium past it; every node on land, off the door corridors
+        this.Check(Gd.All(S.Nodes, (Func<dynamic, dynamic>)((N) => (!(Gd.Truth(GameSim.InDoorLane(N.Pos))) && IslandMap.OnGrass((Vector2)N.Pos) && ((N.Type < 3) || (GameSim.WallDist(N.Pos) > (20 * 32)))))), "resource nodes on the island, titanium beyond the safe zone, door corridors clear");
+        int Basic = 0, InSafe = 0;
+        foreach (dynamic N in Gd.Iter(S.Nodes))
+        {
+            if (N.Type < 3)
+            {
+                Basic += 1;
+                InSafe += ((GameSim.WallDist(N.Pos) <= (20 * 32)) ? 1 : 0);
+            }
+        }
+        this.Check((InSafe >= (0.7f * Basic)), "most wood, stone and herb nodes in the safe zone");
+        // the landmarks (src/world/WorldLandmarks.cs): all 17 built, the pier walkable out over the sea, and
+        // titanium still at every salvage site
+        WorldGeometry Wld = (WorldGeometry)S.World;
+        this.Check((Wld.LmAt.Count == 17), ("every landmark but the outpost is built (" + Wld.LmAt.Count + ")"));
+        Vector2 PierEnd = Wld.LmAt[10] + new Vector2(-200, 0);
+        this.Check(((IslandMap.Depth(PierEnd) < 0) && IslandMap.OnLand(PierEnd, 10) && (IslandMap.Keep(Wld.LmAt[10], PierEnd, 10) == PierEnd)), "the Old Fishing Pier can be walked out over the sea");
+        bool EverySite = true;
+        foreach (int Site in new[] { 5, 6, 7, 13, 14 })
+        {
+            Vector2 Sp = IslandMap.ById(Site).Pos;
+            EverySite &= Gd.Truth(Gd.Any(S.Nodes, (Func<dynamic, dynamic>)((N) => ((N.Type == 3) && (((Vector2)N.Pos).DistanceTo(Sp) < (9 * 32 * IslandMap.SCALE))))));
+        }
+        this.Check(EverySite, "titanium nodes at all five salvage sites, round their structures");
         S.K = 2;
         S.Active = new GArray(1);
         // a Juggernaut: the Broodmother is slower on purpose (BAL-39)
@@ -379,12 +407,12 @@ public partial class SimCheck : Node
         this.Check(((Tw != null) && (Tw.Hp == 300.0f) && !(Gd.Truth(S.FreeTower)) && (S.Count(Te, "wood") == 0)), "the free tower is placed 3-8 tiles in front of door A at no cost");
         Te.Pos = (Gd.At(GameSim.DOOR_POS, 2) + ((Gd.At(GameSim.DOOR_DIR, 2) * 5) * 32));
         S.SetCount(Te, "wood", 20);
-        S.SetCount(Te, "metal", 10);
+        S.SetCount(Te, "titanium", 10);
         S.Action(1, "tower", 0);
         this.Check(((Gd.At(S.Towers, 2) == null) && (S.Count(Te, "wood") == 20)), "a second tower is locked until the first boss is killed");
         S.Unlock = 2;
         S.Action(1, "tower", 0);
-        this.Check(((Gd.At(S.Towers, 2) != null) && (S.Count(Te, "wood") == 10) && (S.Count(Te, "metal") == 5)), "an unlocked tower costs 10 wood + 5 metal");
+        this.Check(((Gd.At(S.Towers, 2) != null) && (S.Count(Te, "wood") == 10) && (S.Count(Te, "titanium") == 5)), "an unlocked tower costs 10 wood + 5 titanium");
         Te.Pos = (Gd.At(GameSim.DOOR_POS, 2) + ((Gd.At(GameSim.DOOR_DIR, 2) * 6) * 32));
         S.Action(1, "tower", 0);
         this.Check((S.Count(Te, "wood") == 10), "one tower per door");

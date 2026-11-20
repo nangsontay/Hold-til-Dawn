@@ -27,6 +27,7 @@ try {
     }
 
     Invoke-Suite 'tests/GeometryCheck.tscn' 'GEOMETRY ALL OK' 'geometry.log'
+    Invoke-Suite 'tests/LandmarkGroundCheck.tscn' 'LANDMARK GROUND ALL OK' 'landmark-ground.log'
     Invoke-Suite 'tests/SimCheck.tscn' 'ALL OK' 'simulation.log'
 
     # Multiplayer is removed for now; the network suite lives in git commit cf44b5f (tests/NetworkCheck.cs).

@@ -71,19 +71,21 @@ public partial class PixelItems : Node
             ".....k..........",
             ".....k..........",
         }, new() { ['G'] = "9BE37A", ['g'] = "4FB862", ['j'] = "2E7D3E", ['k'] = "6E8A3A" }),
-        ["metal"] = (new[] {
-            "....MMMMMMMM....",
-            "...MmmmmmmmmMn..",
-            "..MmmmmmmmmmMnn.",
-            ".nnnnnnnnnnnnoo.",
-            ".nnnnnnnnnnnnoo.",
+        // titanium: two ingots stamped "Ti" in the blue of the crystal ore (tools/PixelNature.cs), violet at the ends, so they never pass for stone
+        ["titanium"] = (new[] {
+            "....MMMMMMMMMM..",
+            "...MmmmmmmmmmMbp",
+            "..MmmTTTmmmmmMbp",
+            "..MmmmTmTmmmmMbp",
+            ".nnnnnTnTnnnnnbg",
+            ".nnnnnnnnnnnnnpg",
             ".oooooooooooooo.",
             "................",
-            "......MMMMMMMM..",
-            ".....MmmmmmmmMn.",
-            "....nnnnnnnnnnoo",
-            "....oooooooooooo",
-        }, Steel),
+            ".....MMMMMMMMMM.",
+            "....MmmmmmmmmMbp",
+            "...nnnnnnnnnnnbg",
+            "...ooooooooooooo",
+        }, new() { ['M'] = "D2E6FF", ['m'] = "7FA6F5", ['n'] = "4A6AD8", ['o'] = "283A8E", ['T'] = "3550B8", ['b'] = "A98CFF", ['p'] = "7C5CE0", ['g'] = "E2D6FF" }),
         ["bandage"] = (new[] {
             "....BBBBBBBB....",
             "...BBBBBBBBBbb..",
@@ -156,7 +158,7 @@ public partial class PixelItems : Node
             "...v............",
             "..v.............",
         }, Pal(Stone, Wood, new() { ['T'] = "565B66" })),
-        ["metal_blade"] = (new[] {
+        ["titanium_blade"] = (new[] {
             "............MM..",
             "...........MMm..",
             "..........MMm...",
@@ -220,10 +222,10 @@ public partial class PixelItems : Node
         }, Pal(Steel, Wood)),
         ["light_armour"] = (Vest(false, false), new() { ['L'] = "C08A50", ['l'] = "8C6A48", ['d'] = "5A3E26", ['H'] = "E0B070", ['x'] = "5A3E26" }),
         ["stone_armour"] = (Vest(true, false), new() { ['L'] = "A3A8B0", ['l'] = "7D838C", ['d'] = "565B66", ['H'] = "D5DAE1", ['x'] = "565B66" }),
-        ["metal_armour"] = (Vest(false, true), new() { ['L'] = "B4C4D4", ['l'] = "8FA3B8", ['d'] = "5B6B7C", ['H'] = "EEF4F8", ['x'] = "F2B544" }),
+        ["titanium_armour"] = (Vest(false, true), new() { ['L'] = "B4C4D4", ['l'] = "8FA3B8", ['d'] = "5B6B7C", ['H'] = "EEF4F8", ['x'] = "F2B544" }),
     };
 
-    // One chest-piece shape for the three armours; stone shows plates, metal shows rivets and a shine.
+    // One chest-piece shape for the three armours; stone shows plates, titanium shows rivets and a shine.
     static string[] Vest(bool Plates, bool Rivets)
     {
         var Rows = new List<string> {

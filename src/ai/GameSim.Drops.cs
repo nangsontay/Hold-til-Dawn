@@ -10,7 +10,7 @@ public partial class GameSim : RefCounted
 {
     public static float DROP_MUL = AiSettings.Current.DropMultiplier;
     public static readonly dynamic DROP_TTL = 30.0f;
-    public static readonly dynamic DROPS = new GArray(new GArray(0.1f, new GArray("wood", "stone", "herb"), 1, 2), new GArray(0.15f, new GArray("bandage"), 1, 1), new GArray(0.2f, new GArray("metal"), 2, 2));
+    public static readonly dynamic DROPS = new GArray(new GArray(0.1f, new GArray("wood", "stone", "herb"), 1, 2), new GArray(0.15f, new GArray("bandage"), 1, 1), new GArray(0.2f, new GArray("titanium"), 2, 2));
 
     public void Drop(dynamic E)
     {
@@ -21,7 +21,7 @@ public partial class GameSim : RefCounted
         }
         if ((E.Type == BOSS))
         {
-            this.AddDrop(E.Pos, "metal", 10);
+            this.AddDrop(E.Pos, "titanium", 10);
             this.AddDrop((E.Pos + Gd.MakeVector2((0.6f * T), 0)), "bandage", 3);
             return;
         }

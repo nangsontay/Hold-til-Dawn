@@ -51,11 +51,11 @@ public partial class GameSim : RefCounted
         Vector2 Away = (Vector2)(P.Pos.Normalized());
         dynamic Side = Gd.MakeVector2((-Away.Y), Away.X);
         Vector2 At = (Vector2)(((P.Pos + (Away * (VIEW_HALF.X + (2 * T)))) + ((Side * Rng.RandfRange((-4.0f), 4.0f)) * T)));
-        if ((Gd.Length(At) > (ISLAND - (2 * T))))
+        if (!IslandMap.OnLand(At, (2 * T)))
         {
             At = (P.Pos + ((Side * (VIEW_HALF.X + (2 * T))) * ((Rng.Randf() < 0.5f) ? (dynamic)(1.0f) : (-1.0f))));
         }
-        At = At.LimitLength((ISLAND - (2 * T)));
+        At = IslandMap.PullInland(At, (2 * T));
         foreach (dynamic Q in Gd.Iter(Gd.Values(Players)))
         {
             if (((Gd.Absf((Q.Pos.X - At.X)) < (VIEW_HALF.X + T)) && (Gd.Absf((Q.Pos.Y - At.Y)) < (VIEW_HALF.Y + T))))

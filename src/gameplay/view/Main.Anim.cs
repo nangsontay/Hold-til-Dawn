@@ -7,7 +7,7 @@ using HoldTilDawn;
 // (art/chars/*.png, drawn by tools/PixelPoses.cs; chars.json "anims" says where they are):
 //   attack_fists  - bare hands: guard, jab, impact, back to guard
 //   attack_spear  - stone spear: drawn back, thrust, full reach, recover
-//   attack_blade  - metal blade: raised, slash across, follow-through, recover
+//   attack_blade  - titanium blade: raised, slash across, follow-through, recover
 //   attack_hammer - hammer: lifted overhead, coming down, smashed into the ground, recover
 //   attack_bow    - starter bow and bow: nock, full draw, release, recover (the arrow is its own sprite)
 //   down          - knocked down: hit, knees give, falling, lying still until revived
@@ -27,7 +27,7 @@ public partial class Main : Node2D
 
     static readonly Dictionary<string, string> WEAPON_ANIM = new()
     {
-        { "fists", "attack_fists" }, { "stone_spear", "attack_spear" }, { "metal_blade", "attack_blade" },
+        { "fists", "attack_fists" }, { "stone_spear", "attack_spear" }, { "titanium_blade", "attack_blade" },
         { "hammer", "attack_hammer" }, { "starter_bow", "attack_bow" }, { "bow", "attack_bow" },
     };
 

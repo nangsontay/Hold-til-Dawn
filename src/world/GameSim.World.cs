@@ -11,7 +11,8 @@ public partial class GameSim : RefCounted
     public const float T = 32.0f;  // pixels per tile; const so every partial file can use it in its static fields
     public static readonly dynamic HALF = (Gd.MakeVector2(5.5f, 3.5f) * T);
     public static readonly dynamic SAFE_D = (20.0f * T);
-    public static readonly dynamic ISLAND = (72.0f * T);
+    // how far the island reaches from the outpost; its real outline (and the sea) is src/world/IslandMap.cs
+    public static readonly dynamic ISLAND = (126.0f * T);
     public static readonly dynamic DOOR_DIR = new GArray(Gd.MakeVector2((-1), 0), Gd.MakeVector2(0, (-1)), Gd.MakeVector2(1, 0));
     public static readonly dynamic DOOR_POS = new GArray(Gd.MakeVector2((-HALF.X), 0), Gd.MakeVector2(0, (-HALF.Y)), Gd.MakeVector2(HALF.X, 0));
     public static readonly dynamic DOOR_NAMES = new GArray("A", "B", "C");
@@ -82,7 +83,7 @@ public partial class GameSim : RefCounted
         {
             dynamic P = Gd.MakeVector2(Rng.RandfRange((-ISLAND), ISLAND), Rng.RandfRange((-ISLAND), ISLAND));
             dynamic D = GameSim.WallDist(P);
-            if (((D >= Lo) && (D <= Hi) && (Gd.Length(P) < (ISLAND - (6 * T))) && !(Gd.Truth(GameSim.InDoorLane(P))) && !(Gd.Truth(this.NearPad(P)))))
+            if (((D >= Lo) && (D <= Hi) && IslandMap.OnGrass((Vector2)P, (2 * T)) && !(Gd.Truth(GameSim.InDoorLane(P))) && !(Gd.Truth(this.NearPad(P)))))
             {
                 return P;
             }
@@ -240,24 +241,54 @@ public partial class GameSim : RefCounted
         return (Gd.At(DOOR_POS, I) + (Gd.At(DOOR_DIR, I) * PAD_DIST));
     }
 
+    // Resource nodes at the island map's sites (src/world/IslandMap.cs, GDD 4.3): wood, stone and herbs mostly round
+    // the three clusters in the safe zone (02 Coconut Grove, 03 Limestone Flats, 04 Herb Meadow), one in four at the
+    // outer stone and herb landmarks (16 Southwest Cave; 15 Rainwater Pond, 18 Abandoned Herb Garden); titanium
+    // spread over the five salvage sites past the safe zone (05, 06, 07, 13, 14). 4 + 3n of each (n players).
+    static readonly int[][] NODE_SITES = { new[] { 2 }, new[] { 3, 16 }, new[] { 4, 15, 18 }, new[] { 5, 6, 7, 13, 14 } };
+
     public void GenNodes()
     {
         Gd.Clear(Nodes);
-        foreach (dynamic Type in Gd.Iter(4))
+        for (int Type = 0; Type < 4; Type++)
         {
-            foreach (dynamic I in Gd.Iter(((4 + (3 * N0)) * NODE_MUL)))
+            int Count = Gd.Int(((4 + (3 * N0)) * NODE_MUL));
+            int[] Sites = NODE_SITES[Type];
+            for (int I = 0; I < Count; I++)
             {
-                dynamic Lo = ((Type < 3) ? (dynamic)((3 * T)) : (SAFE_D + (3 * T)));
-                dynamic Hi = ((Type < 3) ? (dynamic)((SAFE_D - T)) : ISLAND);
-                dynamic Spot = this.RandZonePoint(Lo, Hi);
-                foreach (dynamic Attempt in Gd.Iter(100))
+                int Site = (Type == 3) ? Sites[(I % Sites.Length)] : (((Sites.Length == 1) || ((I % 4) != 3)) ? Sites[0] : Sites[(1 + ((I / 4) % (Sites.Length - 1)))]);
+                bool Main = ((Type < 3) && (Site == Sites[0]));
+                Vector2 Centre = IslandMap.ById(Site).Pos;
+                // the island is drawn larger than the design map but the safe zone is not: the clusters by the
+                // outpost move in until they fit inside it
+                while (Main && (Gd.Float(GameSim.WallDist(Centre)) > ((float)SAFE_D - (5.5f * T))))
                 {
-                    if (((World.Resolve(Spot, T).DistanceTo(Spot) < 0.01f) && Gd.Truth(Gd.All(Nodes, (Func<dynamic, dynamic>)((N) => (N.Pos.DistanceTo(Spot) > (2.5f * T)))))))
-                    {
-                        break;
-                    }
-                    Spot = this.RandZonePoint(Lo, Hi);
+                    Centre *= 0.96f;
                 }
+                float Spread = ((Main ? 6.5f : 6.0f) * T);
+                dynamic Spot = null;
+                for (int Attempt = 0; Attempt < 300; Attempt++)
+                {
+                    Vector2 P = (Centre + ((Vector2.FromAngle((Rng.Randf() * Mathf.Tau)) * Spread) * Mathf.Sqrt(Rng.Randf())));
+                    float Wd = Gd.Float(GameSim.WallDist(P));
+                    if (!IslandMap.OnGrass(P, (1.5f * T)) || (Wd < (3 * T)) || Gd.Truth(GameSim.InDoorLane(P)) || Gd.Truth(this.NearPad(P)))
+                    {
+                        continue;
+                    }
+                    // the clusters by the outpost stay in the safe zone, titanium stays out of it
+                    if ((Main && (Wd > ((float)SAFE_D - T))) || ((Type == 3) && (Wd < ((float)SAFE_D + (3 * T)))))
+                    {
+                        continue;
+                    }
+                    if ((World.TerrainAt(P, (0.5f * T)) is 1 or 5) || (((Vector2)World.Resolve(P, T)).DistanceTo(P) > 0.01f) || Gd.Truth(Gd.Any(Nodes, (Func<dynamic, dynamic>)((N) => (N.Pos.DistanceTo(P) <= (2.5f * T))))))
+                    {
+                        continue;
+                    }
+                    Spot = P;
+                    break;
+                }
+                // a crowded site: anywhere in the right zone
+                Spot ??= this.RandZonePoint(((Type < 3) ? (dynamic)((3 * T)) : (SAFE_D + (3 * T))), ((Type < 3) ? (dynamic)((SAFE_D - T)) : ISLAND));
                 Gd.Append(Nodes, new GDict { { "type", Type }, { "pos", Spot }, { "amount", 5 } });
             }
         }
@@ -285,7 +316,9 @@ public partial class GameSim : RefCounted
     public dynamic MoveActor(dynamic From, dynamic To, dynamic Radius)
     {
         dynamic SolidWalls = this.MovementWalls();
-        return GameSim.Collide(World.MoveBody(From, To.LimitLength(ISLAND), Radius, SolidWalls), Radius, Gd.Map(Doors, (Func<dynamic, dynamic>)((D) => ((Phase != "night") || (D <= 0)))));
+        // the sea stops everyone: slide along the coast (src/world/IslandMap.cs)
+        Vector2 Moved = IslandMap.Keep((Vector2)From, (Vector2)World.MoveBody(From, IslandMap.Keep((Vector2)From, (Vector2)To, (float)Radius), Radius, SolidWalls), (float)Radius);
+        return GameSim.Collide(Moved, Radius, Gd.Map(Doors, (Func<dynamic, dynamic>)((D) => ((Phase != "night") || (D <= 0)))));
     }
 
     public dynamic Navigate(dynamic From, dynamic To, dynamic Radius, dynamic Outside = null)

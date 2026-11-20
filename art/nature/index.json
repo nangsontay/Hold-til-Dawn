@@ -79,15 +79,45 @@
 		19,
 		0
 	],
-	"node_metal_0": [
-		26,
-		21,
-		19
+	"node_herb_dmg1_0": [
+		14,
+		19,
+		0
 	],
-	"node_metal_1": [
-		24,
-		22,
-		19
+	"node_herb_dmg1_1": [
+		14,
+		19,
+		0
+	],
+	"node_herb_dmg2_0": [
+		14,
+		19,
+		0
+	],
+	"node_herb_dmg2_1": [
+		14,
+		19,
+		0
+	],
+	"node_herb_dmg3_0": [
+		14,
+		19,
+		0
+	],
+	"node_herb_dmg3_1": [
+		14,
+		19,
+		0
+	],
+	"node_herb_dmg4_0": [
+		14,
+		19,
+		0
+	],
+	"node_herb_dmg4_1": [
+		14,
+		19,
+		0
 	],
 	"node_stone_0": [
 		22,
@@ -98,6 +128,146 @@
 		22,
 		26,
 		20
+	],
+	"node_stone_dmg1_0": [
+		22,
+		26,
+		20
+	],
+	"node_stone_dmg1_1": [
+		22,
+		26,
+		20
+	],
+	"node_stone_dmg2_0": [
+		22,
+		26,
+		20
+	],
+	"node_stone_dmg2_1": [
+		22,
+		26,
+		20
+	],
+	"node_stone_dmg3_0": [
+		22,
+		26,
+		20
+	],
+	"node_stone_dmg3_1": [
+		22,
+		26,
+		20
+	],
+	"node_stone_dmg4_0": [
+		22,
+		26,
+		20
+	],
+	"node_stone_dmg4_1": [
+		22,
+		26,
+		20
+	],
+	"node_titanium_0": [
+		22,
+		34,
+		19
+	],
+	"node_titanium_1": [
+		22,
+		34,
+		19
+	],
+	"node_titanium_dmg1_0": [
+		22,
+		34,
+		19
+	],
+	"node_titanium_dmg1_1": [
+		22,
+		34,
+		19
+	],
+	"node_titanium_dmg2_0": [
+		22,
+		34,
+		19
+	],
+	"node_titanium_dmg2_1": [
+		22,
+		34,
+		19
+	],
+	"node_titanium_dmg3_0": [
+		22,
+		34,
+		19
+	],
+	"node_titanium_dmg3_1": [
+		22,
+		34,
+		19
+	],
+	"node_titanium_dmg4_0": [
+		22,
+		34,
+		19
+	],
+	"node_titanium_dmg4_1": [
+		22,
+		34,
+		19
+	],
+	"node_titanium_glow_0": [
+		22,
+		34,
+		0
+	],
+	"node_titanium_glow_1": [
+		22,
+		34,
+		0
+	],
+	"node_titanium_glow_dmg1_0": [
+		22,
+		34,
+		0
+	],
+	"node_titanium_glow_dmg1_1": [
+		22,
+		34,
+		0
+	],
+	"node_titanium_glow_dmg2_0": [
+		22,
+		34,
+		0
+	],
+	"node_titanium_glow_dmg2_1": [
+		22,
+		34,
+		0
+	],
+	"node_titanium_glow_dmg3_0": [
+		22,
+		34,
+		0
+	],
+	"node_titanium_glow_dmg3_1": [
+		22,
+		34,
+		0
+	],
+	"node_titanium_glow_dmg4_0": [
+		22,
+		34,
+		0
+	],
+	"node_titanium_glow_dmg4_1": [
+		22,
+		34,
+		0
 	],
 	"node_wood_0": [
 		18,
@@ -113,6 +283,71 @@
 		20,
 		58,
 		8
+	],
+	"node_wood_dmg1_0": [
+		18,
+		52,
+		8
+	],
+	"node_wood_dmg1_1": [
+		19,
+		55,
+		8
+	],
+	"node_wood_dmg1_2": [
+		20,
+		58,
+		8
+	],
+	"node_wood_dmg2_0": [
+		18,
+		52,
+		8
+	],
+	"node_wood_dmg2_1": [
+		19,
+		55,
+		8
+	],
+	"node_wood_dmg2_2": [
+		20,
+		58,
+		8
+	],
+	"node_wood_dmg3_0": [
+		18,
+		52,
+		8
+	],
+	"node_wood_dmg3_1": [
+		19,
+		55,
+		8
+	],
+	"node_wood_dmg3_2": [
+		20,
+		58,
+		8
+	],
+	"node_wood_dmg4_0": [
+		18,
+		52,
+		8
+	],
+	"node_wood_dmg4_1": [
+		19,
+		55,
+		8
+	],
+	"node_wood_dmg4_2": [
+		20,
+		58,
+		8
+	],
+	"ore_left_0": [
+		15,
+		12,
+		0
 	],
 	"pebble_0": [
 		2,
@@ -205,11 +440,6 @@
 		19
 	],
 	"rubble_0": [
-		15,
-		10,
-		0
-	],
-	"scrap_0": [
 		15,
 		10,
 		0

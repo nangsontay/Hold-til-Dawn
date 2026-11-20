@@ -9,7 +9,8 @@ public partial class WorldGeometry : RefCounted
 {
     // Shared world data. No rendering or SceneTree is needed on the dedicated server.
     public static readonly dynamic T = 32.0f;
-    public static readonly dynamic ISLAND = (72.0f * T);
+    // how far the island reaches from the outpost, the sea beyond it is not walkable (src/world/IslandMap.cs)
+    public static readonly dynamic ISLAND = (126.0f * T);
     public static readonly dynamic HALF = (Gd.MakeVector2(5.5f, 3.5f) * T);
     public static readonly dynamic SAFE_D = (20.0f * T);
     public static readonly dynamic CELL = 128.0f;
@@ -35,6 +36,18 @@ public partial class WorldGeometry : RefCounted
         return Gd.Length(Gd.MakeVector2(Gd.Maxf((Gd.Absf(P.X) - HALF.X), 0), Gd.Maxf((Gd.Absf(P.Y) - HALF.Y), 0)));
     }
 
+    static bool NearPad(Vector2 P)
+    {
+        foreach (dynamic I in Gd.Iter(3))
+        {
+            if (P.DistanceTo((Vector2)GameSim.PadPos(I)) < ((float)GameSim.PAD_R + T))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public static dynamic Lane(dynamic P)
     {
         return (((Gd.Absf(P.Y) < (2.5f * T)) && (Gd.Absf(P.X) > HALF.X)) || ((Gd.Absf(P.X) < (2.5f * T)) && (P.Y < (-HALF.Y))));
@@ -46,13 +59,21 @@ public partial class WorldGeometry : RefCounted
         Gd.Clear(Scatter);
         dynamic Random = Gd.Wrap(new RandomNumberGenerator());
         Random.Seed = 7;
-        // streams, plateaus, rock ridges and trails first, so the scenery grows around them (WorldTerrain.cs)
+        // paths, ponds, the swamp and the cave spires first, so the scenery grows around them (WorldTerrain.cs)
         this.BuildTerrain();
+        // the landmarks' structures, so the scenery keeps clear of them (WorldLandmarks.cs)
+        this.BuildLandmarks();
         // sprite names without the variant number (art/nature/<name>_<k>.png, tools/PixelNature.cs)
         dynamic Pines = new GArray("pine");
         dynamic Dead = new GArray("dead");
         dynamic Rocks = new GArray("rock");
         dynamic Variants = Gd.FromVariant(Json.ParseString(Gd.Static(typeof(FileAccess), "get_file_as_string", "res://art/nature/index.json")));
+        // and the landmarks' sprites (art/landmarks, tools/PixelLandmarks.cs)
+        dynamic LmVariants = Gd.FromVariant(Json.ParseString(FileAccess.GetFileAsString("res://art/landmarks/index.json")));
+        foreach (dynamic N in Gd.Iter(LmVariants))
+        {
+            Variants[N] = Gd.At(LmVariants, N);
+        }
         dynamic Names = new GDict {  };
         foreach (dynamic N in Gd.Iter(Variants))
         {
@@ -60,75 +81,122 @@ public partial class WorldGeometry : RefCounted
             Names[Gd.At(Base, 0)] = Gd.Maxi(Gd.Get(Names, Gd.At(Base, 0), 0), (Gd.ToInt(Gd.At(Base, 1)) + 1));
         }
         dynamic Variant = (Func<dynamic, dynamic, dynamic>)((N, K) => Gd.Format("%s_%d", new GArray(N, (Gd.Absi(K) % Gd.Maxi(1, Gd.Get(Names, N, 1))))));
-        dynamic Outer = (Func<dynamic, dynamic>)((P) => ((WorldGeometry.WallDist(P) > (SAFE_D + (2 * T))) && !(Gd.Truth(WorldGeometry.Lane(P))) && (Gd.Length(P) < (ISLAND - (2 * T))) && !this.TerrainBlocked((Vector2)P, (0.6f * T))));
-        dynamic Ring = (Func<dynamic>)(() => (Vector2.FromAngle((Random.Randf() * Mathf.Tau)) * Random.RandfRange((HALF.X + SAFE_D), (ISLAND - (4 * T)))));
-        foreach (dynamic C in Gd.Iter(44))
+        // scenery stays on the grass, off the door roads and paths, out of the outpost's surroundings
+        Func<Vector2, bool> Free = (P) => (IslandMap.OnGrass(P, (0.6f * T)) && (WorldGeometry.WallDist(P) > (4 * T)) && !(Gd.Truth(WorldGeometry.Lane(P))) && !this.TerrainBlocked(P, (0.6f * T)) && !NearPad(P));
+        Func<Vector2, bool> Outer = (P) => (Free(P) && (WorldGeometry.WallDist(P) > (SAFE_D + (2 * T))));
+        Rect2 Box = IslandMap.Box;
+        Func<Vector2> Anywhere = () => new Vector2(Mathf.Lerp(Box.Position.X, Box.End.X, Random.Randf()), Mathf.Lerp(Box.Position.Y, Box.End.Y, Random.Randf()));
+        // a tree for every tree on the design map, most with one to three more beside it (the island is larger than the map)
+        foreach (Vector2 Dot in IslandMap.Trees)
         {
-            Vector2 Centre = (Vector2)(Ring());
-            foreach (dynamic K in Gd.Iter(Random.RandiRange(4, 10)))
+            int Count = 1 + ((Random.Randf() < 0.8f) ? 1 : 0) + ((Random.Randf() < 0.5f) ? 1 : 0) + ((Random.Randf() < 0.25f) ? 1 : 0);
+            foreach (dynamic K in Gd.Iter(Count))
             {
-                dynamic P = (Centre + (Vector2.FromAngle((Random.Randf() * Mathf.Tau)) * Random.RandfRange(0, (5.5f * T))));
-                if (Gd.Truth(Outer(P)))
+                Vector2 P = ((K == 0) ? Dot : (Dot + (Vector2.FromAngle((Random.Randf() * Mathf.Tau)) * Random.RandfRange((0.8f * T), (2.6f * T)))));
+                if (Free(P))
                 {
-                    dynamic Pool = ((Random.Randf() < 0.2f) ? (dynamic)(Dead) : Pines);
+                    dynamic Pool = ((Random.Randf() < 0.15f) ? (dynamic)(Dead) : Pines);
+                    // coconut palms in the Coconut Grove
+                    if (this.InGrove(P))
+                    {
+                        Pool = new GArray("lm_palm");
+                    }
                     Gd.Append(Deco, new GArray(P, Variant(Gd.At(Pool, (Random.Randi() % Gd.Size(Pool))), Random.Randi()), 1.0f, COLD));
                 }
             }
         }
-        foreach (dynamic C in Gd.Iter(24))
+        // and the woods filled in more thinly
+        foreach (Vector2[] Wood in IslandMap.Shade)
         {
-            Vector2 Centre = (Vector2)(Ring());
+            var Wb = new Rect2(Wood[0], Vector2.Zero);
+            foreach (Vector2 Q in Wood) Wb = Wb.Expand(Q);
+            int Many = (int)((Wb.Area / (T * T)) / 70.0f);
+            foreach (dynamic K in Gd.Iter(Many))
+            {
+                var P = new Vector2(Mathf.Lerp(Wb.Position.X, Wb.End.X, Random.Randf()), Mathf.Lerp(Wb.Position.Y, Wb.End.Y, Random.Randf()));
+                if (IslandMap.InPolygon(Wood, P) && Free(P))
+                {
+                    Gd.Append(Deco, new GArray(P, Variant((this.InGrove(P) ? "lm_palm" : Gd.At(Pines, (Random.Randi() % Gd.Size(Pines)))), Random.Randi()), 1.0f, COLD));
+                }
+            }
+        }
+        // rock outcrops and lone dead trees out past the safe zone
+        foreach (dynamic C in Gd.Iter(54))
+        {
+            Vector2 Centre = Anywhere();
+            if (!Outer(Centre))
+            {
+                continue;
+            }
             foreach (dynamic K in Gd.Iter(Random.RandiRange(3, 6)))
             {
-                dynamic P = (Centre + (Vector2.FromAngle((Random.Randf() * Mathf.Tau)) * Random.RandfRange(0, (2.2f * T))));
-                if (Gd.Truth(Outer(P)))
+                Vector2 P = (Centre + (Vector2.FromAngle((Random.Randf() * Mathf.Tau)) * Random.RandfRange(0, (2.2f * T))));
+                if (Outer(P))
                 {
                     Gd.Append(Deco, new GArray(P, Variant(Gd.At(Rocks, (Random.Randi() % Gd.Size(Rocks))), Random.Randi()), 1.0f, COLD));
                 }
             }
         }
-        foreach (dynamic I in Gd.Iter(40))
+        foreach (dynamic I in Gd.Iter(90))
         {
-            Vector2 P = (Vector2)(Ring());
-            if (Gd.Truth(Outer(P)))
+            Vector2 P = Anywhere();
+            if (Outer(P))
             {
                 Gd.Append(Deco, new GArray(P, Variant(Gd.At(Dead, (Random.Randi() % Gd.Size(Dead))), Random.Randi()), 1.0f, COLD));
             }
         }
-        foreach (dynamic I in Gd.Iter(400))
+        // low shrubs in the safe zone
+        foreach (dynamic I in Gd.Iter(1350))
         {
-            dynamic P = ((Vector2.FromAngle((Random.Randf() * Mathf.Tau)) * ISLAND) * Gd.Sqrt(Random.Randf()));
+            Vector2 P = Anywhere();
             dynamic Wd = WorldGeometry.WallDist(P);
-            if (((Wd > (3 * T)) && (Wd < SAFE_D) && !(Gd.Truth(WorldGeometry.Lane(P))) && (Random.Randf() < 0.12f) && !this.TerrainBlocked((Vector2)P, (0.5f * T))))
+            if (((Wd > (3 * T)) && (Wd < SAFE_D) && (Random.Randf() < 0.12f) && Free(P)))
             {
                 Gd.Append(Deco, new GArray(P, Variant("shrub", Random.Randi()), 1.0f, COLD));
             }
         }
+        // grass tufts and pebbles on the grass, pebbles on the beach
         dynamic Flat = new GArray("grass", "grass", "grass", "grass_dry", "grass", "grass_dry", "pebble", "grass", "pebble", "grass");
-        while ((Gd.Size(Scatter) < 1400))
+        foreach (dynamic Tries in Gd.Iter(45000))
         {
-            dynamic P = ((Vector2.FromAngle((Random.Randf() * Mathf.Tau)) * ISLAND) * Gd.Sqrt(Random.Randf()));
-            if ((((Gd.Absf(P.X) > (HALF.X + (2.6f * T))) || (Gd.Absf(P.Y) > (HALF.Y + (2.6f * T)))) && (this.TerrainAt((Vector2)P, 4.0f) is 0 or 4)))
+            if (Gd.Size(Scatter) >= 3800)
+            {
+                break;
+            }
+            Vector2 P = Anywhere();
+            if (((Gd.Absf(P.X) <= (HALF.X + (2.6f * T))) && (Gd.Absf(P.Y) <= (HALF.Y + (2.6f * T)))))
+            {
+                continue;
+            }
+            int Kind = this.TerrainAt(P, 4.0f);
+            if (Kind is 0 or 4 or 9)
             {
                 Gd.Append(Scatter, new GArray(P, Variant(Gd.At(Flat, (Random.Randi() % Gd.Size(Flat))), Random.Randi()), 1.0f));
             }
+            else if ((Kind == 7) && IslandMap.OnLand(P, T) && (Random.Randf() < 0.25f))
+            {
+                Gd.Append(Scatter, new GArray(P, Variant("pebble", Random.Randi()), 1.0f));
+            }
         }
-        // rock spires of the ridges, and reeds along both banks of the streams
+        // rock spires round the Southwest Cave, and reeds round the pond and the swamp pools
         foreach (Vector2 Cp in this.Crags)
         {
             Gd.Append(Deco, new GArray(Cp, Variant("crag", Random.Randi()), 1.0f, COLD));
         }
-        foreach (var St in this.Streams)
+        foreach (var Pd in this.Ponds)
         {
-            for (int I = 3; I < St.Path.Length - 1; I += 4)
+            for (int I = 0; I < Pd.Edge.Length; I += 2)
             {
-                Vector2 Along = (St.Path[(I + 1)] - St.Path[(I - 1)]).Normalized();
-                Vector2 Bank = (St.Path[I] + ((new Vector2((-Along.Y), Along.X) * ((WATER_W / 2) + 5)) * (((I / 4) % 2 == 0) ? 1 : (-1))));
-                if (((Random.Randf() < 0.55f) && (Bank.Length() < (float)(ISLAND - T)) && !this.OnBridge(Bank)))
+                Vector2 Bank = (Pd.Edge[I] + ((Pd.Edge[I] - Pd.Centre).Normalized() * 6.0f));
+                if (((Random.Randf() < 0.6f) && IslandMap.OnGrass(Bank) && !this.NearPath(Bank, 0.3f * T)))
                 {
                     Gd.Append(Deco, new GArray(Bank, Variant("reed", Random.Randi()), 1.0f, COLD));
                 }
             }
+        }
+        foreach (var (Lp, Ls) in this.LmProps)
+        {
+            Gd.Append(Deco, new GArray(Lp, Ls, 1.0f, COLD));
         }
         // Hand-placed objects are editable with Godot's 2D editor.
         dynamic Layout = LAYOUT.Instantiate();
@@ -341,7 +409,7 @@ public partial class WorldGeometry : RefCounted
         if ((Grid == null))
         {
             Grid = Gd.Wrap(new AStarGrid2D());
-            Grid.Region = Gd.MakeRect2I((-73), (-73), 147, 147);
+            Grid.Region = Gd.MakeRect2I((-128), (-128), 257, 257);
             Grid.CellSize = (Vector2.One * T);
             Grid.DiagonalMode = Gd.EnumValue(typeof(AStarGrid2D), "DIAGONAL_MODE_ONLY_IF_NO_OBSTACLES", 3);
             Grid.Update();
@@ -359,6 +427,17 @@ public partial class WorldGeometry : RefCounted
                         {
                             Grid.SetPointSolid(Cell);
                         }
+                    }
+                }
+            }
+            // the sea
+            for (int Cy = -128; Cy < 129; Cy++)
+            {
+                for (int Cx = -128; Cx < 129; Cx++)
+                {
+                    if (!IslandMap.OnLand(new Vector2(Cx, Cy) * T, (float)Radius))
+                    {
+                        Grid.SetPointSolid(new Vector2I(Cx, Cy));
                     }
                 }
             }
