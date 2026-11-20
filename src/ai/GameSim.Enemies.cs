@@ -110,6 +110,7 @@ public partial class GameSim : RefCounted
             E.NavT = (Gd.Get(E, "nav_t", 0.0f) - Dt);
             E.Cd -= Dt;
             E.Nodmg += Dt;
+            E.Swing = (Gd.Get(E, "swing", 0.0f) - Dt);
             if (((E.Type == BOSS) && this.TickBoss(E, Dt)))
             {
                 continue;
@@ -263,6 +264,7 @@ public partial class GameSim : RefCounted
                 if (Gd.Truth(this.LineClear(E.Pos, P.Pos)))
                 {
                     this.Hurt(P, E.Dmg);
+                    this.Swung(E);
                 }
             }
             E.Cd = 2.0f;
@@ -276,10 +278,17 @@ public partial class GameSim : RefCounted
         E.Cd = (Gd.Truth(Boss) ? (dynamic)(4.0f) : 2.0f);
     }
 
+    // An enemy just struck (or spat): the snapshot flags it for 0.4 s so clients play its attack frames.
+    public void Swung(dynamic E)
+    {
+        E.Swing = 0.4f;
+    }
+
     // FML-07: a hit on an intact door also hurts the generator, more as the door degrades; through a broken
     // door the damage goes to the generator in full. Wreckers deal double damage to doors and towers.
     public void DamageDoor(dynamic E, dynamic Dmg)
     {
+        this.Swung(E);
         float D = Gd.Float((Dmg * ((E.Type == WRECKER) ? (dynamic)(2.0f) : 1.0f)));
         if ((E.State == 3))
         {
@@ -315,6 +324,7 @@ public partial class GameSim : RefCounted
         dynamic W = this.WallTouching(E.Pos, E.R);
         if ((W != null))
         {
+            this.Swung(E);
             this.DamageWall(E, W, E.Dmg);
             E.Cd = ((E.Type == BOSS) ? (dynamic)(4.0f) : 2.0f);
         }
@@ -332,6 +342,7 @@ public partial class GameSim : RefCounted
 
     public void DamageTower(dynamic E, dynamic Tw, dynamic Dmg)
     {
+        this.Swung(E);
         Tw.Hp = Gd.Maxf(0.0f, (Tw.Hp - (Dmg * ((E.Type == WRECKER) ? (dynamic)(2.0f) : 1.0f))));
         // FML-08: a hit blocks repair for 2 s
         Tw.Pause = 2.0f;
@@ -379,6 +390,7 @@ public partial class GameSim : RefCounted
         else if (((E.Cd <= 0) && Gd.Truth(this.LineClear(E.Pos, Best.Pos))))
         {
             E.Cd = 2.0f;
+            this.Swung(E);
             Gd.Append(Proj, new GDict { { "pos", E.Pos }, { "vel", (((Best.Pos - E.Pos).Normalized() * 8) * T) }, { "dmg", E.Dmg }, { "ttl", 1.0f } });
         }
     }

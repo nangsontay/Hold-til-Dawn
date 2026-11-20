@@ -13,6 +13,9 @@ public partial class GameSim : RefCounted
     public const int HOTBAR = 4;
     public const int STORAGE_SLOTS = 40;
     public const int STACK = 20;
+    // A crafted bow carries its own arrows: a bow slot is [id, 1, arrows loaded], up to QUIVER, so the arrows take
+    // no slot of their own. Arrows a player gets go into a bow first; "arrow" counts and takes cover both.
+    public const int QUIVER = 30;
 
     // id -> [name, stack size, kind]; kind is res, use, ammo, weapon, tool or armour.
     public static readonly GDict ITEMS = new GDict {
@@ -40,7 +43,8 @@ public partial class GameSim : RefCounted
         { "stone_spear", new GArray(20.0f, 1.5f, 1.5f, false, false) },
         { "metal_blade", new GArray(26.0f, 1.5f, 1.5f, false, false) },
         { "hammer", new GArray(12.0f, 1.2f, 1.5f, false, false) },
-        { "starter_bow", new GArray(8.0f, 0.75f, 7.0f, true, false) },
+        // team change to BAL-42: the Scout's starter bow has the crafted bow's numbers (BAL-10) but needs no arrows
+        { "starter_bow", new GArray(12.0f, 1.0f, 8.0f, true, false) },
         { "bow", new GArray(12.0f, 1.0f, 8.0f, true, true) },
     };
 
@@ -75,15 +79,77 @@ public partial class GameSim : RefCounted
         return (Gd.Truth(ITEMS.Has(Id)) ? (string)Gd.At(ITEMS[Id], 2) : "");
     }
 
+    // --- a bow's arrows ---------------------------------------------------------
+    public static bool IsBow(dynamic S)
+    {
+        return ((S != null) && Gd.Equal(Gd.At(S, 0), "bow"));
+    }
+
+    // Arrows loaded in the bow of slot S (0 for any other slot).
+    public static int Loaded(dynamic S)
+    {
+        return ((GameSim.IsBow(S) && (Gd.Size(S) > 2)) ? Gd.Int(Gd.At(S, 2)) : 0);
+    }
+
+    public static GArray BowSlot(int Arrows)
+    {
+        return new GArray("bow", 1, Arrows);
+    }
+
+    // Loads up to N arrows into the bows of a slot array; returns what did not fit.
+    public static int LoadArrows(dynamic Slots, int N)
+    {
+        for (int I = 0; ((I < Gd.Size(Slots)) && (N > 0)); I++)
+        {
+            dynamic S = Gd.At(Slots, I);
+            if (GameSim.IsBow(S) && (GameSim.Loaded(S) < QUIVER))
+            {
+                int Put = Math.Min(N, (QUIVER - GameSim.Loaded(S)));
+                Slots[I] = GameSim.BowSlot((GameSim.Loaded(S) + Put));
+                N -= Put;
+            }
+        }
+        return N;
+    }
+
+    // Moves loose arrows of a slot array into its bows, emptying the arrow slots first from the back.
+    public static void LoadBows(dynamic Slots)
+    {
+        int Room = 0;
+        int Loose = 0;
+        foreach (dynamic S in Gd.Iter(Slots))
+        {
+            if (GameSim.IsBow(S))
+            {
+                Room += (QUIVER - GameSim.Loaded(S));
+            }
+            else if (((S != null) && Gd.Equal(Gd.At(S, 0), "arrow")))
+            {
+                Loose += Gd.Int(Gd.At(S, 1));
+            }
+        }
+        int N = Math.Min(Room, Loose);
+        if ((N > 0))
+        {
+            GameSim.TakeLoose(Slots, "arrow", N);
+            GameSim.LoadArrows(Slots, N);
+        }
+    }
+
     // --- slot arrays (a player's inventory or the storage) -------------------
     public static int CountIn(dynamic Slots, dynamic Id)
     {
         int N = 0;
+        bool Arrows = Gd.Equal(Id, "arrow");
         foreach (dynamic S in Gd.Iter(Slots))
         {
             if (((S != null) && Gd.Equal(Gd.At(S, 0), Id)))
             {
                 N += Gd.Int(Gd.At(S, 1));
+            }
+            else if (Arrows)
+            {
+                N += GameSim.Loaded(S);
             }
         }
         return N;
@@ -93,6 +159,7 @@ public partial class GameSim : RefCounted
     {
         int Room = 0;
         int Stack = GameSim.StackOf(Id);
+        bool Arrows = Gd.Equal(Id, "arrow");
         foreach (dynamic S in Gd.Iter(Slots))
         {
             if ((S == null))
@@ -103,14 +170,23 @@ public partial class GameSim : RefCounted
             {
                 Room += (Stack - Gd.Int(Gd.At(S, 1)));
             }
+            else if (Arrows && GameSim.IsBow(S))
+            {
+                Room += (QUIVER - GameSim.Loaded(S));
+            }
         }
         return Room;
     }
 
-    // Adds up to N; returns what did not fit. Tops up existing stacks first, then empty slots.
+    // Adds up to N; returns what did not fit. Arrows go into a bow first; then it tops up existing stacks, then
+    // fills empty slots.
     public static int AddTo(dynamic Slots, dynamic Id, int N)
     {
         int Stack = GameSim.StackOf(Id);
+        if (Gd.Equal(Id, "arrow"))
+        {
+            N = GameSim.LoadArrows(Slots, N);
+        }
         for (int I = 0; ((I < Gd.Size(Slots)) && (N > 0)); I++)
         {
             dynamic S = Gd.At(Slots, I);
@@ -133,13 +209,32 @@ public partial class GameSim : RefCounted
         return N;
     }
 
-    // Removes N if there are that many (from the last slots first); otherwise removes nothing.
+    // Removes N if there are that many (from the last slots first); otherwise removes nothing. Arrows come out of
+    // the loose stacks first, so a slot frees up as soon as it can, then out of the bows.
     public static bool TakeFrom(dynamic Slots, dynamic Id, int N)
     {
         if ((GameSim.CountIn(Slots, Id) < N))
         {
             return false;
         }
+        N -= GameSim.TakeLoose(Slots, Id, N);
+        for (int I = (Gd.Size(Slots) - 1); ((I >= 0) && (N > 0)); I--)
+        {
+            dynamic S = Gd.At(Slots, I);
+            if ((Gd.Equal(Id, "arrow") && (GameSim.Loaded(S) > 0)))
+            {
+                int Got = Math.Min(N, GameSim.Loaded(S));
+                N -= Got;
+                Slots[I] = GameSim.BowSlot((GameSim.Loaded(S) - Got));
+            }
+        }
+        return true;
+    }
+
+    // Removes up to N from the stacks of Id (from the last slots first); returns how many it took.
+    public static int TakeLoose(dynamic Slots, dynamic Id, int N)
+    {
+        int Want = N;
         for (int I = (Gd.Size(Slots) - 1); ((I >= 0) && (N > 0)); I--)
         {
             dynamic S = Gd.At(Slots, I);
@@ -150,7 +245,7 @@ public partial class GameSim : RefCounted
                 Slots[I] = (((Gd.Int(Gd.At(S, 1)) - Got) > 0) ? new GArray(Id, (Gd.Int(Gd.At(S, 1)) - Got)) : null);
             }
         }
-        return true;
+        return (Want - N);
     }
 
     // --- a player's inventory --------------------------------------------------
@@ -173,6 +268,7 @@ public partial class GameSim : RefCounted
     public void AddItem(dynamic P, dynamic Id, dynamic N)
     {
         int Left = GameSim.AddTo(P.Inv, Id, Gd.Int(N));
+        GameSim.LoadBows(P.Inv);
         if ((Left > 0))
         {
             this.PlayerDrop(P.Pos, Id, Left);
@@ -232,10 +328,11 @@ public partial class GameSim : RefCounted
         return 0;
     }
 
-    // Storage is reachable at the workbench: inside the base by day, or as the Engineer inside at night.
+    // Storage is the chest by the north wall (GameSim.STORAGE_POS): reachable standing at it, inside the base by
+    // day, or as the Engineer inside at night.
     public bool AtStorage(dynamic P)
     {
-        return this.AtBench(P);
+        return (this.InBaseToWork(P) && GameSim.NearStorage((Vector2)P.Pos));
     }
 
     // Drag and drop between the inventory ("inv") and storage ("sto"): swaps, or merges equal stacks.
@@ -251,7 +348,7 @@ public partial class GameSim : RefCounted
         dynamic To = (ToSto ? Storage : P.Inv);
         if (((FromSto || ToSto) && !this.AtStorage(P)))
         {
-            this.Note(P, "Storage is at the workbench inside the base");
+            this.Note(P, "Storage is the chest in the base, by the north wall");
             return;
         }
         int A = Gd.Int(Gd.At(Arg, 1));
@@ -266,7 +363,21 @@ public partial class GameSim : RefCounted
         {
             return;
         }
-        if (((Sb != null) && Gd.Equal(Gd.At(Sa, 0), Gd.At(Sb, 0))))
+        // arrows dropped on a bow (or a bow on arrows) are loaded into it
+        dynamic Bow = (GameSim.IsBow(Sb) ? Sb : (GameSim.IsBow(Sa) ? Sa : null));
+        dynamic Ammo = (GameSim.IsBow(Sb) ? Sa : Sb);
+        if (((Bow != null) && (Ammo != null) && Gd.Equal(Gd.At(Ammo, 0), "arrow") && (GameSim.Loaded(Bow) < QUIVER)))
+        {
+            int Put = Math.Min(Gd.Int(Gd.At(Ammo, 1)), (QUIVER - GameSim.Loaded(Bow)));
+            dynamic Rest = (((Gd.Int(Gd.At(Ammo, 1)) - Put) > 0) ? new GArray("arrow", (Gd.Int(Gd.At(Ammo, 1)) - Put)) : null);
+            dynamic Full = GameSim.BowSlot((GameSim.Loaded(Bow) + Put));
+            // the bow stays in its slot, what is left of the arrows stays in theirs
+            From[A] = (GameSim.IsBow(Sa) ? Full : Rest);
+            To[B] = (GameSim.IsBow(Sb) ? Full : Rest);
+            this.Note(P, Gd.Format("Loaded %d arrows into the bow (%d / %d)", new GArray(Put, GameSim.Loaded(Full), QUIVER)));
+            return;
+        }
+        if (((Sb != null) && Gd.Equal(Gd.At(Sa, 0), Gd.At(Sb, 0)) && (GameSim.StackOf(Gd.At(Sa, 0)) > 1)))
         {
             int Stack = GameSim.StackOf(Gd.At(Sa, 0));
             int Put = Math.Min(Gd.Int(Gd.At(Sa, 1)), (Stack - Gd.Int(Gd.At(Sb, 1))));
@@ -276,6 +387,7 @@ public partial class GameSim : RefCounted
         }
         From[A] = Sb;
         To[B] = Sa;
+        GameSim.LoadBows(P.Inv);
     }
 
     // G: hand the selected stack to the nearest teammate in reach (1.5 tiles), otherwise drop it (MEC-09).
@@ -298,18 +410,32 @@ public partial class GameSim : RefCounted
             }
         }
         P.Inv[Sel] = null;
+        int Arrows = GameSim.Loaded(S);
         if ((Best != null))
         {
             int Left = GameSim.AddTo(Best.Inv, Gd.At(S, 0), Gd.Int(Gd.At(S, 1)));
             if ((Left > 0))
             {
-                P.Inv[Sel] = new GArray(Gd.At(S, 0), Left);
+                P.Inv[Sel] = (GameSim.IsBow(S) ? S : new GArray(Gd.At(S, 0), Left));
+            }
+            else if ((Arrows > 0))
+            {
+                // the bow's arrows go with it: into its new owner's bows or bag, the rest at their feet
+                int Over = GameSim.AddTo(Best.Inv, "arrow", Arrows);
+                if ((Over > 0))
+                {
+                    this.PlayerDrop(Best.Pos, "arrow", Over);
+                }
             }
             this.Note(P, Gd.Format("Gave %s to %s", new GArray(GameSim.ItemName(Gd.At(S, 0)), Best.Name)));
             this.Note(Best, Gd.Format("%s gave you %s", new GArray(P.Name, GameSim.ItemName(Gd.At(S, 0)))));
             return;
         }
         this.PlayerDrop(P.Pos, Gd.At(S, 0), Gd.At(S, 1));
+        if ((Arrows > 0))
+        {
+            this.PlayerDrop(P.Pos, "arrow", Arrows);
+        }
     }
 
     // Items dropped by players stay until someone picks them up with E (MEC-09).
@@ -333,6 +459,7 @@ public partial class GameSim : RefCounted
                 }
                 D.N = Left;
                 Drops = Gd.Filter(Drops, (Func<dynamic, dynamic>)((X) => (X.N > 0)));
+                GameSim.LoadBows(P.Inv);
                 return true;
             }
         }

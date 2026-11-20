@@ -4,7 +4,8 @@ using System.Collections.Generic;
 
 // Pixel-art sprite sheets of the seven NOX bosses (AGT-05..11, table 4.2), in the same sheet layout as
 // tools/PixelChars.cs so the game animates them the same way: rows = right, down, left (mirrored), up;
-// columns = idle 0-1, walk 0-3. 48 x 48 px (a boss is 1.8 tiles across). Every boss is the same hulking NOX
+// columns = idle 0-1, walk 2-5, attack 6-9 (wind-up, slam, impact, recover), knocked down 10-13 (staggers,
+// knees give, falling, lying with the eyes shut). 48 x 48 px (a boss is 1.8 tiles across). Every boss is the same hulking NOX
 // brute drawn from shaded shapes, with the parts that show its move: Juggernaut horns (charge), Broodmother egg
 // sacs (summons), Bio-Cannon spore pods (volley), Burrower claws (burrow), Gatebreaker ram fist (door blow),
 // Phantom hood and cloak (cloak), Ironhide front plates (front armour; its back is bare, where it is weak).
@@ -31,6 +32,14 @@ public partial class PixelBosses : Node
         public Color Eye;
         public float TorsoRx = 11, TorsoRy = 10, ShoulderR = 5, HeadR = 6;
         public bool Legs = true;
+
+        // the same boss with its eyes closed (lying knocked down)
+        public Boss EyesShut()
+        {
+            var C = (Boss)MemberwiseClone();
+            C.Eye = Body[2];
+            return C;
+        }
     }
 
     static readonly Boss[] Bosses =
@@ -43,6 +52,13 @@ public partial class PixelBosses : Node
         new() { Name = "phantom", Body = Tones("E4DAFF", "B8A8E8", "7E6CB8", 0.82f), Part = Tones("9A88D0", "6E5CA8", "4A3C78", 0.9f), Eye = new("6FF0FF"), Legs = false, ShoulderR = 4 },
         new() { Name = "ironhide", Body = Tones("6A7486", "4C5464", "2E3440"), Part = Tones("D8E4EE", "A8B8C8", "6A7A8C"), Eye = new("F2B544"), ShoulderR = 6 },
     };
+
+    // columns: idle 2, walk 4, attack 4, knocked down 4
+    const int COLS = 14;
+    // the top of the legs (the knees give above it)
+    const int LEGS = 36;
+    // the body rises for the wind-up and sinks into the slam
+    static readonly int[] ATTACK_BOB = { -1, 1, 2, 1 };
 
     public override void _Ready()
     {
@@ -65,18 +81,38 @@ public partial class PixelBosses : Node
         (int Bob, int Step)[] Frames = { (0, 0), (1, 0), (1, 1), (0, 0), (1, -1), (0, 0) };
         foreach (var B in Bosses)
         {
-            var Sheet = Image.CreateEmpty((S * 6), (S * 8), false, Image.Format.Rgba8);
+            var Sheet = Image.CreateEmpty((S * COLS), (S * 8), false, Image.Format.Rgba8);
+            var Shut = B.EyesShut();
             for (int Row = 0; Row < 8; Row++)
             {
-                for (int Col = 0; Col < 6; Col++)
+                string View = Views[Row];
+                Image Turned(Image Raw, Color? Eye) => ((Row >= 4) ? PixelTurn.TurnRight(Raw, S / 2, Turn, 0, Eye) : Raw);
+                var Cells = new List<Image>();
+                // idle 0-1, walk 2-5
+                foreach (var F in Frames)
                 {
-                    var F = Frames[Col];
-                    var Raw = Draw(B, Views[Row], F.Bob, F.Step);
-                    if (Row >= 4)
+                    Cells.Add(Finish(Turned(Draw(B, View, F.Bob, F.Step), B.Eye)));
+                }
+                // attack 6-9: wind-up (arms up), slam, impact (dust), recover
+                for (int P = 1; P <= 4; P++)
+                {
+                    var Im = Finish(Turned(Draw(B, View, ATTACK_BOB[(P - 1)], 0, P), B.Eye));
+                    if (P >= 3)
                     {
-                        Raw = PixelTurn.TurnRight(Raw, S / 2, Turn);
+                        Dust(Im, View, (P == 3));
                     }
-                    var Im = Finish(Raw);
+                    Cells.Add(Im);
+                }
+                // knocked down 10-13: staggers back, knees give, falling, lying still with the eyes shut
+                var Stand = Turned(Draw(B, View, 0, 0), B.Eye);
+                var Back = new Vector2I(((View == "side") ? -1 : 0), 0);
+                Cells.Add(Finish(PixelPoses.Kneel(PixelPoses.Lean(Stand, LEGS, Back), LEGS, 1)));
+                Cells.Add(Finish(PixelPoses.Kneel(PixelPoses.Lean(Stand, LEGS, Back), LEGS, 4)));
+                Cells.Add(Finish(PixelPoses.Lie(Stand, S, 41), 16));
+                Cells.Add(Finish(PixelPoses.Lie(Turned(Draw(Shut, View, 0, 0), null), S, 45), 20));
+                for (int Col = 0; Col < COLS; Col++)
+                {
+                    var Im = Cells[Col];
                     if (Array.IndexOf(Mirrored, Row) >= 0)
                     {
                         Im.FlipX();
@@ -86,7 +122,9 @@ public partial class PixelBosses : Node
             }
             string Key = "boss_" + B.Name;
             Sheet.SavePng(Out.PathJoin(Key + ".png"));
-            Chars[Key] = new Godot.Collections.Dictionary { { "size", S }, { "anchor", new Godot.Collections.Array { (S / 2.0f), 46 } } };
+            // one-shot animations, as in art/chars/chars.json: [first column, frames, frames per second]
+            var Anims = new Godot.Collections.Dictionary { { "attack", new Godot.Collections.Array { 6, 4, 10.0f } }, { "down", new Godot.Collections.Array { 10, 4, 8.0f } } };
+            Chars[Key] = new Godot.Collections.Dictionary { { "size", S }, { "body", S }, { "anchor", new Godot.Collections.Array { (S / 2.0f), 46 } }, { "anims", Anims } };
             GD.Print("drew ", Key);
         }
         Info["chars"] = Chars;
@@ -96,7 +134,8 @@ public partial class PixelBosses : Node
     }
 
     // --- one frame -----------------------------------------------------------------
-    static Image Draw(Boss B, string View, int Bob, int Step)
+    // Pose: 0 standing / walking; attack 1 wind-up (arms up), 2 slam, 3 impact, 4 recover
+    static Image Draw(Boss B, string View, int Bob, int Step, int Pose = 0)
     {
         var Im = Image.CreateEmpty(S, S, false, Image.Format.Rgba8);
         bool Side = (View == "side");
@@ -119,7 +158,7 @@ public partial class PixelBosses : Node
         // back arm on the side view
         if (Side)
         {
-            Arm(Im, 17, (22 + Y), B, Front, true);
+            Arm(Im, 17, (22 + Y), B, Front, true, Pose, View);
         }
         // torso
         float Tx = (Side ? 22 : 24);
@@ -137,14 +176,14 @@ public partial class PixelBosses : Node
         if (Side)
         {
             Ell(Im, 26, (21 + Y), B.ShoulderR, (B.ShoulderR - 1), B.Body);
-            Arm(Im, 27, (22 + Y), B, Front, false);
+            Arm(Im, 27, (22 + Y), B, Front, false, Pose, View);
         }
         else
         {
             Ell(Im, 13, (21 + Y), B.ShoulderR, (B.ShoulderR - 1), B.Body);
             Ell(Im, 35, (21 + Y), B.ShoulderR, (B.ShoulderR - 1), B.Body);
-            Arm(Im, 10, (22 + Y), B, Front, false);
-            Arm(Im, 38, (22 + Y), B, Front, true);
+            Arm(Im, 10, (22 + Y), B, Front, false, Pose, View);
+            Arm(Im, 38, (22 + Y), B, Front, true, Pose, View);
         }
         // head, sunk between the shoulders
         // the Phantom's hood sits on its cloak; the brutes lean their head forward
@@ -179,15 +218,61 @@ public partial class PixelBosses : Node
         Fill(Im, (X - 1), (Bottom - 1), 7, 2, T[2]);
     }
 
-    static void Arm(Image Im, int X, int Y, Boss B, bool Front, bool Right)
+    static void Arm(Image Im, int X, int Y, Boss B, bool Front, bool Right, int Pose, string View)
     {
         var T = (B.Name == "phantom") ? B.Part : B.Body;
         int W = ((B.Name == "phantom") ? 3 : 4);
-        Fill(Im, X, Y, W, 13, T[1]);
-        Fill(Im, X, Y, 1, 13, T[0]);
-        Fill(Im, ((X + W) - 1), Y, 1, 13, T[2]);
-        float Fx = (X + (W / 2.0f));
-        float Fy = (Y + 14);
+        if (Pose == 0)
+        {
+            Fill(Im, X, Y, W, 13, T[1]);
+            Fill(Im, X, Y, 1, 13, T[0]);
+            Fill(Im, ((X + W) - 1), Y, 1, 13, T[2]);
+            Fist(Im, (X + (W / 2.0f)), (Y + 14), B, Right);
+            return;
+        }
+        // attacking: the arm goes from the shoulder to where the fist is in this pose
+        var Sh = new Vector2((X + (W / 2.0f)), Y);
+        float In = ((X < (S / 2)) ? 1 : -1);
+        Vector2 To;
+        if (View == "side")
+        {
+            To = Pose switch { 1 => new Vector2(-3, -13), 2 => new Vector2(12, 6), 3 => new Vector2(13, 18), _ => new Vector2(9, 13) };
+        }
+        else if (View == "down")
+        {
+            To = Pose switch { 1 => new Vector2(-In, -13), 2 => new Vector2((In * 4), 12), 3 => new Vector2((In * 5), 18), _ => new Vector2((In * 3), 15) };
+        }
+        else
+        {
+            // seen from the back, reaching forward is reaching away from the camera (up the screen)
+            To = Pose switch { 1 => new Vector2(-In, -13), 2 => new Vector2((In * 3), -6), 3 => new Vector2((In * 3), -2), _ => new Vector2((In * 2), 4) };
+        }
+        var H = (Sh + To);
+        var Pp = (H - Sh).Normalized().Orthogonal();
+        // the lit edge faces the upper left
+        if (Pp.Dot(new Vector2(-0.6f, -0.8f)) < 0)
+        {
+            Pp = -Pp;
+        }
+        int N = Mathf.CeilToInt((Sh.DistanceTo(H) * 2.0f));
+        for (int I = 0; I <= N; I++)
+        {
+            var P = Sh.Lerp(H, (I / (float)N));
+            Fill(Im, (int)(P.X - (W / 2.0f)), (int)(P.Y - (W / 2.0f)), W, W, T[1]);
+        }
+        for (int I = 0; I <= N; I++)
+        {
+            var P = Sh.Lerp(H, (I / (float)N));
+            Px(Im, (int)(P.X + (Pp.X * ((W / 2.0f) - 0.5f))), (int)(P.Y + (Pp.Y * ((W / 2.0f) - 0.5f))), T[0]);
+            Px(Im, (int)(P.X - (Pp.X * ((W / 2.0f) - 0.5f))), (int)(P.Y - (Pp.Y * ((W / 2.0f) - 0.5f))), T[2]);
+        }
+        Fist(Im, H.X, H.Y, B, Right);
+    }
+
+    // the end of an arm: fist, claws, ram or ghost fingers
+    static void Fist(Image Im, float Fx, float Fy, Boss B, bool Right)
+    {
+        var T = (B.Name == "phantom") ? B.Part : B.Body;
         switch (B.Name)
         {
             case "burrower":
@@ -474,7 +559,43 @@ public partial class PixelBosses : Node
     }
 
     // Dark outline around the silhouette, then a soft ground shadow under the feet (as tools/PixelChars.cs).
-    static Image Finish(Image Src)
+    // ground dust in front of a slam (none seen from the back: the body hides it)
+    static void Dust(Image Im, string View, bool Fresh)
+    {
+        if (View == "up")
+        {
+            return;
+        }
+        var C = ((View == "side") ? new Vector2(41, 44) : new Vector2(24, 46));
+        float Rx = (Fresh ? 9.0f : 13.0f);
+        var Col = new Color(0.80f, 0.74f, 0.62f, (Fresh ? 0.85f : 0.45f));
+        for (int I = 0; I < 18; I++)
+        {
+            float A = ((I / 18.0f) * Mathf.Tau);
+            int X = (int)(C.X + (Mathf.Cos(A) * Rx));
+            int Y = (int)(C.Y + (Mathf.Sin(A) * Rx * 0.3f));
+            if ((X >= 0) && (Y >= 0) && (X < S) && (Y < S) && (Im.GetPixel(X, Y).A < 1))
+            {
+                Im.SetPixel(X, Y, Col);
+            }
+        }
+        if (Fresh)
+        {
+            foreach (var D in new[] { new Vector2(1, 0.2f), new Vector2(-1, 0.25f), new Vector2(0.4f, 0.4f) })
+            {
+                for (int K = 0; K < 5; K++)
+                {
+                    int X = (int)(C.X + (D.X * K)), Y = (int)(C.Y + (D.Y * K));
+                    if ((X >= 0) && (Y >= 0) && (X < S) && (Y < S) && (Im.GetPixel(X, Y).A < 1))
+                    {
+                        Im.SetPixel(X, Y, new Color(0.08f, 0.06f, 0.1f, 0.75f));
+                    }
+                }
+            }
+        }
+    }
+
+    static Image Finish(Image Src, float Rx = 13.0f)
     {
         var Im = (Image)Src.Duplicate();
         for (int Y = 0; Y < S; Y++)
@@ -500,7 +621,7 @@ public partial class PixelBosses : Node
         {
             for (int X = 0; X < S; X++)
             {
-                float Dx = (((X + 0.5f) - (S / 2.0f)) / 13.0f);
+                float Dx = (((X + 0.5f) - (S / 2.0f)) / Rx);
                 float Dy = (((Y + 0.5f) - 46.0f) / 2.4f);
                 if ((((Dx * Dx) + (Dy * Dy)) <= 1.0f) && (Im.GetPixel(X, Y).A == 0))
                 {

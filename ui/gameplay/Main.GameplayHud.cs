@@ -6,26 +6,9 @@ using System.Threading.Tasks;
 using HoldTilDawn;
 
 // Owner: Pham Minh Hieu. Gameplay widgets and keys plugged into the HUD shell of Main.cs:
-// inventory panel, context hints, workbench panel, gameplay key bindings.
+// context hints and gameplay key bindings.
 public partial class Main : Node2D
 {
-    public void DrawInventoryPanel(dynamic C, dynamic Vs, dynamic Me)
-    {
-        if ((Me != null))
-        {
-            // HUD element 9: carried resources, totalled over the inventory slots
-            dynamic Rx = (Vs.X - 130);
-            this.Panel(C, Gd.MakeRect2((Rx - 8), 6, 130, 84));
-            dynamic I = 0;
-            foreach (dynamic Res in Gd.Iter(GameSim.RES))
-            {
-                this.DrawItemIcon(C, Res, Gd.MakeVector2((Rx + 6), (20 + (I * 18))), 1.0f);
-                this.Text(C, Gd.MakeVector2((Rx + 20), (25 + (I * 18))), Gd.Format("%s  x%d", new GArray(Res, Main.Carried(Me, Res))), 12, Colors.White);
-                I += 1;
-            }
-        }
-    }
-
     // Context hint above the hotbar: towers, gathering, door repair and night entry.
     public void DrawInteractionHint(dynamic C, dynamic Vs, dynamic Me, string Ph)
     {
@@ -33,6 +16,18 @@ public partial class Main : Node2D
         if (((Hint == "") && (LocalNoteT > 0)))
         {
             Hint = LocalNote;
+        }
+        // standing at the base furniture
+        if (((Hint == "") && (Gd.At(Me, 5) == 0)))
+        {
+            if (this.AtBenchLocal(Me))
+            {
+                Hint = "Workbench: C to craft";
+            }
+            else if (this.AtStorageLocal(Me))
+            {
+                Hint = "Storage chest: Tab to open the shared storage";
+            }
         }
         dynamic GatheringHint = false;
         if (((Hint == "") && (Gd.At(Me, 1) == 2) && (Gd.At(Me, 5) == 0) && !(Gd.Truth(Gd.At(Me, 19)))))
@@ -119,7 +114,7 @@ public partial class Main : Node2D
         {
             if (Gd.Truth(Gd.At(Me, 19)))
             {
-                Hint = "Inside the base: C craft  -  hold F at a door to leave";
+                Hint = "Inside the base: workbench (C) and storage chest (Tab) by the north wall  -  hold F at a door to leave";
             }
             else
             {
@@ -143,72 +138,6 @@ public partial class Main : Node2D
                 this.Text(C, Gd.MakeVector2(0, (Vs.Y - 74)), Hint, 13, GOLD, 1, Vs.X);
             }
         }
-    }
-
-    public Rect2 CraftRect(dynamic Vs)
-    {
-        return Gd.MakeRect2((Vs.X - 330), 98, 320, (40 + (Gd.Size(GameSim.RECIPES) * 18)));
-    }
-
-    // Workbench (MEC-10): number keys or a click craft a recipe; each craft takes 3 s.
-    public void DrawCraftPanel(dynamic C, dynamic Vs)
-    {
-        if (!Gd.Truth(CraftOpen))
-        {
-            return;
-        }
-        dynamic Me = Gd.Get(Snap.Ps, MyId);
-        Rect2 Cr = this.CraftRect(Vs);
-        this.Panel(C, Cr);
-        this.Text(C, (Cr.Position + Gd.MakeVector2(10, 16)), "WORKBENCH  (number or click to craft, C close)", 11, GOLD, 0, (-1.0f), true);
-        Vector2 Mouse = (Vector2)(Hud.GetLocalMousePosition());
-        foreach (dynamic I in Gd.Iter(Gd.Size(GameSim.RECIPES)))
-        {
-            dynamic R = Gd.At(GameSim.RECIPES, I);
-            dynamic Cost = new GArray();
-            bool Afford = true;
-            foreach (dynamic Res in Gd.Iter(Gd.At(R, 1)))
-            {
-                Gd.Append(Cost, Gd.Format("%d %s", new GArray(Gd.At(Gd.At(R, 1), Res), Res)));
-                Afford = (Afford && (Main.Carried(Me, Res) >= Gd.At(Gd.At(R, 1), Res)));
-            }
-            bool Locked = Gd.Truth((Gd.At(R, 2) > Snap.Unlock));
-            Rect2 Row = this.CraftRow(Vs, I);
-            if ((Row.HasPoint(Mouse) && !Locked))
-            {
-                C.DrawRect(Row, Gd.MakeColor(1, 1, 1, 0.08f));
-            }
-            dynamic Line = Gd.Format("%d  %s - %s%s", new GArray(((I + 1) % 10), Gd.At(R, 0), Gd.Join(", ", Gd.PackedStringArray(Cost)), (Gd.Truth(Gd.At(R, 5)) ? (dynamic)("  [Eng]") : "")));
-            Color Col = (Locked ? Gd.MakeColor(1, 1, 1, 0.35f) : (Afford ? Colors.White : Gd.MakeColor(1, 0.6f, 0.55f)));
-            this.Text(C, (Row.Position + Gd.MakeVector2(0, 12)), (Line + (Locked ? "  LOCKED" : "")), 11, Col);
-        }
-        this.Text(C, Gd.MakeVector2((Cr.Position.X + 10), (Cr.End.Y - 8)), "Stone tier after night 1, metal tier after the first boss", 9, Gd.MakeColor(1, 1, 1, 0.5f));
-    }
-
-    public Rect2 CraftRow(dynamic Vs, dynamic I)
-    {
-        Rect2 Cr = this.CraftRect(Vs);
-        return Gd.MakeRect2((Cr.Position.X + 10), ((Cr.Position.Y + 22) + (I * 18)), (Cr.Size.X - 20), 18);
-    }
-
-    public bool CraftMouse(dynamic Ev)
-    {
-        if ((!Gd.Truth(CraftOpen) || (Ev.ButtonIndex != 1)))
-        {
-            return false;
-        }
-        if (Gd.Truth(Ev.Pressed))
-        {
-            Vector2 Mouse = (Vector2)(Hud.GetLocalMousePosition());
-            foreach (dynamic I in Gd.Iter(Gd.Size(GameSim.RECIPES)))
-            {
-                if (this.CraftRow(Hud.Size, I).HasPoint(Mouse))
-                {
-                    this.Act("craft", I);
-                }
-            }
-        }
-        return true;
     }
 
     // Gameplay keys (F3 and zoom stay in Main.cs). Each key sends one action string to GameSim.Action.
@@ -236,12 +165,20 @@ public partial class Main : Node2D
         }
         else if (Gd.Equal(Code, 67))
         {
+            // the workbench tab opens only at the workbench (and closes by itself away from it, KeepPanelsInReach)
+            dynamic Me = Gd.Get(Snap.Ps, MyId);
+            if (!Gd.Truth(CraftOpen) && !this.AtBenchLocal(Me))
+            {
+                return;
+            }
             CraftOpen = !(Gd.Truth(CraftOpen));
             BagOpen = false;
         }
         else if (Gd.Equal(Code, 4194306))
         {
+            // the bag opens anywhere; opened at the chest it is the chest, and closes when you walk away from it
             BagOpen = !(Gd.Truth(BagOpen));
+            BagAtChest = (Gd.Truth(BagOpen) && this.AtStorageLocal(Gd.Get(Snap.Ps, MyId)));
             DragFrom = null;
             CraftOpen = false;
         }
@@ -258,8 +195,10 @@ public partial class Main : Node2D
             }
             if (Gd.Truth(CraftOpen))
             {
+                // a number key shows that recipe and crafts it at once (ui/gameplay/Main.CraftPanel.cs)
                 if (((N >= 0) && (N < Gd.Size(GameSim.RECIPES))))
                 {
+                    CraftSel = N;
                     this.Act("craft", N);
                 }
             }

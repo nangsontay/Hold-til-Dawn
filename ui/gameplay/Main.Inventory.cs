@@ -23,6 +23,9 @@ public partial class Main : Node2D
         {
             ItemTex[Id] = Gd.Load(((ITEM_ART + Id) + ".png"));
         }
+        // the crafts that make no item have an icon too (workbench panel), under their recipe id
+        ItemTex["revive"] = Gd.Load((ITEM_ART + "revival_kit.png"));
+        ItemTex["base"] = Gd.Load((ITEM_ART + "base_repair.png"));
         foreach (dynamic N in Gd.Iter(new GArray("arrow", "spit", "orb")))
         {
             FxTex[N] = Gd.Load(((FX_ART + N) + ".png"));
@@ -38,7 +41,7 @@ public partial class Main : Node2D
             return;
         }
         Vector2 Size = (Tex.GetSize() * Scale);
-        Gd.Native(Canvas, "draw_texture_rect", Tex, Gd.MakeRect2((Centre - (Size / 2)).Round(), Size), false);
+        Gd.Native(Canvas, "draw_texture_rect", this.Pixel(Tex), Gd.MakeRect2((Centre - (Size / 2)).Round(), Size), false);
     }
 
     // A projectile sprite in the world, turned to its flight direction.
@@ -63,11 +66,52 @@ public partial class Main : Node2D
         return ((Me == null) ? 0 : GameSim.CountIn(Gd.At(Me, 7), Id));
     }
 
-    // Storage and crafting are at the workbench: inside the base by day, or as the Engineer inside at night.
-    public bool AtBenchLocal(dynamic Me)
+    // Crafting is at the workbench, storage at the chest, both by the base's north wall: inside the base by day, or
+    // as the Engineer inside at night (the server checks the same, GameSim.AtBench / AtStorage).
+    public bool InBaseLocal(dynamic Me)
     {
         string Ph = Gd.Get(Snap, "ph", "");
         return ((Me != null) && (((Ph == "day") || (Ph == "dusk")) ? Gd.Truth(GameSim.InsideBase(LocalPos)) : ((Ph == "night") && Gd.Truth(Gd.At(Me, 19)))));
+    }
+
+    public bool AtBenchLocal(dynamic Me)
+    {
+        return (this.InBaseLocal(Me) && GameSim.NearBench((Vector2)LocalPos));
+    }
+
+    public bool AtStorageLocal(dynamic Me)
+    {
+        return (this.InBaseLocal(Me) && GameSim.NearStorage((Vector2)LocalPos));
+    }
+
+    // Panels close by themselves out of reach: the workbench tab, and the bag when it was opened as the chest. The tab
+    // keeps half a tile of slack past the reach, so a step back while crafting does not flick it shut.
+    public bool BagAtChest = false;
+    public const float PANEL_SLACK = (0.5f * GameSim.T);
+
+    public void KeepPanelsInReach(dynamic Me)
+    {
+        if ((Me == null))
+        {
+            return;
+        }
+        bool InBase = this.InBaseLocal(Me);
+        if (Gd.Truth(CraftOpen) && !(InBase && (((Vector2)LocalPos).DistanceTo(GameSim.WORKBENCH_POS) <= (GameSim.BENCH_REACH + PANEL_SLACK))))
+        {
+            CraftOpen = false;
+        }
+        // the chest has no slack: past its reach its slots go (the server refuses them there too)
+        if (Gd.Truth(BagOpen) && BagAtChest && !this.AtStorageLocal(Me))
+        {
+            BagOpen = false;
+            BagAtChest = false;
+            DragFrom = null;
+        }
+        // an item picked up from the chest is let go once the chest is out of reach
+        if (((DragFrom != null) && Gd.Equal(Gd.At(DragFrom, 0), "sto") && !this.AtStorageLocal(Me)))
+        {
+            DragFrom = null;
+        }
     }
 
     public bool UiCapturesMouse()
@@ -92,6 +136,13 @@ public partial class Main : Node2D
         {
             this.Text(C, Gd.MakeVector2(R.Position.X, (R.End.Y - 3)), Gd.Str(Gd.At(S, 1)), 11, Colors.White, 2, (R.Size.X - 3), true);
         }
+        if (GameSim.IsBow(S))
+        {
+            // the arrows loaded in the bow: a small arrow and the count, red when it is empty
+            int N = GameSim.Loaded(S);
+            this.DrawItemIcon(C, "arrow", (R.End - Gd.MakeVector2(30, 8)), 1.0f);
+            this.Text(C, Gd.MakeVector2(R.Position.X, (R.End.Y - 3)), Gd.Str(N), 11, ((N > 0) ? GOLD : NEON_RED), 2, (R.Size.X - 3), true);
+        }
     }
 
     // HUD element 8: the first four inventory slots, keys 1-4 or the mouse wheel.
@@ -114,11 +165,11 @@ public partial class Main : Node2D
         }
     }
 
-    // [box, index, rect] for every slot of the open bag panel: inventory (4 x 3) and, at the workbench, storage (8 x 5).
+    // [box, index, rect] for every slot of the open bag panel: inventory (4 x 3) and, at the chest, storage (8 x 5).
     public GArray BagSlots(dynamic Vs, dynamic Me)
     {
         var Out = new GArray();
-        bool Sto = this.AtBenchLocal(Me);
+        bool Sto = this.AtStorageLocal(Me);
         float InvW = ((4 * SLOT) + (3 * SLOT_GAP));
         float StoW = (Sto ? ((8 * SLOT) + (7 * SLOT_GAP)) : 0.0f);
         float Gap = (Sto ? 28.0f : 0.0f);
@@ -153,9 +204,13 @@ public partial class Main : Node2D
         {
             All = All.Merge(Gd.At(S, 2));
         }
-        this.Panel(C, All.Grow(14).GrowSide(Side.Top, 16).GrowSide(Side.Bottom, 30));
-        this.Text(C, (All.Position + Gd.MakeVector2(0, (-14))), "INVENTORY", 11, GOLD, 0, (-1.0f), true);
-        this.Text(C, Gd.MakeVector2(All.Position.X, (All.End.Y + 28)), "Drag to move or store   G give / drop   Tab close", 10, Gd.MakeColor(1, 1, 1, 0.6f));
+        // wide enough for the two help lines under the slots
+        Rect2 Frame = All.Grow(14).GrowSide(Side.Top, 16).GrowSide(Side.Bottom, 30);
+        float Extra = Math.Max(0.0f, ((330.0f - Frame.Size.X) / 2));
+        Frame = Frame.GrowIndividual(Extra, 0, Extra, 0);
+        this.Panel(C, Frame);
+        this.Text(C, (All.Position + Gd.MakeVector2(0, (-14))), "YOUR BAG", 11, GOLD, 0, (-1.0f), true);
+        this.Text(C, Gd.MakeVector2(Frame.Position.X, (All.End.Y + 28)), "Drag: move, store, arrows into a bow   G give   Tab close", 10, Gd.MakeColor(1, 1, 1, 0.6f), 1, Frame.Size.X);
         if ((Gd.Size(Slots) > GameSim.INV_SLOTS))
         {
             Rect2 First = (Rect2)(Gd.At(Gd.At(Slots, GameSim.INV_SLOTS), 2));
@@ -163,7 +218,7 @@ public partial class Main : Node2D
         }
         else
         {
-            this.Text(C, Gd.MakeVector2(All.Position.X, (All.End.Y + 14)), "Storage is at the workbench inside the base", 10, Gd.MakeColor(1, 1, 1, 0.6f));
+            this.Text(C, Gd.MakeVector2(Frame.Position.X, (All.End.Y + 14)), "Shared storage: the chest in the base", 10, Gd.MakeColor(1, 1, 1, 0.6f), 1, Frame.Size.X);
         }
         dynamic Sto = Gd.Get(Snap, "sto", new GArray());
         Vector2 Mouse = (Vector2)(Hud.GetLocalMousePosition());

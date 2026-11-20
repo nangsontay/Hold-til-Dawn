@@ -32,17 +32,20 @@ public partial class SimCheck : Node
         this.Run(S, 4.0f);
         Eng.Inter = false;
         this.Check(((S.Count(Eng, "herb") == 0) && (Herb.Amount == 5)), "gathering stops when the inventory is full");
-        // move to storage and back (needs the workbench)
+        // move to storage and back (needs the storage chest)
         S.SetCount(Eng, "stone", 0);
         S.SetCount(Eng, "wood", 20);
-        Eng.Pos = Gd.MakeVector2(0, (-2 * 32));
+        Eng.Pos = (GameSim.STORAGE_POS + Gd.MakeVector2(0, 24));
         int WoodSlot = Gd.Int(Gd.Find(Gd.Map(Eng.Inv, (Func<dynamic, dynamic>)((X) => ((X != null) ? (dynamic)(Gd.At(X, 0)) : ""))), "wood"));
         S.Action(1, "move_item", new GArray("inv", WoodSlot, "sto", 0));
-        this.Check(((S.Count(Eng, "wood") == 0) && (GameSim.CountIn(S.Storage, "wood") == 20)), "wood moved into base storage at the workbench");
+        this.Check(((S.Count(Eng, "wood") == 0) && (GameSim.CountIn(S.Storage, "wood") == 20)), "wood moved into base storage at the chest");
         Eng.Pos = Gd.MakeVector2(0, (15 * 32));
         S.Action(1, "move_item", new GArray("sto", 0, "inv", 5));
-        this.Check((GameSim.CountIn(S.Storage, "wood") == 20), "storage cannot be reached away from the workbench");
-        Eng.Pos = Gd.MakeVector2(0, (-2 * 32));
+        this.Check((GameSim.CountIn(S.Storage, "wood") == 20), "storage cannot be reached from outside the base");
+        Eng.Pos = (GameSim.WORKBENCH_POS + Gd.MakeVector2(0, 24));
+        S.Action(1, "move_item", new GArray("sto", 0, "inv", 5));
+        this.Check((GameSim.CountIn(S.Storage, "wood") == 20), "nor from elsewhere in the base (the workbench is not the chest)");
+        Eng.Pos = (GameSim.STORAGE_POS + Gd.MakeVector2(0, 24));
         S.Action(1, "move_item", new GArray("sto", 0, "inv", 5));
         this.Check(((S.Count(Eng, "wood") == 20) && (Gd.At(Gd.At(Eng.Inv, 5), 0) == "wood")), "and taken back into a chosen slot");
         S.Action(1, "move_item", new GArray("inv", 5, "inv", 0));
@@ -70,8 +73,10 @@ public partial class SimCheck : Node
         Eng.Inter = false;
         this.Check(((S.Count(Eng, "herb") == 3) && Gd.Truth(Gd.IsEmpty(S.Drops))), "E picks a dropped item back up");
         // Crafting is a 3 s channel at the workbench; leaving cancels it (BAL-19)
-        Eng.Pos = Gd.MakeVector2(0, (-2 * 32));
+        Eng.Pos = (GameSim.STORAGE_POS + Gd.MakeVector2(0, 24));
         S.SetCount(Eng, "herb", 2);
+        this.Check(!Gd.Truth(S.CanCraft(Eng, 1, false)), "no crafting in the base away from the workbench");
+        Eng.Pos = (GameSim.WORKBENCH_POS + Gd.MakeVector2(0, 24));
         S.Action(1, "craft", 1);
         this.Run(S, 1.0f);
         Eng.Pos = Gd.MakeVector2(0, (15 * 32));
@@ -79,7 +84,7 @@ public partial class SimCheck : Node
         this.Check(((S.Count(Eng, "bandage") == 0) && (S.Count(Eng, "herb") == 2) && (Eng.CraftIdx == (-1))), "leaving the workbench cancels a craft and keeps the materials");
         // Bow and arrows (MEC-03, BAL-10, BAL-42)
         S.Unlock = 1;
-        Eng.Pos = Gd.MakeVector2(0, (-2 * 32));
+        Eng.Pos = (GameSim.WORKBENCH_POS + Gd.MakeVector2(0, 24));
         S.SetCount(Eng, "wood", 7);
         S.SetCount(Eng, "metal", 2);
         S.Action(1, "craft", 6);
@@ -88,6 +93,8 @@ public partial class SimCheck : Node
         S.Action(1, "craft", 7);
         this.Run(S, 3.1f);
         this.Check(((S.Count(Eng, "arrow") == 10) && (S.Count(Eng, "wood") == 0)), "5 arrows cost 1 wood");
+        dynamic TheBow = Gd.At(Gd.Filter(Eng.Inv, (Func<dynamic, dynamic>)((X) => GameSim.IsBow(X))), 0);
+        this.Check(((GameSim.Loaded(TheBow) == 10) && !Gd.Truth(Gd.Any(Eng.Inv, (Func<dynamic, dynamic>)((X) => ((X != null) && Gd.Equal(Gd.At(X, 0), "arrow")))))), "the bow holds its arrows: all 10 loaded, no slot spent on arrows");
         Gd.Clear(S.Nodes);
         S.World.Rebuild(S.Nodes, S.Towers);
         Eng.Pos = Gd.MakeVector2(0, (15 * 32));
@@ -120,14 +127,30 @@ public partial class SimCheck : Node
         this.Run(S, 1.0f);
         Eng.Atk = false;
         this.Check(Gd.Truth(Gd.IsEmpty(S.Arrows)), "the crafted bow cannot fire without arrows");
-        Sc.Pos = (Target.Pos - Gd.MakeVector2((6 * 32), 0));
+        // loose arrows dragged onto the bow load into it, up to 30; the rest stays in its slot
+        int Q1 = Gd.Int(Gd.Find(Eng.Inv, null));
+        Eng.Inv[Q1] = new GArray("arrow", 20);
+        int Q2 = Gd.Int(Gd.Find(Eng.Inv, null));
+        Eng.Inv[Q2] = new GArray("arrow", 20);
+        S.Action(1, "move_item", new GArray("inv", Q1, "inv", 2));
+        S.Action(1, "move_item", new GArray("inv", Q2, "inv", 2));
+        this.Check(((GameSim.Loaded(Gd.At(Eng.Inv, 2)) == 30) && (Gd.At(Eng.Inv, Q1) == null) && (Gd.Int(Gd.At(Gd.At(Eng.Inv, Q2), 1)) == 10)), "arrows dragged onto the bow load it up to 30, the rest stays in its slot");
+        // a dropped bow drops its arrows beside it; picked up again they go back in
+        S.Action(1, "give", null);
+        this.Check(((S.Count(Eng, "bow") == 0) && (S.Count(Eng, "arrow") == 10) && Gd.Truth(Gd.Any(S.Drops, (Func<dynamic, dynamic>)((D) => (Gd.Equal(D.Item, "arrow") && (D.N == 30)))))), "dropping the bow drops its 30 arrows with it");
+        S.PickUp(Eng);
+        S.PickUp(Eng);
+        dynamic Again = Gd.At(Gd.Filter(Eng.Inv, (Func<dynamic, dynamic>)((X) => GameSim.IsBow(X))), 0);
+        this.Check(((Again != null) && (GameSim.Loaded(Again) == 30) && (S.Count(Eng, "arrow") == 40)), "picked up again, the bow is refilled from the bag first and the rest stays loose");
+        S.SetCount(Eng, "arrow", 0);
+        Sc.Pos = (Target.Pos - Gd.MakeVector2((7.5f * 32), 0));
         S.Action(2, "select", 0);
         Sc.Aim = 0.0f;
         Sc.Atk = true;
         this.Run(S, 0.05f);
         Sc.Atk = false;
         this.Run(S, 1.0f);
-        this.Check((Target.Hp == 80.0f), "the Scout's starter bow needs no arrows (8 damage)");
+        this.Check((Target.Hp == 76.0f), Gd.Format("the Scout's starter bow needs no arrows and hits like the crafted bow (12 damage, 8 tiles; hp %.1f)", Target.Hp));
         // Walls (MEC-11, BAL-27)
         Gd.Clear(S.Enemies);
         Vector2 Door = (Vector2)(Gd.At(GameSim.DOOR_POS, 0));
@@ -166,7 +189,7 @@ public partial class SimCheck : Node
         Dead.State = 2;
         Dead.Pos = (Gd.At(GameSim.DOOR_POS, 2) + Gd.MakeVector2((10 * 32), 0));
         dynamic Crafter = Gd.At(S.Players, 1);
-        Crafter.Pos = Gd.MakeVector2(0, (-2 * 32));
+        Crafter.Pos = (GameSim.WORKBENCH_POS + Gd.MakeVector2(0, 24));
         S.SetCount(Crafter, "herb", 4);
         S.SetCount(Crafter, "metal", 4);
         S.Action(1, "craft", 2);

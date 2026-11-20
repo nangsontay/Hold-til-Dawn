@@ -21,7 +21,8 @@ public partial class Bots : RefCounted
     public static readonly dynamic FLASK_AT = 0.55f;
     public static readonly dynamic BANDAGE_AT = 0.4f;
     public static readonly dynamic BODY = (0.4f * T);
-    public static readonly dynamic BENCH_SPOTS = new GArray(Gd.MakeVector2((-2.5f), 1.6f), Gd.MakeVector2(2.5f, 1.6f), Gd.MakeVector2((-3.5f), 0.6f), Gd.MakeVector2(3.5f, 0.6f));
+    // where bots stand to craft: in front of the workbench (GameSim.WORKBENCH_POS, -3.2, -2.0), within its reach
+    public static readonly dynamic BENCH_SPOTS = new GArray(Gd.MakeVector2((-3.2f), (-0.8f)), Gd.MakeVector2((-2.1f), (-0.9f)), Gd.MakeVector2((-4.3f), (-0.9f)), Gd.MakeVector2((-2.4f), (-0.3f)));
     public static void Add(dynamic Sim)
     {
         // A bot takes the role the team lacks most: an Engineer first if there is none, then Healer, Scout.

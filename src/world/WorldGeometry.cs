@@ -156,9 +156,10 @@ public partial class WorldGeometry : RefCounted
         }
         Layout.Free();
         Gd.Append(StaticSolids, new GArray(Gd.MakeVector2(0, ((0.3f * T) - 6)), 22.0f, true));
-        foreach (dynamic X in Gd.Iter(new GArray((-10.0f), 0.0f, 10.0f)))
+        // the workbench and the storage chest (GameSim.World.cs)
+        foreach (dynamic S in Gd.Iter(GameSim.FurnitureSolids()))
         {
-            Gd.Append(StaticSolids, new GArray(Gd.MakeVector2(X, ((1.6f * T) - 4)), 7.0f, true));
+            Gd.Append(StaticSolids, new GArray(Gd.At(S, 0), Gd.At(S, 1), true));
         }
         Gd.SortCustom(Scatter, (Func<dynamic, dynamic, dynamic>)((A, B) => (Gd.At(A, 0).Y < Gd.At(B, 0).Y)));
         this.Rebuild(new GArray(), new GArray());
@@ -401,6 +402,17 @@ public partial class WorldGeometry : RefCounted
                 continue;
             }
             if (((this.FirstHit(From, P, Radius) == float.PositiveInfinity) && !(Gd.Truth(Gd.Any(Walls, (Func<dynamic, dynamic>)((W) => (WorldGeometry.SegmentBox(From, P, W.Grow(Radius)) < float.PositiveInfinity)))))))
+            {
+                return P;
+            }
+        }
+        // Nothing ahead is in plain sight, e.g. the body is pressed into a tree or squeezed between two solids:
+        // head for the next cell anyway and let the movement slide along the solid. Returning From here left a
+        // bot (or an enemy) standing still for good.
+        foreach (dynamic J in Gd.Iter(Gd.Range(Gd.Mini(1, (Gd.Size(Path) - 1)), (-1), (-1))))
+        {
+            dynamic P = (Gd.MakeVector2(Gd.At(Path, J)) * T);
+            if ((From.DistanceTo(P) >= 2))
             {
                 return P;
             }

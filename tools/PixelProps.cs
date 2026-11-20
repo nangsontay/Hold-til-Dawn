@@ -30,8 +30,10 @@ public partial class PixelProps : Node
         foreach (string outputArgument in OS.GetCmdlineUserArgs())
             if (outputArgument.StartsWith("--out=", StringComparison.Ordinal)) Out = outputArgument[6..];
         Gd.Static(typeof(DirAccess), "make_dir_recursive_absolute", Out);
-        this.Save(Out, "lighthouse", this.Lighthouse(), Gd.MakeVector2(14, 73));
-        this.Save(Out, "workbench", this.Workbench(), Gd.MakeVector2(17, 22));
+        this.Save(Out, "lighthouse", this.Lighthouse(), Gd.MakeVector2(14, (73 + LH_EXTRA)));
+        this.Save(Out, "workbench", this.Workbench(), Gd.MakeVector2(31, 45));
+        // the shared storage chest: 4 frames side by side, shut to wide open (src/world/view/Main.BaseProps.cs)
+        this.Save(Out, "chest", this.ChestSheet(), Gd.MakeVector2(18, 35));
         this.Save(Out, "tower", this.Tower(false), Gd.MakeVector2(13, 57));
         this.Save(Out, "tower_wreck", this.Tower(true), Gd.MakeVector2(13, 57));
         this.Save(Out, "pad", this.Pad(), Gd.MakeVector2(128, 128));
@@ -56,17 +58,21 @@ public partial class PixelProps : Node
     }
 
     // --- the props ---------------------------------------------------------------
+    // extra pixels of tower body: tall enough to stand well above the base's roof, so it is seen from outside
+    public const int LH_EXTRA = 36;
+
     public dynamic Lighthouse()
     {
         // The old lighthouse at the heart of Lighthouse Outpost; its lamp is the beacon (GDD 5.1).
-        dynamic Im = Gd.Static(typeof(Image), "create_empty", 28, 76, false, Gd.EnumValue(typeof(Image), "FORMAT_RGBA8", 5));
-        this.Shadow(Im, Gd.MakeVector2(19, 72), 12, 3);
+        int D = LH_EXTRA;
+        dynamic Im = Gd.Static(typeof(Image), "create_empty", 28, (76 + D), false, Gd.EnumValue(typeof(Image), "FORMAT_RGBA8", 5));
+        this.Shadow(Im, Gd.MakeVector2(19, (72 + D)), 12, 3);
         // plinth
-        this.Block(Im, Gd.MakeRect2I(2, 66, 24, 8), CONCRETE);
-        foreach (dynamic Y in Gd.Iter(Gd.Range(22, 66)))
+        this.Block(Im, Gd.MakeRect2I(2, (66 + D), 24, 8), CONCRETE);
+        foreach (dynamic Y in Gd.Iter(Gd.Range(22, (66 + D))))
         {
-            dynamic Half = (6 + Gd.Int(((3.0f * (Y - 22)) / 43.0f)));
-            dynamic Band = (((((65 - Y) / 9) % 2) == 0) ? (dynamic)(RED) : WHITE);
+            dynamic Half = (6 + Gd.Int(((3.0f * (Y - 22)) / (43.0f + D))));
+            dynamic Band = (((((65 + D - Y) / 9) % 2) == 0) ? (dynamic)(RED) : WHITE);
             foreach (dynamic X in Gd.Iter(Gd.Range((14 - Half), (14 + Half))))
             {
                 Color C = (Color)(Gd.At(Band, 1));
@@ -82,9 +88,12 @@ public partial class PixelProps : Node
             }
         }
         // door
-        Im.FillRect(Gd.MakeRect2I(12, 58, 4, 8), Gd.MakeColor("2B2024"));
-        // window
-        Im.FillRect(Gd.MakeRect2I(13, 40, 2, 3), Gd.MakeColor("2B2024"));
+        Im.FillRect(Gd.MakeRect2I(12, (58 + D), 4, 8), Gd.MakeColor("2B2024"));
+        // windows up the stair
+        foreach (int Wy in new[] { 34, (34 + (D / 2) + 6), (40 + D) })
+        {
+            Im.FillRect(Gd.MakeRect2I(13, Wy, 2, 3), Gd.MakeColor("2B2024"));
+        }
         // gallery rail
         Im.FillRect(Gd.MakeRect2I(4, 18, 20, 1), Gd.MakeColor("5B5F6B"));
         Im.FillRect(Gd.MakeRect2I(4, 21, 20, 1), Gd.MakeColor("3A3F48"));
@@ -109,39 +118,250 @@ public partial class PixelProps : Node
         return Im;
     }
 
-    public dynamic Workbench()
+    // small typed helper for the furniture below
+    static void Fill(Image Im, int X, int Y, int W, int H, Color C)
     {
-        // The team's workbench (crafting, MEC-10): planks, legs, a vise, hammer and saw, a red tool box.
-        dynamic Im = Gd.Static(typeof(Image), "create_empty", 34, 24, false, Gd.EnumValue(typeof(Image), "FORMAT_RGBA8", 5));
-        this.Shadow(Im, Gd.MakeVector2(20, 22), 14, 2);
-        // legs
-        Im.FillRect(Gd.MakeRect2I(2, 15, 3, 7), Gd.At(WOOD, 3));
-        Im.FillRect(Gd.MakeRect2I(29, 15, 3, 7), Gd.At(WOOD, 3));
-        Im.FillRect(Gd.MakeRect2I(4, 18, 25, 1), Gd.At(WOOD, 3));
-        // top
-        Im.FillRect(Gd.MakeRect2I(1, 6, 32, 6), Gd.At(WOOD, 1));
-        Im.FillRect(Gd.MakeRect2I(1, 6, 32, 1), Gd.At(WOOD, 0));
-        foreach (dynamic X in Gd.Iter(new GArray(11, 22)))
+        Im.FillRect(new Rect2I(X, Y, W, H), C);
+    }
+
+    public Image Workbench()
+    {
+        // The team's workbench (crafting, MEC-10), about 2 tiles wide: a pegboard of hanging tools at the back, a deep
+        // plank top with a vise, a blueprint, a hammer and a red tool box, a front apron with two drawers, and logs
+        // and metal bars on the low shelf. Stands against the base's north wall.
+        var Im = Image.CreateEmpty(62, 48, false, Image.Format.Rgba8);
+        Color W0 = WOOD[0], W1 = WOOD[1], W2 = WOOD[2], W3 = WOOD[3];
+        Color S0 = STEEL[0], S1 = STEEL[1], S2 = STEEL[2];
+        this.Shadow(Im, Gd.MakeVector2(34, 45), 29, 3);
+        // pegboard with its posts
+        Fill(Im, 4, 2, 54, 19, W2);
+        Fill(Im, 4, 2, 54, 1, W1);
+        for (int Y = 5; Y < 20; Y += 4)
         {
-            Im.FillRect(Gd.MakeRect2I(X, 6, 1, 6), Gd.At(WOOD, 2));
+            for (int X = 8 + ((Y / 4) % 2) * 2; X < 56; X += 4)
+            {
+                Im.SetPixel(X, Y, W3);
+            }
         }
-        // front edge
-        Im.FillRect(Gd.MakeRect2I(1, 12, 32, 3), Gd.At(WOOD, 2));
-        // vise
-        Im.FillRect(Gd.MakeRect2I(3, 3, 5, 3), Gd.At(STEEL, 2));
-        Im.FillRect(Gd.MakeRect2I(4, 2, 3, 1), Gd.At(STEEL, 1));
-        // hammer
-        Im.FillRect(Gd.MakeRect2I(12, 8, 7, 1), Gd.At(WOOD, 3));
-        Im.FillRect(Gd.MakeRect2I(19, 6, 2, 4), Gd.At(STEEL, 1));
-        // saw
-        Im.FillRect(Gd.MakeRect2I(23, 8, 7, 2), Gd.At(STEEL, 0));
-        foreach (dynamic X in Gd.Iter(Gd.Range(23, 30, 2)))
+        Fill(Im, 3, 1, 3, 24, W3);
+        Fill(Im, 56, 1, 3, 24, W3);
+        Fill(Im, 3, 1, 1, 24, W2);
+        // hanging tools: wrench, saw, pliers, a coil of rope
+        Fill(Im, 10, 5, 2, 11, S1);
+        Fill(Im, 9, 4, 4, 2, S1);
+        Fill(Im, 10, 4, 2, 1, W2);
+        Fill(Im, 9, 15, 4, 2, S1);
+        Fill(Im, 11, 15, 1, 1, W2);
+        Fill(Im, 17, 6, 12, 5, S0);
+        Fill(Im, 17, 10, 12, 1, S2);
+        for (int X = 17; X < 29; X += 2)
         {
-            Im.SetPixel(X, 10, Gd.At(STEEL, 2));
+            Im.SetPixel(X, 11, S2);
         }
-        // tool box
-        Im.FillRect(Gd.MakeRect2I(25, 2, 6, 4), Gd.At(RED, 1));
-        Im.FillRect(Gd.MakeRect2I(26, 1, 4, 1), Gd.At(RED, 2));
+        Fill(Im, 29, 6, 4, 5, Gd.At(RED, 1));
+        Fill(Im, 30, 7, 2, 3, Gd.At(RED, 2));
+        Fill(Im, 37, 5, 1, 9, S1);
+        Fill(Im, 40, 5, 1, 9, S1);
+        Fill(Im, 37, 13, 1, 4, Gd.At(RED, 1));
+        Fill(Im, 40, 13, 1, 4, Gd.At(RED, 1));
+        Fill(Im, 38, 8, 2, 2, S2);
+        Color Rope = new Color("D8C08A"), RopeD = new Color("A88F5A");
+        Fill(Im, 45, 6, 8, 8, Rope);
+        Fill(Im, 47, 8, 4, 4, W2);
+        Fill(Im, 45, 12, 8, 2, RopeD);
+        Fill(Im, 48, 4, 2, 2, W3);
+        // the top: planks running along the bench
+        Fill(Im, 1, 21, 60, 10, W1);
+        Fill(Im, 1, 21, 60, 1, W0);
+        Fill(Im, 1, 24, 60, 1, W2);
+        Fill(Im, 1, 28, 60, 1, W2);
+        Fill(Im, 1, 21, 1, 10, W0);
+        Fill(Im, 60, 21, 1, 10, W2);
+        // apron with two drawers
+        Fill(Im, 1, 31, 60, 6, W2);
+        Fill(Im, 1, 31, 60, 1, W3);
+        foreach (int X in new[] { 8, 37 })
+        {
+            Fill(Im, X, 32, 17, 4, W1);
+            Fill(Im, X, 35, 17, 1, W3);
+            Fill(Im, (X + 7), 33, 3, 1, S0);
+        }
+        // legs, a low shelf and what is on it
+        Fill(Im, 3, 37, 4, 9, W3);
+        Fill(Im, 55, 37, 4, 9, W3);
+        Fill(Im, 3, 37, 1, 9, W2);
+        Fill(Im, 7, 42, 48, 2, W3);
+        foreach (int X in new[] { 11, 16, 13 })
+        {
+            int Y = ((X == 13) ? 37 : 39);
+            Fill(Im, X, Y, 6, 3, W1);
+            Fill(Im, X, Y, 2, 3, new Color("E0B880"));
+            Im.SetPixel(X, (Y + 1), W2);
+        }
+        Fill(Im, 38, 39, 7, 3, S1);
+        Fill(Im, 38, 39, 7, 1, S0);
+        Fill(Im, 40, 37, 7, 2, S0);
+        Fill(Im, 40, 38, 7, 1, S1);
+        // vise at the left end, sticking up
+        Fill(Im, 4, 16, 9, 6, S2);
+        Fill(Im, 4, 16, 9, 1, S1);
+        Fill(Im, 5, 15, 3, 1, S0);
+        Fill(Im, 13, 18, 4, 1, S1);
+        Fill(Im, 8, 22, 3, 3, S2);
+        // blueprint
+        Color Paper = new Color("E8E3D8"), Ink = new Color("4F7FC0");
+        Fill(Im, 17, 22, 15, 6, Paper);
+        Fill(Im, 17, 27, 15, 1, new Color("B9B4AA"));
+        Fill(Im, 19, 23, 6, 1, Ink);
+        Fill(Im, 19, 23, 1, 3, Ink);
+        Fill(Im, 22, 25, 8, 1, Ink);
+        Fill(Im, 27, 23, 1, 3, Ink);
+        // hammer lying on the top
+        Fill(Im, 34, 26, 8, 1, W3);
+        Fill(Im, 42, 24, 2, 4, S1);
+        Fill(Im, 42, 24, 2, 1, S0);
+        // tool box at the right end
+        Fill(Im, 46, 15, 11, 7, Gd.At(RED, 1));
+        Fill(Im, 46, 15, 11, 1, Gd.At(RED, 0));
+        Fill(Im, 46, 19, 11, 1, Gd.At(RED, 2));
+        Fill(Im, 50, 13, 3, 1, DARK);
+        Fill(Im, 49, 14, 1, 1, DARK);
+        Fill(Im, 53, 14, 1, 1, DARK);
+        Fill(Im, 51, 17, 1, 1, AMBER);
+        this.Outline(Im);
+        return Im;
+    }
+
+    public Image ChestSheet()
+    {
+        // The shared storage chest (BAL-18): a banded wooden chest with a brass lock. Frame 0 shut, 1 the lid lifting,
+        // 2 half open (the underside of the lid shows), 3 wide open with the team's materials inside.
+        const int Fw = 36, Fh = 37;
+        var Sheet = Image.CreateEmpty((Fw * 4), Fh, false, Image.Format.Rgba8);
+        for (int F = 0; F < 4; F++)
+        {
+            var Im = this.Chest(F, Fw, Fh);
+            Sheet.BlitRect(Im, new Rect2I(0, 0, Fw, Fh), new Vector2I((F * Fw), 0));
+        }
+        return Sheet;
+    }
+
+    public Image Chest(int F, int Fw, int Fh)
+    {
+        var Im = Image.CreateEmpty(Fw, Fh, false, Image.Format.Rgba8);
+        Color W0 = WOOD[0], W1 = WOOD[1], W2 = WOOD[2], W3 = WOOD[3];
+        Color S0 = STEEL[0], S1 = STEEL[1], S2 = STEEL[2];
+        Color Brass = AMBER, BrassD = new Color("B8862E");
+        Color Hollow = new Color("2B2024");
+        this.Shadow(Im, Gd.MakeVector2(20, 34), 16, 3);
+        const int L = 3, R = 33;
+        int Wd = (R - L);
+        // body: front face 22..34 with planks, steel bands and corner brackets
+        Fill(Im, L, 22, Wd, 12, W2);
+        Fill(Im, L, 22, Wd, 1, W1);
+        Fill(Im, L, 27, Wd, 1, W3);
+        Fill(Im, L, 31, Wd, 1, W3);
+        Fill(Im, L, 22, 1, 12, W1);
+        foreach (int X in new[] { 7, 28 })
+        {
+            Fill(Im, X, 22, 2, 12, S1);
+            Fill(Im, X, 22, 1, 12, S0);
+        }
+        Fill(Im, L, 32, 3, 2, S2);
+        Fill(Im, (R - 3), 32, 3, 2, S2);
+        // feet
+        Fill(Im, 4, 34, 4, 1, W3);
+        Fill(Im, 28, 34, 4, 1, W3);
+        // brass catch on the body
+        Fill(Im, 16, 22, 4, 3, BrassD);
+        Fill(Im, 17, 23, 2, 1, Brass);
+        if (F == 0)
+        {
+            // shut: the lid's top face and its front face with the lock plate
+            Fill(Im, L, 11, Wd, 6, W1);
+            Fill(Im, L, 11, Wd, 1, W0);
+            Fill(Im, L, 14, Wd, 1, W2);
+            Fill(Im, L, 17, Wd, 5, W2);
+            Fill(Im, L, 17, Wd, 1, W0);
+            Fill(Im, L, 21, Wd, 1, W3);
+            foreach (int X in new[] { 7, 28 })
+            {
+                Fill(Im, X, 11, 2, 11, S1);
+                Fill(Im, X, 11, 1, 11, S0);
+            }
+            Fill(Im, 15, 18, 6, 6, Brass);
+            Fill(Im, 15, 23, 6, 1, BrassD);
+            Fill(Im, 17, 20, 2, 2, Hollow);
+        }
+        else
+        {
+            // open: the hollow inside, back wall and side walls of the body around it
+            Fill(Im, L, 15, Wd, 7, Hollow);
+            Fill(Im, L, 15, Wd, 1, W3);
+            Fill(Im, L, 15, 2, 7, W2);
+            Fill(Im, (R - 2), 15, 2, 7, W3);
+            Fill(Im, L, 21, Wd, 1, W1);
+            if (F >= 2)
+            {
+                // the team's materials: a log, stones, herbs, metal bars; lit warm when wide open
+                bool Lit = (F == 3);
+                Fill(Im, 7, 18, 7, 3, (Lit ? W0 : W1));
+                Fill(Im, 7, 18, 2, 3, new Color("E0B880"));
+                Fill(Im, 15, 17, 4, 4, (Lit ? CONCRETE[0] : CONCRETE[1]));
+                Fill(Im, 15, 17, 4, 1, CONCRETE[0]);
+                Fill(Im, 18, 19, 2, 2, CONCRETE[2]);
+                Fill(Im, 21, 16, 1, 4, new Color("3E8E4A"));
+                Fill(Im, 22, 17, 2, 1, new Color("6CC070"));
+                Fill(Im, 20, 17, 1, 1, new Color("6CC070"));
+                Fill(Im, 24, 19, 6, 2, (Lit ? S0 : S1));
+                Fill(Im, 25, 18, 5, 1, S0);
+                if (Lit)
+                {
+                    Fill(Im, 6, 20, 24, 1, new Color(1.0f, 0.82f, 0.45f, 1.0f).Lerp(Hollow, 0.55f));
+                }
+            }
+            else
+            {
+                // just lifting: a glint of what is inside
+                Fill(Im, 12, 19, 10, 1, BrassD);
+            }
+            // the lid, hinged at the back edge (row 15)
+            if (F == 1)
+            {
+                // tilted up a little: its front face, raised, over a sliver of the inside
+                Fill(Im, L, 9, Wd, 5, W1);
+                Fill(Im, L, 9, Wd, 1, W0);
+                Fill(Im, L, 14, Wd, 4, W2);
+                Fill(Im, L, 14, Wd, 1, W0);
+                Fill(Im, L, 17, Wd, 1, W3);
+                foreach (int X in new[] { 7, 28 })
+                {
+                    Fill(Im, X, 9, 2, 9, S1);
+                    Fill(Im, X, 9, 1, 9, S0);
+                }
+                Fill(Im, 15, 15, 6, 4, Brass);
+                Fill(Im, 15, 18, 6, 1, BrassD);
+            }
+            else
+            {
+                // standing up (2) or leaning back (3): its underside faces you
+                int Top = ((F == 2) ? 6 : 2);
+                int Edge = ((F == 2) ? 3 : 2);
+                Fill(Im, L, Top, Wd, Edge, W1);
+                Fill(Im, L, Top, Wd, 1, W0);
+                Fill(Im, L, (Top + Edge), Wd, (15 - Top - Edge), W3);
+                Fill(Im, (L + 2), (Top + Edge + 1), (Wd - 4), (15 - Top - Edge - 2), W2);
+                for (int Y = (Top + Edge + 3); Y < 14; Y += 3)
+                {
+                    Fill(Im, (L + 2), Y, (Wd - 4), 1, W3);
+                }
+                foreach (int X in new[] { 7, 28 })
+                {
+                    Fill(Im, X, Top, 2, (15 - Top), S2);
+                }
+                Fill(Im, 16, Top, 4, 2, BrassD);
+            }
+        }
         this.Outline(Im);
         return Im;
     }

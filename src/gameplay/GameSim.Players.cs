@@ -11,9 +11,15 @@ public partial class GameSim : RefCounted
     // Crafting takes CRAFT_TIME at the workbench (BAL-19); base repair runs at 20 HP/s (BAL-20).
     public const float CRAFT_TIME = 3.0f;
 
-    public bool AtBench(dynamic P)
+    // In the base (by day, or as the Engineer who went in at night) and standing at the furniture.
+    public bool InBaseToWork(dynamic P)
     {
         return Gd.Truth(((Gd.Contains(new GArray("day", "dusk"), Phase) && Gd.Truth(GameSim.InsideBase(P.Pos))) || ((Phase == "night") && Gd.Truth(P.Inside))));
+    }
+
+    public bool AtBench(dynamic P)
+    {
+        return (this.InBaseToWork(P) && GameSim.NearBench((Vector2)P.Pos));
     }
 
     // Checks every rule of MEC-10; Note() tells the player why not.
@@ -27,7 +33,7 @@ public partial class GameSim : RefCounted
         string Why = "";
         if (((P.State != 0) || !this.AtBench(P)))
         {
-            Why = "Craft at the workbench inside the base (by day; Engineer at night)";
+            Why = "Craft at the workbench in the base, by the north wall (by day; Engineer at night)";
         }
         else if ((Gd.At(R, 2) > Unlock))
         {
@@ -188,10 +194,10 @@ public partial class GameSim : RefCounted
         P.InputSequence = 0;
         // index of the resource node a bot is gathering
         P.BotNode = (-1);
-        // spawn beside the lighthouse, left or right: behind it the sprite hides you, and the gap between it and
-        // the workbench stools traps a body
+        // spawn beside the lighthouse, left or right (behind it the sprite hides you), in front of the workbench
+        // and the storage chest by the north wall
         float Side = ((Rng.Randf() < 0.5f) ? (-1.0f) : 1.0f);
-        this.Teleport(P, World.Resolve((Gd.MakeVector2((Side * Rng.RandfRange(2.5f, 4.0f)), Rng.RandfRange((-2.0f), 0.5f)) * T), (0.3f * T)));
+        this.Teleport(P, World.Resolve((Gd.MakeVector2((Side * Rng.RandfRange(2.5f, 4.0f)), Rng.RandfRange((-0.6f), 1.5f)) * T), (0.3f * T)));
     }
 
     public void TickPlayers(dynamic Dt)

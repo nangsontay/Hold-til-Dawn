@@ -11,7 +11,8 @@ public partial class Main : Node2D
 {
     public const int MAP_PX = 120;
     public dynamic MapBig = false;
-    ImageTexture MapTex = null;
+    // the terrain image, drawn with hard pixels on the linearly filtered HUD
+    CanvasTexture MapTex = null;
 
     // world half-width covered by the map: the island plus a strip of sea
     public static float MapReach() => (float)GameSim.ISLAND + 3.0f * (float)T;
@@ -77,7 +78,7 @@ public partial class Main : Node2D
             int Px = (int)((P.X + Reach) / Per), Py = (int)((P.Y + Reach) / Per);
             if (Px >= 0 && Py >= 0 && Px < MAP_PX && Py < MAP_PX) Im.SetPixel(Px, Py, Col);
         }
-        MapTex = ImageTexture.CreateFromImage(Im);
+        MapTex = new CanvasTexture { DiffuseTexture = ImageTexture.CreateFromImage(Im), TextureFilter = CanvasItem.TextureFilterEnum.Nearest };
     }
 
     public Rect2 MapRect(dynamic Vs)
@@ -87,7 +88,8 @@ public partial class Main : Node2D
             float S = Mathf.Floor(Mathf.Min((float)Vs.Y - 120, 3 * MAP_PX) / MAP_PX) * MAP_PX;
             return new Rect2(((float)Vs.X - S) / 2, ((float)Vs.Y - S) / 2 - 10, S, S);
         }
-        return new Rect2((float)Vs.X - MAP_PX - 10, (float)Vs.Y - MAP_PX - 10, MAP_PX, MAP_PX);
+        // top left, where the day and timer were (they moved to the top right)
+        return new Rect2(10, 10, MAP_PX, MAP_PX);
     }
 
     public void DrawMinimap(dynamic C, dynamic Vs, dynamic Me)

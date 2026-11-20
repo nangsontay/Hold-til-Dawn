@@ -19,7 +19,10 @@ public partial class Main : Node2D
     public static readonly dynamic NEON_CYAN = Gd.MakeColor(0.6f, 1.8f, 2.2f);
     public static readonly dynamic NEON_PINK = Gd.MakeColor(2.2f, 0.5f, 1.9f);
     public static readonly dynamic NEON_RED = Gd.MakeColor(2.4f, 0.4f, 0.3f);
-    public static readonly dynamic NIGHT_TINT = Gd.MakeColor(0.09f, 0.1f, 0.2f);
+    // the light over the world: warm late-afternoon sun by day, a deep teal night (the base's lamps and the beacon
+    // stay warm orange against it)
+    public static readonly Color DAY_TINT = new Color(1.0f, 0.96f, 0.86f);
+    public static readonly dynamic NIGHT_TINT = Gd.MakeColor(0.15f, 0.24f, 0.29f);
     // Nature pixel art (trees, rocks, plants, resource nodes, ground) drawn by tools/PixelNature.cs
     public static readonly dynamic NATURE = "res://art/nature/";
     public static readonly dynamic SPR = (T / 32.0f);
@@ -43,7 +46,7 @@ public partial class Main : Node2D
     public static readonly dynamic FONT_TITLE = "res://fonts/Oswald.ttf";
     public static readonly dynamic TITLE_SCALE = 1.15f;
     public static readonly dynamic PROPS = "res://art/props/";
-    public static readonly dynamic WORKBENCH = Gd.MakeVector2(0, (1.6f * T));
+    public static readonly dynamic WORKBENCH = GameSim.WORKBENCH_POS;
     public static readonly dynamic LIGHTHOUSE = Gd.MakeVector2(0, (0.3f * T));
     public static readonly dynamic LIGHTHOUSE_SCALE = 2.0f;
     public static readonly dynamic TOWER_SCALE = 2.0f;
@@ -175,7 +178,7 @@ public partial class Main : Node2D
         }
     }
 
-    // Screenshot and playtest helpers: --kit (some materials and a bow), --walls, --goto=x,y (tiles), --panel=bag|craft|build|pause|map,
+    // Screenshot and playtest helpers: --kit (some materials and a bow), --arsenal (every weapon), --walls, --goto=x,y (tiles), --panel=bag|craft|build|pause|map,
     // --boss=0..6 (night 2 with that boss 9 tiles in front of door A, you beside it).
     public void DevArgs(dynamic Args)
     {
@@ -196,6 +199,18 @@ public partial class Main : Node2D
                 Sim.SetCount(Me, "bandage", 2);
                 Sim.Unlock = 2;
             }
+            else if (Gd.Equal(A, "--arsenal"))
+            {
+                // every weapon in the hotbar (keys 1-4: spear, blade, hammer, bow) to look at each attack; for fists,
+                // drag one of them into the bag (Tab) and select the empty slot
+                Me.Inv = GameSim.EmptySlots(GameSim.INV_SLOTS);
+                Me.Inv[0] = new GArray("stone_spear", 1);
+                Me.Inv[1] = new GArray("metal_blade", 1);
+                Me.Inv[2] = new GArray("hammer", 1);
+                Me.Inv[3] = new GArray("bow", 1);
+                Sim.SetCount(Me, "arrow", 99);
+                Me.Sel = 0;
+            }
             else if (Gd.Equal(A, "--walls"))
             {
                 // a wood and a stone wall beside door A, to look at
@@ -209,6 +224,24 @@ public partial class Main : Node2D
                 // --goto=x,y in tiles from the base centre, to look at a part of the island
                 dynamic Xy = Gd.Split(Gd.Substr(A, 7), ",");
                 Sim.Teleport(Me, (Gd.MakeVector2(Gd.ToFloat(Gd.At(Xy, 0)), Gd.ToFloat(Gd.At(Xy, 1))) * T));
+            }
+            else if (Gd.Equal(A, "--night"))
+            {
+                // straight to night 1 with no waves, to look at the night colours; an Engineer standing in the base
+                // (--goto before it) stays inside
+                Vector2 Keep = (Vector2)Me.Pos;
+                Sim.Night();
+                Sim.NextWave = float.PositiveInfinity;
+                if (((Me.Role == 2) && Gd.Truth(GameSim.InsideBase(Keep))))
+                {
+                    Me.Inside = true;
+                    Sim.Teleport(Me, Keep);
+                }
+            }
+            else if (Gd.Truth(Gd.BeginsWith(A, "--zoom=")))
+            {
+                // --zoom=0..2: the camera zoom step (0 is the widest), as the mouse wheel sets it
+                ZoomI = Gd.Clampi(Gd.ToInt(Gd.Substr(A, 7)), 0, (Gd.Size(ZOOMS) - 1));
             }
             else if (Gd.Truth(Gd.BeginsWith(A, "--panel=")))
             {
@@ -549,6 +582,7 @@ public partial class Main : Node2D
         {
             CraftOpen = false;
         }
+        this.KeepPanelsInReach(MeNow);
         if (!Gd.Contains(new GArray("day", "dusk", "night"), Ph))
         {
             BagOpen = false;
@@ -556,7 +590,8 @@ public partial class Main : Node2D
             this.CloseBuild();
         }
         // the large map covers the middle of the screen: the radio line waits until it closes
-        Banner.Text = (Gd.Truth(MapBig) ? "" : Gd.Get(Snap, "msg", ""));
+        // the large map and the workbench tab hide the radio line
+        Banner.Text = ((Gd.Truth(MapBig) || Gd.Truth(CraftOpen)) ? "" : Gd.Get(Snap, "msg", ""));
         if ((Ph == "lobby"))
         {
             this.LobbyUi();
@@ -570,6 +605,7 @@ public partial class Main : Node2D
         }
         if (!(Gd.Truth(InGame)))
         {
+            this.ForgetFallen();
             return;
         }
         dynamic A = Gd.Minf(1.0f, (Dt * 15.0f));
@@ -578,6 +614,8 @@ public partial class Main : Node2D
         {
             Ne[Gd.At(E, 0)] = Gd.Get(ShownE, Gd.At(E, 0), Gd.At(E, 2)).Lerp(Gd.At(E, 2), A);
         }
+        // enemies gone since the last frame fall over where they were (src/ai/view/Main.EnemyView.cs)
+        this.NoteFallen(Ne);
         ShownE = Ne;
         foreach (dynamic Id in Gd.Iter(Snap.Ps))
         {
@@ -647,7 +685,8 @@ public partial class Main : Node2D
         {
             Night = (1.0f - (Snap.TimeLeft / GameSim.DUSK));
         }
-        Tint.Color = Colors.White.Lerp(NIGHT_TINT, Night);
+        Tint.Color = DAY_TINT.Lerp(NIGHT_TINT, Night);
+        this.TickBaseLamps((float)Night);
         MyLight.Enabled = (Night > 0);
         Beacon.Enabled = (Night > 0);
         foreach (dynamic L in Gd.Iter(TowerLights))
@@ -660,7 +699,7 @@ public partial class Main : Node2D
             // the light goes out the moment the tower falls
             L.Enabled = ((Night > 0) && (Gd.At(Tw, 2) > 0));
             L.Position = Gd.At(Tw, 1);
-            L.Energy = ((Gd.At(Tw, 2) < (0.3f * GameSim.TOWER_HP)) ? (dynamic)((float)GD.RandRange(0.45f, 1.0f)) : 1.0f);
+            L.Energy = (0.55f * ((Gd.At(Tw, 2) < (0.3f * GameSim.TOWER_HP)) ? (dynamic)((float)GD.RandRange(0.45f, 1.0f)) : 1.0f));
         }
         MyLight.Position = LocalPos;
         if ((Me != null))
@@ -763,17 +802,15 @@ public partial class Main : Node2D
             Gd.Append(Isle, (Vector2.FromAngle(((I * Mathf.Tau) / 96)) * GameSim.ISLAND));
         }
         // outer zone grass, darker
-        this.Ground(Isle, (Gd.MakeColor("66784C") * 1.15f));
+        this.Ground(Isle, (Gd.MakeColor("5B7434") * 1.1f));
         // within 20 tiles of the nearest wall
         dynamic Safe = this.RoundRect(H, GameSim.SAFE_D);
         // GDD day grass
-        this.Ground(Safe, (Gd.MakeColor("7A8B5C") * 1.15f));
+        this.Ground(Safe, (Gd.MakeColor("728C40") * 1.1f));
         Gd.Append(Safe, Gd.At(Safe, 0));
         Gd.Native(this, "draw_polyline", Safe, Gd.MakeColor(1, 1, 0.8f, 0.12f), 2);
         // streams, plateaus, cliffs, ramps, bridges and trails (src/world/view/Main.TerrainView.cs)
         this.DrawTerrain((Rect2)View);
-        // concrete plaza
-        Gd.Native(this, "draw_rect", Gd.MakeRect2(((-H) - (Gd.MakeVector2(2, 2) * T)), ((H + (Gd.MakeVector2(2, 2) * T)) * 2)), Gd.MakeColor("8A8F98"));
         foreach (dynamic S in Gd.Iter(Scatter))
         {
             if (Gd.Truth(View.HasPoint(Gd.At(S, 0))))
@@ -798,17 +835,13 @@ public partial class Main : Node2D
                 }
             }
         }
-        // base floor
-        Gd.Native(this, "draw_rect", Gd.MakeRect2((-H), (H * 2)), Gd.MakeColor("6A6F7C"));
-        foreach (dynamic X in Gd.Iter(Gd.Range((Gd.Int((-H.X)) + 12), (Gd.Int(H.X) - 12), Gd.Int(T))))
-        {
-            Gd.Native(this, "draw_line", Gd.MakeVector2(X, ((-H.Y) + 12)), Gd.MakeVector2(X, (H.Y - 12)), Gd.MakeColor(0, 0, 0, 0.12f), 1);
-        }
-        foreach (dynamic Y in Gd.Iter(Gd.Range((Gd.Int((-H.Y)) + 12), (Gd.Int(H.Y) - 12), Gd.Int(T))))
-        {
-            Gd.Native(this, "draw_line", Gd.MakeVector2(((-H.X) + 12), Y), Gd.MakeVector2((H.X - 12), Y), Gd.MakeColor(0, 0, 0, 0.12f), 1);
-        }
+        // base floor: stone paving (src/world/view/Main.BaseLook.cs)
+        Gd.Native(this, "draw_rect", Gd.MakeRect2((-H), (H * 2)), Gd.MakeColor("4F4B42"));
+        this.DrawBaseFloor();
         this.DrawTelegraphs();
+        // from outside, the inside of the base is fogged over (src/world/view/Main.BaseFog.cs)
+        this.TickBaseFog();
+        this.DrawBaseFog();
         // depth layer: [foot y, kind, ...], drawn back to front
         dynamic Items = new GArray();
         if ((Gd.Size(Cmove) > 400))
@@ -824,6 +857,7 @@ public partial class Main : Node2D
                 Gd.Append(Items, new GArray(Pos.Y, 2, E, Pos));
             }
         }
+        this.CorpseItems(Items);
         foreach (dynamic Id in Gd.Iter(Snap.Ps))
         {
             dynamic P = Gd.At(Snap.Ps, Id);
@@ -874,8 +908,12 @@ public partial class Main : Node2D
             }
         }
         Gd.Append(Items, new GArray(WORKBENCH.Y, 6, "workbench", WORKBENCH));
+        // the shared storage chest, its lid opening as someone walks up (src/world/view/Main.BaseProps.cs)
+        this.TickChest();
+        Gd.Append(Items, new GArray(GameSim.STORAGE_POS.Y, 6, "chest", GameSim.STORAGE_POS));
         // the old lighthouse carries the beacon (GDD 5.1)
-        Gd.Append(Items, new GArray(LIGHTHOUSE.Y, 6, "lighthouse", LIGHTHOUSE));
+        // it fades while you stand behind it (src/world/view/Main.BaseProps.cs)
+        Gd.Append(Items, new GArray(LIGHTHOUSE.Y, 6, "lighthouse", LIGHTHOUSE, this.LighthouseTint()));
         foreach (dynamic Tw in Gd.Iter(Gd.Get(Snap, "tw", new GArray())))
         {
             Gd.Append(Items, new GArray(Gd.At(Tw, 1).Y, 9, Tw));
@@ -917,6 +955,10 @@ public partial class Main : Node2D
         dynamic Tnow = (Gd.Static(typeof(Time), "get_ticks_msec") / 1000.0f);
         foreach (dynamic It in Gd.Iter(Items))
         {
+            if (this.HiddenItem(It))
+            {
+                continue;
+            }
             if (Gd.Equal(Gd.At(It, 1), 0))
             {
                 this.Sprite(Gd.At(It, 2), Gd.At(It, 3), Gd.At(It, 4), Gd.At(It, 5));
@@ -956,6 +998,10 @@ public partial class Main : Node2D
                 // the item's own icon, floating (art/items)
                 this.DrawItemIcon(this, Gd.At(D, 1), Dp.Round(), 1.0f);
             }
+            else if (Gd.Equal(Gd.At(It, 1), 6) && (Gd.Str(Gd.At(It, 2)) == "chest"))
+            {
+                this.DrawChest((Vector2)Gd.At(It, 3));
+            }
             else if (Gd.Equal(Gd.At(It, 1), 6))
             {
                 this.DrawProp(Gd.At(It, 2), Gd.At(It, 3), ((Gd.Size(It) > 4) ? (dynamic)(Gd.At(It, 4)) : Colors.White));
@@ -971,6 +1017,10 @@ public partial class Main : Node2D
             else if (Gd.Equal(Gd.At(It, 1), 10))
             {
                 this.DrawBuiltWall(Gd.At(It, 2));
+            }
+            else if (Gd.Equal(Gd.At(It, 1), 12))
+            {
+                this.DrawCorpse(Gd.Int(Gd.At(It, 2)));
             }
             else if (Gd.Equal(Gd.At(It, 1), 11))
             {
@@ -1015,20 +1065,22 @@ public partial class Main : Node2D
                 dynamic Mc = (Dp + (Dd * 16));
                 Gd.Native(this, "draw_line", (Mc - ((Along * 1.4f) * T)), (Mc + ((Along * 1.4f) * T)), (NEON_RED * (0.5f + (0.5f * Pulse))), 3);
             }
-            Vector2 Lp = (Vector2)((((Dp + ((Dd * 1.5f) * T)) + Gd.MakeVector2((-6), 7)) - Gd.MakeVector2(0, WALL_H)));
-            Gd.Native(this, "draw_string_outline", FontTitle, Lp, Gd.At(GameSim.DOOR_NAMES, I), 0, (-1), 20, 4, INK);
-            Gd.Native(this, "draw_string", FontTitle, Lp, Gd.At(GameSim.DOOR_NAMES, I), 0, (-1), 20, Colors.White);
         }
         foreach (dynamic Id in Gd.Iter(Snap.Ps))
         {
             dynamic P = Gd.At(Snap.Ps, Id);
-            if ((Gd.At(P, 5) != 2))
+            dynamic Pf = ((Id == MyId) ? (dynamic)(LocalPos) : Gd.Get(ShownP, Id, Gd.At(P, 2)));
+            if (((Gd.At(P, 5) != 2) && !this.HiddenInBase((Vector2)Pf)))
             {
-                this.PlayerUi(Id, P, ((Id == MyId) ? (dynamic)(LocalPos) : Gd.Get(ShownP, Id, Gd.At(P, 2))), Font);
+                this.PlayerUi(Id, P, Pf, Font);
             }
         }
         foreach (dynamic F in Gd.Iter(Fx))
         {
+            if (this.HiddenInBase((Vector2)F.Pos))
+            {
+                continue;
+            }
             Gd.Native(this, "draw_circle", F.Pos, ((F.R * F.Life) / F.Max), F.Col);
         }
         this.DrawBuildPreview();
@@ -1046,14 +1098,14 @@ public partial class Main : Node2D
         Gd.Native(this, "draw_set_transform", Foot, 0, Gd.MakeVector2(1.0f, 0.45f));
         Gd.Native(this, "draw_arc", Vector2.Zero, (R * 1.15f), 0, Mathf.Tau, 32, Gd.At(ROLE_COL, Gd.At(P, 1)), 2.5f);
         Gd.Native(this, "draw_set_transform", Vector2.Zero);
+        string Skin = Gd.Str(Gd.At(ROLE_SKIN, Gd.At(P, 1)));
         if ((Gd.At(P, 5) == 1))
         {
-            // turned on its side, body centred on the feet
-            Gd.Native(this, "draw_set_transform", (Foot + Gd.MakeVector2(14, (-4))), ((-Mathf.Pi) / 2));
-            this.Char(Gd.Format("d%d", Id), Gd.At(ROLE_SKIN, Gd.At(P, 1)), Vector2.Zero, (Mathf.Pi / 2), 1.0f, Gd.MakeColor(0.6f, 0.55f, 0.6f));
-            Gd.Native(this, "draw_set_transform", Vector2.Zero);
+            // knocked down: falls over once (the sheet's "down" frames), then lies still with the eyes shut
+            this.Char(Id, Skin, Foot, null, 1.0f, Gd.MakeColor(0.85f, 0.8f, 0.85f), false, "idle", "down", this.DownTime(Id, true));
             return;
         }
+        this.DownTime(Id, false);
         if (Gd.Truth(Gd.At(P, 11)))
         {
             SlashT[Id] = Clock;
@@ -1072,24 +1124,22 @@ public partial class Main : Node2D
         {
             Aim = (Gd.At(P, 23) - Gd.At(P, 2)).Angle();
         }
-        this.Char(Id, Gd.At(ROLE_SKIN, Gd.At(P, 1)), Foot, Aim, 1.0f, Colors.White, (Gd.Truth(Fighting) || (Activity != "idle")), Activity);
+        // the attack frames of the weapon in hand (src/gameplay/view/Main.Anim.cs)
+        (string Name, float T)? Attack = this.PlayerAttack(Id, P, Skin);
+        this.Char(Id, Skin, Foot, Aim, 1.0f, Colors.White, (Gd.Truth(Fighting) || (Activity != "idle")), Activity, Attack?.Name, (Attack?.T ?? 0.0f));
         this.DrawActivity(Foot, Aim, Activity);
-        if (Gd.Truth(Gd.At(P, 11)))
-        {
-            dynamic Pos = (Foot - Gd.MakeVector2(0, LIFT));
-            Gd.Native(this, "draw_arc", Pos, (1.35f * T), (Aim - (Mathf.Pi / 4)), (Aim + (Mathf.Pi / 4)), 16, NEON_CYAN, 5);
-            Gd.Native(this, "draw_arc", Pos, (1.1f * T), (Aim - (Mathf.Pi / 5)), (Aim + (Mathf.Pi / 5)), 12, Gd.MakeColor(1.5f, 1.5f, 1.5f, 0.6f), 2);
-        }
     }
 
     // compass octant (0 = right, counting clockwise on screen) to the sheet row
     public static readonly int[] OCT_ROW = { 0, 4, 1, 5, 2, 6, 3, 7 };
 
-    public void Char(dynamic Key, dynamic Skin, dynamic Foot, dynamic Aim, dynamic S, dynamic Mod, dynamic Lock = null, dynamic Activity = null)
+    public void Char(dynamic Key, dynamic Skin, dynamic Foot, dynamic Aim, dynamic S, dynamic Mod, dynamic Lock = null, dynamic Activity = null, string Play = null, float PlayT = 0.0f)
     {
         Lock ??= false;
         Activity ??= "idle";
         // A pixel-art character: the walk cycle while it moves, idle breathing otherwise.
+        // `play` names a one-shot animation of its sheet (an attack, "down") shown `play_t` seconds in; its last
+        // frame holds. Knocked down it keeps the direction it last faced.
         // While it walks it faces where it walks (no moonwalking); standing still it faces `aim` (the mouse),
         // and with `lock` (fighting) it faces `aim` even on the move. With aim null (enemies) it faces its walk.
         dynamic M = Gd.Get(Cmove, Key, new GArray(Foot, (-1.0f), (Mathf.Pi / 2), (-1)));
@@ -1113,13 +1163,18 @@ public partial class Main : Node2D
         // The facing only changes once the angle is well past the edge between two directions, so walking
         // diagonally (two keys) or sliding along a wall never flickers between neighbouring rows.
         dynamic C0 = Gd.At(Cinfo.Chars, Skin);
+        dynamic One = ((Play == null) ? null : Gd.Get(Gd.Get(C0, "anims", new GDict {  }), Play, null));
         int Rows = Gd.Int((Tex.GetHeight() / C0.Size));
         int Dir;
         if ((Rows >= 8))
         {
             int Oct = Gd.Wrapi(Gd.Roundi((Ang / (Mathf.Pi / 4.0f))), 0, 8);
             int Last = Gd.Int(Gd.At(M, 3));
-            if (((Last >= 0) && (Mathf.Abs(Mathf.AngleDifference(Ang, ((Last * Mathf.Pi) / 4.0f))) < ((Mathf.Pi / 8.0f) + 0.2f))))
+            if (((Last >= 0) && (One != null) && (Play == "down")))
+            {
+                Oct = Last;
+            }
+            else if (((Last >= 0) && (Mathf.Abs(Mathf.AngleDifference(Ang, ((Last * Mathf.Pi) / 4.0f))) < ((Mathf.Pi / 8.0f) + 0.2f))))
             {
                 Oct = Last;
             }
@@ -1138,7 +1193,7 @@ public partial class Main : Node2D
         }
         AnimState[Key] = Timing;
         float PhaseTime = Gd.Float((Clock - Gd.At(Timing, 1)));
-        if (Gd.Contains(new GArray("gather", "repair", "attack"), Activity))
+        if (Gd.Contains(new GArray("gather", "repair"), Activity))
         {
             Foot += ((Gd.MakeVector2(Gd.Cos(Ang), 0) * Gd.Sin((PhaseTime * 12.0f))) * 2.0f);
         }
@@ -1154,6 +1209,10 @@ public partial class Main : Node2D
             K = ((Gd.Int(Gd.At(Fr, 1)) - 1) - K);
         }
         int F = Gd.Int((Gd.Int(Gd.At(Fr, 0)) + K));
+        if ((One != null))
+        {
+            F = (Gd.Int(Gd.At(One, 0)) + Mathf.Min((Gd.Int(Gd.At(One, 1)) - 1), (int)(PlayT * Gd.Float(Gd.At(One, 2)))));
+        }
         dynamic C = Gd.At(Cinfo.Chars, Skin);
         dynamic Size = Gd.MakeVector2(C.Size, C.Size);
         dynamic Anchor = Gd.MakeVector2(Gd.At(C.Anchor, 0), Gd.At(C.Anchor, 1));
@@ -1313,6 +1372,17 @@ public partial class Main : Node2D
 
     public void Wall(dynamic R, dynamic Height, dynamic Top, dynamic Face, dynamic Cap)
     {
+        // the base walls are weathered concrete (src/world/view/Main.BaseLook.cs)
+        if (Gd.Equal(Top, BASE_WALL_TOP))
+        {
+            this.ConcreteWall((Rect2)R, (float)Height, Gd.Truth(Cap));
+            return;
+        }
+        // a wall facing into the roofed base (door B's gate) hides its face under the roof
+        if (this.FaceUnderRoof((Rect2)R))
+        {
+            Height = 0.0f;
+        }
         // top face, lifted
         dynamic TimeLeft = Gd.MakeRect2((R.Position - Gd.MakeVector2(0, Height)), R.Size);
         // front face, toward the camera
@@ -1398,10 +1468,8 @@ public partial class Main : Node2D
     {
         // A door pillar: taller than the wall, with a lamp on top that glows from dusk.
         dynamic Hgt = (WALL_H + 10.0f);
-        this.Wall(R, Hgt, Gd.MakeColor("A3A8B0"), Gd.MakeColor("6A6F7C"), true);
-        dynamic Lamp = Gd.MakeRect2((R.GetCenter() - Gd.MakeVector2(2, (Hgt + 1))).Round(), Gd.MakeVector2(4, 3));
-        Gd.Native(this, "draw_rect", Lamp.Grow(1), INK);
-        Gd.Native(this, "draw_rect", Lamp, (Gd.Contains(new GArray("dusk", "night"), Snap.Ph) ? (dynamic)(Gd.MakeColor(2.4f, 1.7f, 0.6f)) : Gd.MakeColor("F2B544")));
+        // concrete like the walls, with its lamp (src/world/view/Main.BaseLook.cs)
+        this.ConcretePillar((Rect2)R, (float)Hgt);
     }
 
     public void DrawTower(dynamic Tw)
@@ -1476,6 +1544,11 @@ public partial class Main : Node2D
         dynamic Pulse = (0.5f + (0.5f * Gd.Sin((Gd.Static(typeof(Time), "get_ticks_msec") / 150.0f))));
         foreach (dynamic P in Gd.Iter(Popups))
         {
+            // nothing pops up from inside the base while you are outside (src/world/view/Main.BaseFog.cs)
+            if (this.HiddenInBase((Vector2)P.Pos))
+            {
+                continue;
+            }
             float K = Gd.Float((P.Life / 0.8f));
             Vector2 Sp = (Vector2)(((Ct * P.Pos) + Gd.MakeVector2(0, ((-36) * (1.0f - K)))));
             dynamic Size = Gd.Int((P.Size * (1.0f + (0.5f * Gd.Clampf(((K - 0.8f) * 5.0f), 0, 1)))));
@@ -1483,19 +1556,29 @@ public partial class Main : Node2D
             Col.A = Gd.Clampf((K * 2.0f), 0, 1);
             this.Text(C, (Sp - Gd.MakeVector2(30, 0)), P.Text, Size, Col, 1, 60);
         }
-        // phase + timer
+        // the workbench tab takes the screen on its own: the HUD widgets would show through it, the scene may
+        // (ui/gameplay/Main.CraftPanel.cs)
+        if ((Gd.Truth(CraftOpen) && (Me != null) && (Ph != "result")))
+        {
+            MapBig = false;
+            this.DrawCraftPanel(C, Vs);
+            this.DrawHurtFlash(C, Vs);
+            this.DrawPause(C, Vs);
+            return;
+        }
+        // top right: phase + timer
         dynamic Tl = Gd.Format("%d:%02d", new GArray((Gd.Int(Gd.Maxf(Snap.TimeLeft, 0)) / 60), (Gd.Int(Gd.Maxf(Snap.TimeLeft, 0)) % 60)));
         string PhaseLine = Gd.At(new GDict { { "day", Gd.Format("DAY %d/5", Snap.K) }, { "dusk", "DUSK" }, { "night", Gd.Format("NIGHT %d/5", Snap.K) }, { "result", "RESULT" } }, Ph);
-        this.Text(C, Gd.MakeVector2(12, 24), Gd.Format("%s   %s", new GArray(PhaseLine, Tl)), 16, Colors.White, 0, (-1.0f), true);
+        this.Text(C, Gd.MakeVector2(0, 24), Gd.Format("%s   %s", new GArray(PhaseLine, Tl)), 16, Colors.White, 2, (Vs.X - 12), true);
         if ((Ph == "day"))
         {
             dynamic VoteWait = Gd.Int(Gd.Maxf(0.0f, (GameSim.DAY_MIN - (GameSim.DAY_MAX - Snap.TimeLeft))));  // FML-14: votes count after 180 s
             string VoteHint = ((VoteWait > 0) ? Gd.Format("skip vote %d/%d  (V, counts in %d:%02d)", new GArray(Snap.Votes, Snap.Need, (VoteWait / 60), (VoteWait % 60))) : Gd.Format("skip vote %d/%d  (V)", new GArray(Snap.Votes, Snap.Need)));
-            this.Text(C, Gd.MakeVector2(12, 40), VoteHint, 11, Gd.MakeColor(1, 1, 1, 0.6f));
+            this.Text(C, Gd.MakeVector2(0, 40), VoteHint, 11, Gd.MakeColor(1, 1, 1, 0.6f), 2, (Vs.X - 12));
         }
         if ((Snap.Ext >= 0))
         {
-            this.Text(C, Gd.MakeVector2(12, 40), Gd.Format("EXTENSION %ds - hold a pad 10 s  %s", new GArray(Snap.Ext, Gd.Str(Gd.Map(Snap.Pads, (Func<dynamic, dynamic>)((V) => Gd.Snappedf(V, 0.1f)))))), 12, NEON_RED);
+            this.Text(C, Gd.MakeVector2(0, 40), Gd.Format("EXTENSION %ds - hold a pad 10 s  %s", new GArray(Snap.Ext, Gd.Str(Gd.Map(Snap.Pads, (Func<dynamic, dynamic>)((V) => Gd.Snappedf(V, 0.1f)))))), 12, NEON_RED, 2, (Vs.X - 12));
         }
         // top centre: generator + doors
         dynamic Cx = (Vs.X / 2);
@@ -1526,7 +1609,8 @@ public partial class Main : Node2D
         // boss bar (AI view)
         this.DrawBossBar(C, Cx);
         // left: team list
-        dynamic Y = 120.0f;
+        // under the minimap (top left, ui/gameplay/Main.Minimap.cs)
+        dynamic Y = 160.0f;
         foreach (dynamic Id in Gd.Iter(Snap.Ps))
         {
             dynamic P = Gd.At(Snap.Ps, Id);
@@ -1546,8 +1630,6 @@ public partial class Main : Node2D
             }
             Y += 38;
         }
-        // top right: resources
-        this.DrawInventoryPanel(C, Vs, Me);
         if ((Me == null))
         {
             return;
@@ -1576,7 +1658,7 @@ public partial class Main : Node2D
         {
             this.Text(C, Gd.MakeVector2(0, ((Vs.Y / 2) + 40)), ((Gd.At(Me, 5) == 1) ? (dynamic)(Gd.Format("DOWN - %ds to bleed out", Gd.At(Me, 6))) : "DEAD - waiting for a Revival kit"), 18, NEON_RED, 1, Vs.X, true);
         }
-        // bottom right: minimap (M shows it large); any open panel takes over from the large map
+        // top left: minimap (M shows it large); any open panel takes over from the large map
         if ((Gd.Truth(BagOpen) || Gd.Truth(CraftOpen) || Gd.Truth(BuildOpen)))
         {
             MapBig = false;
@@ -1584,9 +1666,16 @@ public partial class Main : Node2D
         this.DrawMinimap(C, Vs, Me);
         this.DrawHotbar(C, Vs, Me);
         this.DrawInteractionHint(C, Vs, Me, Ph);
-        this.DrawCraftPanel(C, Vs);
         this.DrawBuildMenu(C, Vs, Me);
         this.DrawBag(C, Vs, Me);
+        this.DrawHurtFlash(C, Vs);
+        this.DrawResult(C, Vs);
+        this.DrawPause(C, Vs);
+    }
+
+    // red screen edges after a hit
+    public void DrawHurtFlash(dynamic C, dynamic Vs)
+    {
         if ((Hurt > 0))
         {
             dynamic A = ((Hurt / 0.35f) * 0.5f);
@@ -1595,8 +1684,6 @@ public partial class Main : Node2D
                 C.DrawRect(R, Gd.MakeColor(0.9f, 0.05f, 0.05f, A));
             }
         }
-        this.DrawResult(C, Vs);
-        this.DrawPause(C, Vs);
     }
 
     public void Text(dynamic Ci, dynamic Pos, dynamic S, dynamic Size, dynamic Col, dynamic Align = null, dynamic Width = null, dynamic Title = null)
@@ -1611,6 +1698,20 @@ public partial class Main : Node2D
         dynamic Ol = ((Fs <= 12) ? (dynamic)(2) : ((Fs < 20) ? (dynamic)(3) : 4));
         Ci.DrawStringOutline(Font, Pos, S, Align, Width, Fs, Ol, Gd.MakeColor(0, 0, 0, (0.9f * Col.A)));
         Ci.DrawString(Font, Pos, S, Align, Width, Fs, Col);
+    }
+
+    // A pixel-art texture that keeps hard pixels on a linearly filtered canvas (the HUD and the menus).
+    readonly System.Collections.Generic.Dictionary<Texture2D, CanvasTexture> PixelTex = new();
+
+    public dynamic Pixel(dynamic Tex)
+    {
+        var Raw = (Texture2D)Gd.Unwrap(Tex);
+        if (!PixelTex.TryGetValue(Raw, out var Ct))
+        {
+            Ct = new CanvasTexture { DiffuseTexture = Raw, TextureFilter = CanvasItem.TextureFilterEnum.Nearest };
+            PixelTex[Raw] = Ct;
+        }
+        return Gd.Wrap(Ct);
     }
 
     public void Panel(dynamic Ci, dynamic R)
@@ -1663,15 +1764,21 @@ public partial class Main : Node2D
         Tex.Height = 256;
         MyLight.Texture = Tex;
         Beacon.Texture = Tex;
-        Beacon.Color = Gd.MakeColor("F2B544");
-        Beacon.TextureScale = ((GameSim.HALF.X * 4.0f) / 256.0f);
+        Beacon.Color = Gd.MakeColor("FFAE52");
+        Beacon.Energy = 0.16f;
+        MyLight.Color = Gd.MakeColor("B8D6D0");
+        MyLight.Energy = 0.3f;
+        // full strength over the whole base (the texture is flat out to 70% of its radius), fading over the yard
+        Beacon.TextureScale = ((((GameSim.HALF.X * 1.2f) / 0.7f) * 2.0f) / 256.0f);
         Gd.Native(this, "add_child", MyLight);
         Gd.Native(this, "add_child", Beacon);
+        // warm lamps on the door pillars and the north wall (src/world/view/Main.BaseLook.cs)
+        this.SetupBaseLamps(Tex);
         foreach (dynamic I in Gd.Iter(3))
         {
             dynamic Tl = Gd.Wrap(new PointLight2D());
             Tl.Texture = Tex;
-            Tl.Color = Gd.MakeColor("F2B544");
+            Tl.Color = Gd.MakeColor("FF9A3C");
             Tl.TextureScale = ((GameSim.TOWER_LIGHT * 2.0f) / 256.0f);
             Tl.Enabled = false;
             Tl.TextureFilter = Gd.EnumValue(typeof(CanvasItem), "TEXTURE_FILTER_LINEAR", 2);
@@ -1739,14 +1846,16 @@ public partial class Main : Node2D
         Root.Theme = this.Theme();
         Ui.AddChild(Root);
         Hud.SetAnchorsPreset(Gd.EnumValue(typeof(Control), "PRESET_FULL_RECT", 15));
-        // item icons are pixel art too
-        Hud.TextureFilter = Gd.EnumValue(typeof(CanvasItem), "TEXTURE_FILTER_NEAREST", 1);
+        // The HUD and the menus filter linearly: the UI is drawn at 960 x 540 and scaled 1.5x, and nearest filtering
+        // made every glyph land on a different screen pixel (letters jumping up and down, uneven gaps).
+        // Pixel-art textures drawn here keep their hard pixels through Pixel() and TextureRect filters.
+        Hud.TextureFilter = Gd.EnumValue(typeof(CanvasItem), "TEXTURE_FILTER_LINEAR", 2);
         Hud.MouseFilter = Gd.EnumValue(typeof(Control), "MOUSE_FILTER_IGNORE", 2);
         Gd.Connect(Hud, "draw", (Action<dynamic[]>)(SignalArgs => { DrawHud(); }));
         Root.AddChild(Hud);
         Front.SetAnchorsPreset(Gd.EnumValue(typeof(Control), "PRESET_FULL_RECT", 15));
         Front.MouseFilter = Gd.EnumValue(typeof(Control), "MOUSE_FILTER_IGNORE", 2);
-        Front.TextureFilter = Gd.EnumValue(typeof(CanvasItem), "TEXTURE_FILTER_NEAREST", 1);
+        Front.TextureFilter = Gd.EnumValue(typeof(CanvasItem), "TEXTURE_FILTER_LINEAR", 2);
         Gd.Connect(Front, "draw", (Action<dynamic[]>)(SignalArgs => { DrawFrontend(); }));
         Root.AddChild(Front);
         Front.AddChild(MenuPanel);
@@ -1813,6 +1922,7 @@ public partial class Main : Node2D
             Card.AddChild(Row);
             dynamic Icon = Gd.Wrap(new TextureRect());
             Icon.CustomMinimumSize = Gd.MakeVector2(28, 28);
+            Icon.TextureFilter = Gd.EnumValue(typeof(CanvasItem), "TEXTURE_FILTER_NEAREST", 1);
             Icon.ExpandMode = Gd.EnumValue(typeof(TextureRect), "EXPAND_IGNORE_SIZE", 1);
             Icon.StretchMode = Gd.EnumValue(typeof(TextureRect), "STRETCH_KEEP_ASPECT_CENTERED", 5);
             Row.AddChild(Icon);
@@ -1973,8 +2083,12 @@ public partial class Main : Node2D
         }
         dynamic Atlas = Gd.Wrap(new AtlasTexture());
         Atlas.Atlas = Gd.At(Csheet, Gd.At(ROLE_SKIN, Role));
-        // first idle frame, facing the camera
-        Atlas.Region = Gd.MakeRect2(0, 32, 32, 32);
+        // first idle frame, facing the camera: the body in the middle of its sheet cell (row 1)
+        dynamic C = Gd.At(Cinfo.Chars, Gd.At(ROLE_SKIN, Role));
+        float Cell = Gd.Float(C.Size);
+        float Body = Gd.Float(Gd.Get(C, "body", C.Size));
+        float Pad = ((Cell - Body) / 2.0f);
+        Atlas.Region = Gd.MakeRect2(Pad, (Cell + Pad), Body, Body);
         Portraits[Role] = Atlas;
         return Atlas;
     }
@@ -1988,6 +2102,7 @@ public partial class Main : Node2D
         Panel.AddChild(Row);
         dynamic Icon = Gd.Wrap(new TextureRect());
         Icon.CustomMinimumSize = Gd.MakeVector2(38, 38);
+        Icon.TextureFilter = Gd.EnumValue(typeof(CanvasItem), "TEXTURE_FILTER_NEAREST", 1);
         Icon.ExpandMode = Gd.EnumValue(typeof(TextureRect), "EXPAND_IGNORE_SIZE", 1);
         Icon.StretchMode = Gd.EnumValue(typeof(TextureRect), "STRETCH_KEEP_ASPECT_CENTERED", 5);
         Row.AddChild(Icon);
@@ -2036,7 +2151,7 @@ public partial class Main : Node2D
             return;
         }
         dynamic Tex = Gd.At(Gd.At(Spr, N), 0);
-        Front.DrawTextureRect(Tex, Gd.MakeRect2((At - (Gd.At(Gd.At(Spr, N), 1) * Scale)), (Tex.GetSize() * Scale)), false, Col);
+        Front.DrawTextureRect(this.Pixel(Tex), Gd.MakeRect2((At - (Gd.At(Gd.At(Spr, N), 1) * Scale)), (Tex.GetSize() * Scale)), false, Col);
     }
 
     public void DrawFrontend()
@@ -2062,7 +2177,8 @@ public partial class Main : Node2D
         // A small island vignette uses the actual in-game lighthouse and nature art.
         dynamic Foot = Gd.MakeVector2((W * 0.32f), (H * 0.88f));
         C.DrawColoredPolygon(Gd.PackedVector2Array(new GArray((Foot + Gd.MakeVector2((-200), 9)), (Foot + Gd.MakeVector2((-125), (-23))), (Foot + Gd.MakeVector2(4, (-33))), (Foot + Gd.MakeVector2(130, (-12))), (Foot + Gd.MakeVector2(190, 11)), (Foot + Gd.MakeVector2(90, 32)), (Foot + Gd.MakeVector2((-95), 29)))), Gd.MakeColor("1A3037"));
-        dynamic Lamp = (Foot + Gd.MakeVector2(0, (-159)));
+        // the lamp sits 7 px below the top of the lighthouse sprite
+        dynamic Lamp = (Gd.Truth(Gd.Has(Prop, "lighthouse")) ? (dynamic)((Foot - Gd.MakeVector2(0, ((Gd.At(Prop.Lighthouse, 1).Y - 7) * 2.4f)))) : (Foot + Gd.MakeVector2(0, (-159))));
         dynamic Sweep = (Gd.Sin((Clock * 0.25f)) * 30);
         C.DrawColoredPolygon(Gd.PackedVector2Array(new GArray(Lamp, (Lamp + Gd.MakeVector2(240, ((-105) + Sweep))), (Lamp + Gd.MakeVector2(245, ((-12) + Sweep))))), Gd.MakeColor(0.92f, 0.72f, 0.32f, 0.055f));
         C.DrawColoredPolygon(Gd.PackedVector2Array(new GArray(Lamp, (Lamp + Gd.MakeVector2((-245), ((-70) - Sweep))), (Lamp + Gd.MakeVector2((-245), ((-8) - Sweep))))), Gd.MakeColor(0.92f, 0.72f, 0.32f, 0.04f));
@@ -2072,7 +2188,7 @@ public partial class Main : Node2D
         {
             dynamic P = Prop.Lighthouse;
             dynamic Tex = Gd.At(P, 0);
-            C.DrawTextureRect(Tex, Gd.MakeRect2((Foot - (Gd.At(P, 1) * 2.4f)), (Tex.GetSize() * 2.4f)), false, Gd.MakeColor("B1C0BD"));
+            C.DrawTextureRect(this.Pixel(Tex), Gd.MakeRect2((Foot - (Gd.At(P, 1) * 2.4f)), (Tex.GetSize() * 2.4f)), false, Gd.MakeColor("B1C0BD"));
         }
         C.DrawCircle(Lamp, 14, Gd.MakeColor(1.0f, 0.7f, 0.25f, 0.05f));
         C.DrawCircle(Lamp, 4, Gd.MakeColor("F3CC76"));

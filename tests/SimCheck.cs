@@ -86,7 +86,7 @@ public partial class SimCheck : Node
         Eng.Inter = false;
         this.Run(S, 0.1f);
         this.Check((Eng.GatherAcc == 0.0f), "releasing E resets gather progress");
-        Eng.Pos = Vector2.Zero;
+        Eng.Pos = (GameSim.WORKBENCH_POS + Gd.MakeVector2(0, 24));
         S.SetCount(Eng, "wood", 6);
         S.Action(1, "craft", 0);
         this.Run(S, 2.9f);
@@ -157,6 +157,8 @@ public partial class SimCheck : Node
         this.Run(S, 2.1f);
         E1.Ent = false;
         this.Check((Gd.Truth(E1.Inside) && Gd.Truth(GameSim.InsideBase(E1.Pos))), "Engineer holds F 2 s at a closed door and gets inside");
+        // walks over to the workbench by the north wall
+        E1.Pos = (GameSim.WORKBENCH_POS + Gd.MakeVector2(0, 24));
         S.SetCount(E1, "herb", 2);
         S.Action(1, "craft", 1);
         this.Run(S, 3.1f);
@@ -165,6 +167,8 @@ public partial class SimCheck : Node
         Sc2.Ent = true;
         this.Run(S, 2.1f);
         this.Check((!(Gd.Truth(Sc2.Inside)) && !(Gd.Truth(GameSim.InsideBase(Sc2.Pos)))), "Scout cannot enter at night");
+        // back to door A, just inside
+        E1.Pos = (Gd.At(GameSim.DOOR_POS, 0) - ((Gd.At(GameSim.DOOR_DIR, 0) * 1.2f) * 32));
         E1.Ent = true;
         this.Run(S, 2.1f);
         E1.Ent = false;

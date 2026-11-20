@@ -85,7 +85,9 @@ public partial class GameSim : RefCounted
         E.Act = "";
         E.ActT = 0.0f;
         E.Face = (Gd.At(DOOR_POS, E.Door) - E.Pos).Angle();
-        E.R = (0.9f * T);
+        // body radius: big enough to match the drawn boss (2x sprite, Main.EnemyView.cs), small enough to get
+        // through a door gap (2.4 tiles) once the door is broken
+        E.R = (1.1f * T);
         E.DashHit = new GArray();
     }
 

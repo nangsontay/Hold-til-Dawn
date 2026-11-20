@@ -18,6 +18,39 @@ public partial class GameSim : RefCounted
     public static readonly dynamic PAD_DIST = (5.5f * T);
     public static readonly dynamic PAD_R = (4.0f * T);
     public static int NODE_MUL = WorldSettings.Current.NodeMultiplier;
+    // The base furniture, both against the north wall and out of the door lanes: the workbench (crafting, MEC-10)
+    // west of door B, the shared storage chest (BAL-18) east of it. The ground point (front edge, middle).
+    public static readonly Vector2 WORKBENCH_POS = (new Vector2(-3.2f, -2.0f) * T);
+    public static readonly Vector2 STORAGE_POS = (new Vector2(3.3f, -2.0f) * T);
+    // how close you have to stand to use them
+    public const float BENCH_REACH = (2.2f * T);
+    public const float STORAGE_REACH = (1.8f * T);
+
+    public static bool NearBench(Vector2 Pos)
+    {
+        return (Pos.DistanceTo(WORKBENCH_POS) <= BENCH_REACH);
+    }
+
+    public static bool NearStorage(Vector2 Pos)
+    {
+        return (Pos.DistanceTo(STORAGE_POS) <= STORAGE_REACH);
+    }
+
+    // Colliders of the base furniture as [centre, radius]: a row of circles along the bench, two under the chest.
+    // They reach back to the wall so nobody slips behind.
+    public static GArray FurnitureSolids()
+    {
+        var Out = new GArray();
+        foreach (float X in new[] { -19.0f, -6.0f, 6.0f, 19.0f })
+        {
+            Out.Add(new GArray((WORKBENCH_POS + new Vector2(X, -10.0f)), 12.0f));
+        }
+        foreach (float X in new[] { -7.0f, 7.0f })
+        {
+            Out.Add(new GArray((STORAGE_POS + new Vector2(X, -7.0f)), 10.0f));
+        }
+        return Out;
+    }
 
     // --- helpers ------------------------------------------------------------
     public static dynamic WallDist(dynamic Pos)
