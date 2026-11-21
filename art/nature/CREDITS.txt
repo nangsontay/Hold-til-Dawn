@@ -1,11 +1,12 @@
 Nature sprites in this folder
 ============================
-Scenery: pine_0..5 and dead_0..3 (outer forest), rock_0..4 (outcrops), crag_0..2 (rock spires of the ridges),
+Harvestable nature: pine_0..5 (living outer forest), rock_0..4 (outcrops), crag_0..2 (rock spires of the ridges),
 reed_0..2 (along the streams), shrub_0..2 (near the base),
 grass_0..3, grass_dry_0..1 and pebble_0..3 (ground scatter).
-Resource nodes (MEC-08): node_wood_0..2 (fir with an axe notch), node_stone_0..1 (pale quarry boulder),
-node_herb_0..1 (flowering herb), node_metal_0 (car wreck) and node_metal_1 (scrap heap), and what is left
-once a node is gathered: stump_0, rubble_0, herb_cut_0, scrap_0.
+Resource nodes: node_wood_0..2 (fir with an axe notch), node_stone_0..1 (pale quarry boulder),
+node_herb_0..1 (flowering herb), node_titanium_0..1 (dark rock with blue/violet crystals), and the remains
+stump_0, rubble_0, herb_cut_0, ore_left_0. Living scenery resources also have four damage variants and an
+empty variant. Dead tree sprites are no longer indexed or placed in the game.
 ground.png: 256 x 256 tileable ground texture (8 x 8 tiles), near-white so the game tints it with the
 day-grass and outer-zone colours.
 index.json: {name: [anchor_x, anchor_y, solid_radius_px]}; the anchor is the pixel on the ground point.
@@ -14,6 +15,10 @@ Original pixel art for Hold 'til Dawn, drawn by tools/PixelNature.cs (1 px = 1 g
 GDD palette, light from the upper left, dark outline, soft shadow to the lower right). No third-party
 asset and no AI image generator was used. (This replaces the earlier sprites rendered from the
 Quaternius Stylized Nature MegaKit.)
+
+Harvest stages are drawn by tools/PixelHarvestDamage.cs, revised with OpenAI Codex: trees lose lower boughs
+and whole fronds above deepening axe cuts, rocks lose large angular chunks with fresh fracture faces,
+and herbs lose leaf fans and flowers down to cut stems. Garden rows empty while their containers remain.
 
 AI disclosure: the script was written by an AI coding assistant (Claude) from the team's GDD; declare
 these sprites in GDD Appendix B as AI-made assets. The PNGs can be repainted by hand (Aseprite,

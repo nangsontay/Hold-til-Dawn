@@ -27,7 +27,7 @@ public partial class Main : Node2D
 
     static readonly Dictionary<string, string> WEAPON_ANIM = new()
     {
-        { "fists", "attack_fists" }, { "stone_spear", "attack_spear" }, { "titanium_blade", "attack_blade" },
+        { "explosive_arrow", "attack_bow" }, { "long_spear", "attack_spear" }, { "stun_maul", "attack_hammer" }, { "fists", "attack_fists" }, { "stone_spear", "attack_spear" }, { "titanium_blade", "attack_blade" },
         { "hammer", "attack_hammer" }, { "starter_bow", "attack_bow" }, { "bow", "attack_bow" },
     };
 
@@ -67,6 +67,8 @@ public partial class Main : Node2D
             return null;
         }
         string Weapon = Gd.Str(Gd.At(P, 8));
+        dynamic Hand = Gd.At(Gd.At(P, 7), Gd.Int(Gd.At(P, 25)));
+        if (Hand != null && Gd.Str(Gd.At(Hand, 0)) == "explosive_arrow") Weapon = "explosive_arrow";
         string Name = (WEAPON_ANIM.TryGetValue(Weapon, out string N) ? N : "attack_fists");
         float T = ((float)Clock - Start);
         return ((T < this.AnimLength(Skin, Name)) ? (Name, T) : null);

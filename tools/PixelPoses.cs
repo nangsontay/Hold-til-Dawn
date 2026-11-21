@@ -11,7 +11,7 @@ using System;
 // all 8 directions. A weapon in front of the body hides it; seen from the back the body hides the
 // weapon. Arm and weapon get their own dark outline, as in hand-drawn pixel art, and smears, dust
 // and sparks are added on top without an outline.
-public static class PixelPoses
+public static partial class PixelPoses
 {
     // extra pixels around the body on every side of a sheet cell, so a weapon at full reach still fits
     public const int M = 8;

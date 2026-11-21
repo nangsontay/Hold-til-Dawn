@@ -26,7 +26,7 @@ public partial class Main : Node2D
         // the crafts that make no item have an icon too (workbench panel), under their recipe id
         ItemTex["revive"] = Gd.Load((ITEM_ART + "revival_kit.png"));
         ItemTex["base"] = Gd.Load((ITEM_ART + "base_repair.png"));
-        foreach (dynamic N in Gd.Iter(new GArray("arrow", "spit", "orb")))
+        foreach (dynamic N in Gd.Iter(new GArray("arrow", "spit", "orb", "explosive_arrow")))
         {
             FxTex[N] = Gd.Load(((FX_ART + N) + ".png"));
         }
@@ -154,6 +154,16 @@ public partial class Main : Node2D
         for (int I = 0; I < GameSim.HOTBAR; I++)
         {
             this.DrawSlot(C, Gd.MakeRect2((X0 + (I * (SLOT + SLOT_GAP))), Y0, SLOT, SLOT), Gd.At(Gd.At(Me, 7), I), (I == Gd.Int(Gd.At(Me, 25))), Gd.Str((I + 1)));
+        }
+        dynamic Selected = Gd.At(Gd.At(Me, 7), Gd.Int(Gd.At(Me, 25)));
+        if (Selected != null && GameSim.IsTacticalUse(Gd.Str(Gd.At(Selected, 0))))
+            this.Text(C, Gd.MakeVector2(0, Y0 - 8), GameSim.ItemName(Gd.At(Selected, 0)) + "  |  Click / right-click to use", 11, GOLD, 1, Vs.X);
+        if (Gd.Size(Me) > 30 && Gd.Truth(Gd.At(Me, 30))) this.Text(C, Gd.MakeVector2(0, Y0 - 42), "HASTE +20%", 11, new Color("F0C76B"), 1, Vs.X);
+        if (Gd.Size(Me) > 31 && Gd.Float(Gd.At(Me, 31)) > 0)
+        {
+            this.Text(C, Gd.MakeVector2(0, Y0 - 30), "FIELD REPAIR... stand still", 11, GOLD, 1, Vs.X);
+            C.DrawRect(Gd.MakeRect2(Vs.X / 2 - 60, Y0 - 22, 120, 5), INK);
+            C.DrawRect(Gd.MakeRect2(Vs.X / 2 - 60, Y0 - 22, 120 * (1 - Gd.Float(Gd.At(Me, 31)) / 3f), 5), GOLD);
         }
         // bandage and craft channels above the hotbar
         if ((Gd.At(Me, 26) >= 0))

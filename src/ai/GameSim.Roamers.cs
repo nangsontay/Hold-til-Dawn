@@ -73,7 +73,6 @@ public partial class GameSim : RefCounted
             E.Wander = E.Pos;
             E.State = 4;
         }
-        this.Note(P, "Something is moving out there...");
     }
 
     public dynamic RoamerCount()

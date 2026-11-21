@@ -10,10 +10,14 @@ public partial class AiSettings : Resource
     public static AiSettings Current => _current ??= (GD.Load<Resource>("res://config/ai/ai.tres") as AiSettings) ?? new AiSettings();
 
     [Export] public float EnemySpeed { get; set; } = 1;         // multiplier on BAL-29..32 speeds (GDD: 1)
-    [Export] public float FirstWave { get; set; } = 30;         // BAL-04: first wave 30 s into the night
-    [Export] public float WaveInterval { get; set; } = 90;      // BAL-04: every 90 s on nights 1-4
+    [Export] public float FirstWave { get; set; } = 30;         // first arrival on nights 3-5; nights 1-2 ease in later
+    [Export] public float WaveInterval { get; set; } = 90;      // night-3 interval; early nights slower, night 4 slightly faster
     [Export] public float FinalWaveInterval { get; set; } = 45; // BAL-04: every 45 s on night 5
     [Export] public float SpawnMultiplier { get; set; } = 1;    // multiplier on the FML-04 budget (GDD: 1)
     [Export] public float RoamerMultiplier { get; set; } = 1;   // multiplier on the FML-16 roamer chance (GDD: 1)
     [Export] public float DropMultiplier { get; set; } = 1;     // multiplier on BAL-41 drop chances (GDD: 1)
+    [Export] public float EarlyNightFirstWave { get; set; } = 60;
+    [Export] public float EarlyNightWaveInterval { get; set; } = 150;
+    [Export] public float SpawnSpacing { get; set; } = 6;       // night 1; decreases to 1.5 s on night 5
+    [Export] public int MaxNightEnemies { get; set; } = 32;
 }

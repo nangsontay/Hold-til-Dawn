@@ -63,7 +63,7 @@ public partial class SimCheck : Node
     {
         dynamic S = this.NewMatch();
         this.Check(((S.Phase == "day") && (Gd.Size(S.Active) == 1)), "match starts on day 1 with one attacked door");
-        this.Check((Gd.Size(Gd.Filter(S.Nodes, (Func<dynamic, dynamic>)((N) => (N.Type == 0)))) == ((4 + (3 * 2)) * GameSim.NODE_MUL)), "4 + 3n nodes per type (x NODE_MUL)");
+        this.Check((Gd.Size(Gd.Filter(S.Nodes, (Func<dynamic, dynamic>)((N) => (N.Type == 0) && !Gd.Truth(Gd.Get(N, "ambient", false))))) == ((4 + (3 * 2)) * GameSim.NODE_MUL)), "4 + 3n primary nodes per type, plus harvestable world scenery");
         dynamic Eng = Gd.At(S.Players, 1);
         dynamic Wood = Gd.At(Gd.Filter(S.Nodes, (Func<dynamic, dynamic>)((N) => (N.Type == 0))), 0);
         Eng.Pos = Wood.Pos;
@@ -101,7 +101,9 @@ public partial class SimCheck : Node
         this.Check((S.Phase == "dusk"), "day -> dusk");
         this.Run(S, 16, "night");
         this.Check(((S.Phase == "night") && !(Gd.Truth(GameSim.InsideBase(Eng.Pos)))), "night starts, players moved outside");
-        // A team that never defends loses night 1: the door breaks, then Grunts drain the generator.
+        // An undefended base loses: isolate door/generator rules from the free automatic tower,
+        // which can now hold the deliberately sparse first-night waves on its own.
+        S.Towers = new GArray((object)null, (object)null, (object)null);
         foreach (dynamic P in Gd.Iter(Gd.Values(S.Players)))
         {
             P.Pos = Gd.MakeVector2(0, (40 * 32));
@@ -298,7 +300,14 @@ public partial class SimCheck : Node
         S.World.Rebuild(S.Nodes, S.Towers);
         S.K = 3;
         S.Active = new GArray(0, 1, 2);
+        S.Night();
+        S.NextWave = float.PositiveInfinity;
         S.SpawnWave();
+        for (int SpawnStep = 0; SpawnStep < 100; SpawnStep++)
+        {
+            S.Elapsed = SpawnStep * 0.5f;
+            S.TickWaves();
+        }
         Func<dynamic, dynamic> InBand = (E) =>
         {
             Vector2 Rel = (Vector2)((E.Pos - Gd.At(GameSim.DOOR_POS, E.Door)));
@@ -323,17 +332,17 @@ public partial class SimCheck : Node
         S.Nodes = KeptNodes;
         // island map (src/world/IslandMap.cs): most wood, stone and herbs round the three clusters in the safe zone,
         // a few at outer landmarks; all titanium past it; every node on land, off the door corridors
-        this.Check(Gd.All(S.Nodes, (Func<dynamic, dynamic>)((N) => (!(Gd.Truth(GameSim.InDoorLane(N.Pos))) && IslandMap.OnGrass((Vector2)N.Pos) && ((N.Type < 3) || (GameSim.WallDist(N.Pos) > (20 * 32)))))), "resource nodes on the island, titanium beyond the safe zone, door corridors clear");
+        this.Check(Gd.All(S.Nodes, (Func<dynamic, dynamic>)((N) => (!(Gd.Truth(GameSim.InDoorLane(N.Pos))) && IslandMap.OnLand((Vector2)N.Pos) && ((N.Type < 3) || (GameSim.WallDist(N.Pos) > (20 * 32)))))), "resource nodes on land, titanium beyond the safe zone, door corridors clear");
         int Basic = 0, InSafe = 0;
         foreach (dynamic N in Gd.Iter(S.Nodes))
         {
-            if (N.Type < 3)
+            if (N.Type < 3 && !Gd.Truth(Gd.Get(N, "ambient", false)))
             {
                 Basic += 1;
                 InSafe += ((GameSim.WallDist(N.Pos) <= (20 * 32)) ? 1 : 0);
             }
         }
-        this.Check((InSafe >= (0.7f * Basic)), "most wood, stone and herb nodes in the safe zone");
+        this.Check((InSafe >= (0.7f * Basic)), "most primary resource clusters remain in the safe zone");
         // the landmarks (src/world/WorldLandmarks.cs): all 17 built, the pier walkable out over the sea, and
         // titanium still at every salvage site
         WorldGeometry Wld = (WorldGeometry)S.World;
@@ -365,18 +374,18 @@ public partial class SimCheck : Node
         this.Check((Gd.Absf((Slow.Pos.DistanceTo(Origin) - 64.0f)) < 0.01f), "night-1 Grunt travels 2 tiles per second");
         Gd.Clear(S.Enemies);
         S.Night();
-        S.Elapsed = 29.99f;
+        S.Elapsed = 59.99f;
         S.TickWaves();
-        this.Check(((S.Wave == 0) && Gd.Truth(Gd.IsEmpty(S.Enemies))), "no wave before 30 seconds");
-        S.Elapsed = 30.0f;
+        this.Check(((S.Wave == 0) && Gd.Truth(Gd.IsEmpty(S.Enemies))), "no first-night wave before 60 seconds");
+        S.Elapsed = 60.0f;
         S.TickWaves();
-        this.Check(((S.Wave == 1) && !(Gd.Truth(Gd.IsEmpty(S.Enemies)))), "first wave arrives at 30 seconds");
-        S.Elapsed = 119.99f;
+        this.Check(((S.Wave == 1) && !(Gd.Truth(Gd.IsEmpty(S.Enemies)))), "first-night wave begins with one enemy at 60 seconds");
+        S.Elapsed = 209.99f;
         S.TickWaves();
-        this.Check((S.Wave == 1), "normal waves wait 90 seconds");
-        S.Elapsed = 120.0f;
+        this.Check((S.Wave == 1), "first-night waves wait 150 seconds");
+        S.Elapsed = 210.0f;
         S.TickWaves();
-        this.Check((S.Wave == 2), "second wave arrives at 120 seconds");
+        this.Check((S.Wave == 2), "second first-night wave arrives at 210 seconds");
         S.K = 5;
         Gd.Clear(S.Enemies);
         S.Night();

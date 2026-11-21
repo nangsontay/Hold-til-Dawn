@@ -115,6 +115,7 @@ public partial class Bots : RefCounted
         }
         dynamic Foe = Bots.Foe(Sim, P, Post);
         float FoeD = Gd.Float(((Foe == null) ? (dynamic)(float.PositiveInfinity) : P.Pos.DistanceTo(Foe.Pos)));
+        if (UseTacticalItems(Sim, P, Foe, FoeD)) return;
         dynamic Down = Bots.Nearest(Sim, P, (Func<dynamic, dynamic>)((Q) => (Q.State == 1)), (25.0f * T));
         if (((Down != null) && (FoeD > (2.5f * T))))
         {
@@ -147,13 +148,14 @@ public partial class Bots : RefCounted
         }
         if ((Foe != null))
         {
-            float Reach = Gd.Float(((1.25f * T) + Foe.R));
+            float WeaponReach = Gd.Float(Gd.At(GameSim.WEAPON_STATS[Sim.WeaponOf(P)], 2));
+            float Reach = Gd.Float((((WeaponReach - 0.25f) * T) + Foe.R));
             if ((FoeD > Reach))
             {
                 Bots.Move(Sim, P, Foe.Pos, Dt);
             }
             P.Aim = (Foe.Pos - P.Pos).Angle();
-            P.Atk = (P.Pos.DistanceTo(Foe.Pos) <= ((1.5f * T) + Foe.R));
+            P.Atk = (P.Pos.DistanceTo(Foe.Pos) <= ((WeaponReach * T) + Foe.R));
             return;
         }
         if (((P.Role == 1) && (Sim.Phase != "day")))
@@ -353,13 +355,21 @@ public partial class Bots : RefCounted
         P.BotCd = 0.5f;
         bool Dead = Gd.Truth(Gd.Any(Gd.Values(Sim.Players), (Func<dynamic, dynamic>)((Q) => (Q.State == 2))));
         int HasWeapon = ((Sim.Count(P, "titanium_blade") > 0) ? 2 : ((Sim.Count(P, "stone_spear") > 0) ? 1 : 0));
-        foreach (dynamic Idx in Gd.Iter(new GArray(8, 9, 4, 5, 0, 2, 1, 3)))
+        foreach (dynamic Idx in Gd.Iter(new GArray(2, 8, 9, 11, 10, 4, 5, 0, 16, 14, 13, 12, 15, 18, 1, 3)))
         {
             dynamic R = Gd.At(GameSim.RECIPES, Idx);
             string Makes = Gd.At(R, 3);
             bool Useful = Makes switch
             {
-                "stone_spear" => (HasWeapon < 1),
+                "long_spear" => (HasWeapon < 2 && Sim.Count(P, "long_spear") == 0 && Sim.Count(P, "stun_maul") == 0),
+                "stun_maul" => (P.Role == 2 && Sim.Count(P, "stun_maul") == 0),
+                "gathering_kit" => (Sim.Count(P, "gathering_kit") == 0),
+                "healing_flask" => (P.Role == 1 && Sim.Count(P, "healing_flask") < 2),
+                "poison_flask" => (P.Role == 0 && Sim.Count(P, "poison_flask") < 2),
+                "vine_trap" => (P.Role == 2 && Sim.Count(P, "vine_trap") < 2),
+                "haste_tonic" => (Sim.Count(P, "haste_tonic") < 1),
+                "repair_kit" => (P.Role == 2 && Sim.Count(P, "repair_kit") < 1),
+                "stone_spear" => (HasWeapon < 1 && Sim.Count(P, "long_spear") == 0),
                 "titanium_blade" => (HasWeapon < 2),
                 "light_armour" => (Sim.ArmourTier(P) < 1),
                 "stone_armour" => (Sim.ArmourTier(P) < 2),
@@ -382,7 +392,7 @@ public partial class Bots : RefCounted
     // harder than the hammer or the starter bow up close.
     public static void Equip(dynamic Sim, dynamic P)
     {
-        foreach (dynamic W in Gd.Iter(new GArray("titanium_blade", "stone_spear")))
+        foreach (dynamic W in Gd.Iter((P.Role == 2 ? new GArray("stun_maul", "titanium_blade", "long_spear", "stone_spear") : new GArray("titanium_blade", "long_spear", "stun_maul", "stone_spear"))))
         {
             for (int I = 0; I < Gd.Size(P.Inv); I++)
             {
@@ -428,7 +438,7 @@ public partial class Bots : RefCounted
         {
             return;
         }
-        float Spd = Gd.Float((GameSim.SPEED * ((P.Role == 0) ? (dynamic)(1.2f) : 1.0f)));
+        float Spd = Sim.PlayerSpeed(P);
         P.Pos = Sim.MoveActor(P.Pos, (P.Pos + (Step.Normalized() * Gd.Minf((Spd * Dt), Gd.Length(Step)))), (0.3f * T));
         P.Aim = Step.Angle();
         bool Night = Gd.Truth((Sim.Phase == "night"));

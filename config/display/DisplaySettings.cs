@@ -11,4 +11,6 @@ public partial class DisplaySettings : Resource
 
     [Export] public Vector2 CameraDeadZone { get; set; } = new(30, 18);
     [Export] public float CameraFollowRate { get; set; } = 8;
+    /// <summary>Most frames drawn per second (0 = one per screen refresh). Without a cap a 120-165 Hz laptop screen keeps the CPU and GPU flat out all match long.</summary>
+    [Export] public int MaxFps { get; set; } = 60;
 }

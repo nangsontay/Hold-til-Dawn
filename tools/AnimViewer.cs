@@ -84,7 +84,7 @@ public partial class AnimViewer : Node2D
                     foreach (string N in Names)
                     {
                         var R = One[N].AsGodotArray();
-                        S.Anims.Add(new Anim { Name = N, First = R[0].AsInt32(), Count = R[1].AsInt32(), Fps = R[2].AsSingle() });
+                        S.Anims.Add(new Anim { Name = N, First = R[0].AsInt32(), Count = R[1].AsInt32(), Fps = R[2].AsSingle(), Loop = N.StartsWith("gather_", StringComparison.Ordinal) });
                     }
                 }
                 Sheets.Add(S);

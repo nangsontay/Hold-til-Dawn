@@ -97,7 +97,49 @@ public partial class GameSim : RefCounted
         return ((Gd.Absf(Pos.X) < (HALF.X + Margin)) && (Gd.Absf(Pos.Y) < (HALF.Y + Margin)));
     }
 
+    // The wall pieces for each of the 8 ways the three doors can be open or shut, built once: bodies are pushed
+    // out of them several times a tick. Callers only read the arrays.
+    static readonly GArray[] WallSets = new GArray[8];
+    static readonly Rect2[][] WallRectSets = new Rect2[8][];
+
+    // bit I set: door I is open
+    static int OpenMask(dynamic Open)
+    {
+        int M = 0;
+        for (int I = 0; I < 3; I++)
+            if (Gd.Truth(Gd.At(Open, I))) M |= 1 << I;
+        return M;
+    }
+
+    // doors open to bodies moving now: all by day, the broken ones at night
+    int DoorMask()
+    {
+        bool Day = (Phase != "night");
+        int M = 0;
+        for (int I = 0; I < 3; I++)
+            if (Day || Gd.Float(Gd.At(Doors, I)) <= 0) M |= 1 << I;
+        return M;
+    }
+
+    public static Rect2[] WallRects(int Mask)
+    {
+        if (WallRectSets[Mask] == null)
+        {
+            GArray Set = (GArray)Walls(new GArray((Mask & 1) != 0, (Mask & 2) != 0, (Mask & 4) != 0));
+            var Rects = new Rect2[Set.Count];
+            for (int I = 0; I < Rects.Length; I++) Rects[I] = (Rect2)Gd.At(Set, I);
+            WallRectSets[Mask] = Rects;
+        }
+        return WallRectSets[Mask];
+    }
+
     public static dynamic Walls(dynamic Open)
+    {
+        int Mask = OpenMask(Open);
+        return WallSets[Mask] ??= (GArray)BuildWalls(Open);
+    }
+
+    static dynamic BuildWalls(dynamic Open)
     {
         // Solid wall pieces; an open door (day, or broken) leaves a gap.
         dynamic H = HALF;
@@ -124,6 +166,10 @@ public partial class GameSim : RefCounted
 
     public static dynamic Collide(dynamic Pos, dynamic Radius, dynamic Open)
     {
+        if (Pos is Vector2 At)
+        {
+            return CollideFast(At, Gd.Float(Radius), OpenMask(Open));
+        }
         // Pushes a circle out of every wall piece (players only enter through doors).
         foreach (dynamic W in Gd.Iter(GameSim.Walls(Open)))
         {
@@ -150,6 +196,40 @@ public partial class GameSim : RefCounted
                 else
                 {
                     Pos.Y = (C.Y + (((O.Y >= 0) ? (dynamic)(1.0f) : (-1.0f)) * E.Y));
+                }
+            }
+        }
+        return Pos;
+    }
+
+    // Collide(), typed
+    public static Vector2 CollideFast(Vector2 Pos, float Radius, int Mask)
+    {
+        foreach (Rect2 W in WallRects(Mask))
+        {
+            Vector2 Q = Pos.Clamp(W.Position, W.End);
+            Vector2 D = Pos - Q;
+            float L = D.Length();
+            if (L >= Radius)
+            {
+                continue;
+            }
+            if (L > 0.001f)
+            {
+                Pos = Q + (D / L) * Radius;
+            }
+            else
+            {
+                Vector2 C = W.GetCenter();
+                Vector2 E = (W.Size / 2) + new Vector2(Radius, Radius);
+                Vector2 O = Pos - C;
+                if ((E.X - Mathf.Abs(O.X)) < (E.Y - Mathf.Abs(O.Y)))
+                {
+                    Pos.X = C.X + ((O.X >= 0) ? 1.0f : -1.0f) * E.X;
+                }
+                else
+                {
+                    Pos.Y = C.Y + ((O.Y >= 0) ? 1.0f : -1.0f) * E.Y;
                 }
             }
         }
@@ -250,6 +330,9 @@ public partial class GameSim : RefCounted
     public void GenNodes()
     {
         Gd.Clear(Nodes);
+        var Ambient = new GArray();
+        foreach (var Site in ((WorldGeometry)World).HarvestSites) Ambient.Add(Site.CreateNode());
+        World.Rebuild(Ambient, Towers);
         for (int Type = 0; Type < 4; Type++)
         {
             int Count = Gd.Int(((4 + (3 * N0)) * NODE_MUL));
@@ -292,6 +375,8 @@ public partial class GameSim : RefCounted
                 Gd.Append(Nodes, new GDict { { "type", Type }, { "pos", Spot }, { "amount", 5 } });
             }
         }
+        // The visible forest, rocks and herbs use the same gathering rules as the original resource clusters.
+        Gd.AppendArray(Nodes, Ambient);
         World.Rebuild(Nodes, Towers);
     }
 
@@ -315,28 +400,27 @@ public partial class GameSim : RefCounted
 
     public dynamic MoveActor(dynamic From, dynamic To, dynamic Radius)
     {
-        dynamic SolidWalls = this.MovementWalls();
+        // typed all the way (src/world/WorldGeometry.FastMove.cs): every body moves through here every tick
+        int Mask = this.DoorMask();
+        Vector2 F = (Vector2)From;
+        float R = Gd.Float(Radius);
         // the sea stops everyone: slide along the coast (src/world/IslandMap.cs)
-        Vector2 Moved = IslandMap.Keep((Vector2)From, (Vector2)World.MoveBody(From, IslandMap.Keep((Vector2)From, (Vector2)To, (float)Radius), Radius, SolidWalls), (float)Radius);
-        return GameSim.Collide(Moved, Radius, Gd.Map(Doors, (Func<dynamic, dynamic>)((D) => ((Phase != "night") || (D <= 0)))));
+        Vector2 Moved = IslandMap.Keep(F, ((WorldGeometry)World).MoveBodyFast(F, IslandMap.Keep(F, (Vector2)To, R), R, GameSim.WallRects(Mask)), R);
+        return GameSim.CollideFast(Moved, R, Mask);
     }
+
+    static readonly Rect2[] OutsideNavigationWalls = { new Rect2(-(Vector2)HALF, (Vector2)HALF * 2) };
 
     public dynamic Navigate(dynamic From, dynamic To, dynamic Radius, dynamic Outside = null)
     {
         Outside ??= true;
-        dynamic Barriers = (Gd.Truth(Outside) ? (dynamic)(new GArray(Gd.MakeRect2((-HALF), (HALF * 2)))) : this.MovementWalls());
-        return World.Waypoint(From, To, Radius, Barriers);
+        Rect2[] Barriers = Gd.Truth(Outside) ? OutsideNavigationWalls : WallRects(DoorMask());
+        return ((WorldGeometry)World).WaypointFast((Vector2)From, (Vector2)To, Gd.Float(Radius), Barriers);
     }
 
     public dynamic MovementWalls()
     {
-        dynamic Open = Gd.Map(Doors, (Func<dynamic, dynamic>)((D) => ((Phase != "night") || (D <= 0))));
-        dynamic Key = Gd.Str(Open);
-        if ((Key != WallKey))
-        {
-            WallKey = Key;
-            WallCache = GameSim.Walls(Open);
-        }
-        return WallCache;
+        int Mask = this.DoorMask();
+        return WallSets[Mask] ?? GameSim.Walls(new GArray((Mask & 1) != 0, (Mask & 2) != 0, (Mask & 4) != 0));
     }
 }

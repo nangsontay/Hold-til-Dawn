@@ -26,57 +26,57 @@ public partial class GameSim : RefCounted
     // --- enemies ------------------------------------------------------------
     public void TickWaves()
     {
-        if ((Elapsed >= NextWave))
+        if ((string)Phase != "night" || Gd.Float((object)TimeLeft) <= 0)
         {
-            Wave += 1;
-            NextWave += ((K == 5) ? (dynamic)(FINAL_WAVE_INTERVAL) : WAVE_INTERVAL);
+            ResetNightSpawns();
+            return;
+        }
+        if (Gd.Float((object)Elapsed) >= Gd.Float((object)NextWave))
+        {
+            Wave = Gd.Int((object)Wave) + 1;
+            // Schedule from now; a long frame must never replay missed waves in a burst.
+            NextWave = Gd.Float((object)Elapsed) + NightWaveInterval;
             this.SpawnWave();
         }
-        if ((((K == 2) || (K == 4)) && !(Gd.Truth(BossSpawned)) && (Elapsed >= 300.0f)))
+        if ((Gd.Int((object)K) == 2 || Gd.Int((object)K) == 4) && !Gd.Truth((object)BossSpawned) && Gd.Float((object)Elapsed) >= 300f)
         {
             BossSpawned = true;
             this.SpawnBoss();
+            return; // keep a regular birth off the boss's creation tick
         }
+        TickPendingNightSpawn();
     }
 
     public void SpawnWave()
     {
-        dynamic N = Gd.Size(Players);
-        dynamic Wf = ((K == 5) ? (dynamic)(1.0f) : (1.0f + (0.15f * Gd.Mini((Wave - 1), 5))));
-        float Budget = Gd.Float(((((((((40.0f * (1 + (0.5f * (N - 1)))) * Gd.Pow(1.2f, (K - 1))) * Wf) * ((K == 5) ? (dynamic)(1.5f) : 1.0f)) * ((this.Boss() != null) ? (dynamic)((1.0f / 3.0f)) : 1.0f)) * Gd.At(Gd.At(MODE_MUL, Mode), 0)) * SPAWN_MUL) + Carry));
-        dynamic Types = Gd.Filter(new GArray(0, 1, 2), (Func<dynamic, dynamic>)((Ty) => (Gd.At(Gd.At(ENEMY, Ty), 4) <= K)));
-        dynamic I = 0;
-        while ((Gd.Size(Enemies) < MAX_ENEMIES))
-        {
-            dynamic Can = Gd.Filter(Types, (Func<dynamic, dynamic>)((Ty) => (Gd.At(Gd.At(ENEMY, Ty), 3) <= Budget)));
-            if (Gd.Truth(Gd.IsEmpty(Can)))
-            {
-                break;
-            }
-            int Ty = Gd.Int(Gd.At(Can, (Rng.Randi() % Gd.Size(Can))));
-            Budget -= Gd.At(Gd.At(ENEMY, Ty), 3);
-            dynamic Dist = (Gd.Truth(SPAWN_ALL_SIDES) ? (dynamic)(Rng.RandfRange(WAVE_MIN_DISTANCE, (((ISLAND - Gd.Length(HALF)) / T) - 2.0f))) : Rng.RandfRange(25.0f, 35.0f));
-            dynamic E = this.Spawn(Ty, Gd.At(Active, (I % Gd.Size(Active))), Dist);
-            if (Gd.Truth(SPAWN_ALL_SIDES))
-            {
-                E.Door = this.NearestActiveDoor(E.Pos);
-            }
-            I += 1;
-        }
-        Carry = ((Budget < 10) ? (dynamic)(Budget) : 0.0f);
+        PlanNightWave();
     }
 
     public dynamic Spawn(dynamic Ty, dynamic Door, dynamic DistTiles, dynamic AnySide = null)
     {
-        AnySide ??= SPAWN_ALL_SIDES;
-        dynamic S = Gd.At(ENEMY, Ty);
-        dynamic G = Gd.Pow(1.1f, (K - 1));
-        dynamic E = new GDict { { "id", NextId }, { "type", Ty }, { "pos", this.SpawnPos(Door, DistTiles, AnySide) }, { "hp", ((Gd.At(S, 0) * G) * Gd.At(Gd.At(MODE_MUL, Mode), 1)) }, { "dmg", ((Gd.At(S, 1) * G) * Gd.At(Gd.At(MODE_MUL, Mode), 2)) }, { "spd", ((Gd.Minf(3.0f, (Gd.At(S, 2) * Gd.Pow(1.08f, (K - 1)))) * T) * ENEMY_SPEED_MUL) }, { "door", Door }, { "state", 0 }, { "cd", 0.0f }, { "hits", new GArray() }, { "target", 0 }, { "anchor", Vector2.Zero }, { "nodmg", 0.0f }, { "r", (((Ty == WRECKER) ? (dynamic)(0.625f) : 0.5f) * T) } };
-        E.Pos = World.Resolve(E.Pos, E.R);
-        E.Maxhp = E.Hp;
-        NextId += 1;
-        Gd.Append(Enemies, E);
-        return E;
+        return SpawnEnemy(Gd.Int((object)Ty), Gd.Int((object)Door), Gd.Float((object)DistTiles),
+            AnySide == null ? Gd.Truth((object)SPAWN_ALL_SIDES) : Gd.Truth((object)AnySide));
+    }
+
+    GDict SpawnEnemy(int Type, int Door, float Distance, bool AnySide)
+    {
+        var Stats = (GArray)((GArray)ENEMY)[Type];
+        var ModeStats = (GArray)((GArray)MODE_MUL)[Gd.Int((object)Mode)];
+        int Night = Gd.Int((object)K), Id = Gd.Int((object)NextId);
+        float Growth = MathF.Pow(1.1f, Night - 1);
+        float Radius = (Type == WRECKER ? 0.625f : 0.5f) * T;
+        float Hp = Gd.Float((object)Stats[0]) * Growth * Gd.Float((object)ModeStats[1]);
+        Vector2 Pos = SpawnPosition(Door, Distance, AnySide);
+        Pos = ((WorldGeometry)World).ResolveFast(Pos, Radius);
+        var Enemy = new GDict {
+            { "id", Id }, { "type", Type }, { "pos", Pos }, { "hp", Hp }, { "maxhp", Hp },
+            { "dmg", Gd.Float((object)Stats[1]) * Growth * Gd.Float((object)ModeStats[2]) },
+            { "spd", Math.Min(3f, Gd.Float((object)Stats[2]) * MathF.Pow(1.08f, Night - 1)) * T * ENEMY_SPEED_MUL },
+            { "door", Door }, { "state", 0 }, { "cd", 0f }, { "hits", new GArray() }, { "target", 0 },
+            { "anchor", Vector2.Zero }, { "nodmg", 0f }, { "r", Radius } };
+        NextId = Id + 1;
+        ((GArray)Enemies).Add(Enemy);
+        return Enemy;
     }
 
     public void SpawnBoss()
@@ -103,14 +103,30 @@ public partial class GameSim : RefCounted
 
     public void TickEnemies(dynamic Dt)
     {
+        EnemyNavigationUpdatesThisTick = 0;
+        LimitEnemyNavigation = true;
+        try { TickEnemyBodies(Dt); }
+        finally { LimitEnemyNavigation = false; }
+    }
+
+    void TickEnemyBodies(dynamic Dt)
+    {
         // a copy: a Broodmother's summons join the list during the loop
-        foreach (dynamic E in Gd.Iter(Gd.Duplicate(Enemies)))
+        float FrameDt = Gd.Float(Dt);
+        var Batch = (GArray)Gd.Duplicate(Enemies);
+        int Start = Batch.Count == 0 ? 0 : EnemyThinkCursor % Batch.Count;
+        EnemyThinkCursor = Start + 1;
+        for (int Index = 0; Index < Batch.Count; Index++)
         {
+            Dt = FrameDt;
+            dynamic E = Gd.At(Batch, (Start + Index) % Batch.Count);
             Vector2 OldPos = (Vector2)(E.Pos);
             E.NavT = (Gd.Get(E, "nav_t", 0.0f) - Dt);
             E.Cd -= Dt;
             E.Nodmg += Dt;
             E.Swing = (Gd.Get(E, "swing", 0.0f) - Dt);
+            if (E.Hp <= 0 || Gd.Get(E, "stun_until", 0f) > Clock) continue;
+            if (Gd.Get(E, "slow_until", 0f) > Clock) Dt = FrameDt * 0.75f;
             if (((E.Type == BOSS) && this.TickBoss(E, Dt)))
             {
                 continue;
@@ -488,70 +504,100 @@ public partial class GameSim : RefCounted
         Tele = Gd.Filter(Tele, (Func<dynamic, dynamic>)((Tl) => (Tl.TimeLeft > 0)));
     }
 
+    // reused every tick by Separate()
+    readonly System.Collections.Generic.Dictionary<Vector2I, System.Collections.Generic.List<int>> SepCells = new();
+    readonly System.Collections.Generic.List<(int A, int B)> SepPairs = new();
+    readonly System.Collections.Generic.HashSet<(int, int)> SepSeen = new();
+    Vector2[] SepPos = new Vector2[0];
+    float[] SepR = new float[0];
+
     public void Separate()
     {
-        // Broad phase: circles cover every overlapping cell, including negative coordinates.
-        dynamic Cells = new GDict {  };
-        dynamic Pairs = new GDict {  };
-        foreach (dynamic I in Gd.Iter(Gd.Size(Enemies)))
+        // Typed: with dozens of enemies at night this ran every tick on dynamic dictionaries. Same cells, same
+        // pairs in the same order and the same pushes as before.
+        int N = Gd.Size(Enemies);
+        if (SepPos.Length < N)
+        {
+            SepPos = new Vector2[N];
+            SepR = new float[N];
+        }
+        for (int I = 0; I < N; I++)
         {
             dynamic E = Gd.At(Enemies, I);
-            dynamic Lo = Gd.MakeVector2I(((E.Pos - (Vector2.One * E.R)) / 64.0f).Floor());
-            dynamic Hi = Gd.MakeVector2I(((E.Pos + (Vector2.One * E.R)) / 64.0f).Floor());
-            foreach (dynamic Y in Gd.Iter(Gd.Range(Lo.Y, (Hi.Y + 1))))
+            SepPos[I] = (Vector2)E.Pos;
+            SepR[I] = Gd.Float(E.R);
+        }
+        // Broad phase: circles cover every overlapping cell, including negative coordinates.
+        foreach (var List in SepCells.Values) List.Clear();
+        SepPairs.Clear();
+        SepSeen.Clear();
+        for (int I = 0; I < N; I++)
+        {
+            var Lo = (Vector2I)((SepPos[I] - Vector2.One * SepR[I]) / 64.0f).Floor();
+            var Hi = (Vector2I)((SepPos[I] + Vector2.One * SepR[I]) / 64.0f).Floor();
+            for (int Y = Lo.Y; Y < Hi.Y + 1; Y++)
             {
-                foreach (dynamic X in Gd.Iter(Gd.Range(Lo.X, (Hi.X + 1))))
+                for (int X = Lo.X; X < Hi.X + 1; X++)
                 {
-                    dynamic Cell = Gd.MakeVector2I(X, Y);
-                    foreach (dynamic J in Gd.Iter(Gd.Get(Cells, Cell, new GArray())))
+                    var Cell = new Vector2I(X, Y);
+                    if (!SepCells.TryGetValue(Cell, out var In))
                     {
-                        Pairs[Gd.MakeVector2I(J, I)] = true;
+                        In = new System.Collections.Generic.List<int>();
+                        SepCells[Cell] = In;
                     }
-                    if (!(Gd.Truth(Gd.Has(Cells, Cell))))
+                    foreach (int J in In)
                     {
-                        Cells[Cell] = new GArray();
+                        if (SepSeen.Add((J, I))) SepPairs.Add((J, I));
                     }
-                    Gd.Append(Gd.At(Cells, Cell), I);
+                    In.Add(I);
                 }
             }
         }
-        foreach (dynamic Pair in Gd.Iter(Pairs))
+        // cells nobody stood in this tick are dropped, so the table does not grow all night
+        if (SepCells.Count > 4 * N + 64)
         {
-            dynamic A = Gd.At(Enemies, Pair.X);
-            dynamic B = Gd.At(Enemies, Pair.Y);
-            Vector2 D = (Vector2)((B.Pos - A.Pos));
-            float Need = Gd.Float((A.R + B.R));
+            var Empty = new System.Collections.Generic.List<Vector2I>();
+            foreach (var (Cell, List) in SepCells) if (List.Count == 0) Empty.Add(Cell);
+            foreach (var Cell in Empty) SepCells.Remove(Cell);
+        }
+        foreach (var (A, B) in SepPairs)
+        {
+            Vector2 D = SepPos[B] - SepPos[A];
+            float Need = SepR[A] + SepR[B];
             if ((D.LengthSquared() >= (Need * Need)))
             {
                 continue;
             }
-            dynamic Length = Gd.Length(D);
-            dynamic Normal = ((Length > 0.001f) ? (dynamic)((D / Length)) : Vector2.Right);
-            dynamic Push = ((Normal * (Need - Length)) * 0.5f);
-            A.Pos -= Push;
-            B.Pos += Push;
+            float Length = D.Length();
+            Vector2 Normal = ((Length > 0.001f) ? (D / Length) : Vector2.Right);
+            Vector2 Push = ((Normal * (Need - Length)) * 0.5f);
+            SepPos[A] -= Push;
+            SepPos[B] += Push;
         }
         // Resolve scenery once per body after all pair corrections, not once per pair.
-        foreach (dynamic E in Gd.Iter(Enemies))
+        for (int I = 0; I < N; I++)
         {
-            E.Pos = this.MoveActor(E.Pos, E.Pos, E.R);
+            dynamic E = Gd.At(Enemies, I);
+            E.Pos = this.MoveActor(SepPos[I], SepPos[I], SepR[I]);
         }
     }
 
     public dynamic SpawnPos(dynamic Door, dynamic DistTiles, dynamic AnySide)
+        => SpawnPosition(Gd.Int((object)Door), Gd.Float((object)DistTiles), Gd.Truth((object)AnySide));
+
+    Vector2 SpawnPosition(int Door, float Distance, bool AnySide)
     {
-        if (!(Gd.Truth(AnySide)))
+        var Random = (RandomNumberGenerator)Gd.Unwrap((object)Rng);
+        if (!AnySide)
         {
-            Vector2 Dd = (Vector2)(Gd.At(DOOR_DIR, Door));
-            // the island map's enemy spawn bands: 10 x 10 tiles on the door axis (BAL-34)
-            return IslandMap.PullInland((Vector2)((Gd.At(DOOR_POS, Door) + ((Dd * DistTiles) * T)) + ((Gd.MakeVector2((-Dd.Y), Dd.X) * Rng.RandfRange((-5.0f), 5.0f)) * T)), (2 * T));
+            Vector2 Direction = (Vector2)((GArray)DOOR_DIR)[Door];
+            Vector2 At = (Vector2)((GArray)DOOR_POS)[Door] + Direction * Distance * T
+                + new Vector2(-Direction.Y, Direction.X) * Random.RandfRange(-5f, 5f) * T;
+            return IslandMap.PullInland(At, 2 * T);
         }
-        dynamic Dir = Vector2.FromAngle((Rng.Randf() * Mathf.Tau));
-        dynamic Pos = (Dir * ((DistTiles * T) + Gd.Length(HALF)));
-        while ((GameSim.WallDist(Pos) < (DistTiles * T)))
-        {
-            Pos += (Dir * T);
-        }
+        Vector2 Dir = Vector2.FromAngle(Random.Randf() * Mathf.Tau);
+        Vector2 Pos = Dir * (Distance * T + ((Vector2)HALF).Length());
+        while (Gd.Float((object)WallDist(Pos)) < Distance * T) Pos += Dir * T;
         return Pos;
     }
 
@@ -560,10 +606,19 @@ public partial class GameSim : RefCounted
         Outside ??= true;
         if (((Gd.Get(E, "nav_t", 0.0f) <= 0) || !(Gd.Truth(Gd.Has(E, "nav_way"))) || (E.Pos.DistanceTo(E.NavWay) < 4.0f) || (Gd.Get(E, "nav_revision", (-1)) != World.Revision) || (Gd.Get(E, "nav_goal", Vector2.Inf).DistanceTo(Goal) > T)))
         {
+            if (LimitEnemyNavigation && EnemyNavigationUpdatesThisTick >= ENEMY_NAVIGATION_LIMIT)
+            {
+                // Never follow an obsolete route through newly built walls; wait for a fair turn instead.
+                return Gd.Has(E, "nav_way") && Gd.Equal(Gd.Get(E, "nav_revision", -1), World.Revision)
+                    && Gd.Truth(Gd.Get(E, "nav_outside", true)) == Gd.Truth(Outside)
+                    && E.Pos.DistanceTo(E.NavWay) >= 4f ? E.NavWay : E.Pos;
+            }
+            EnemyNavigationUpdatesThisTick++;
             E.NavWay = this.Navigate(E.Pos, Goal, E.R, Outside);
             E.NavGoal = Goal;
             E.NavRevision = World.Revision;
-            E.NavT = 0.4f;
+            E.NavOutside = Gd.Truth(Outside);
+            E.NavT = 0.4f + (Gd.Int(E.Id) % 7) * 0.03f;
         }
         return E.NavWay;
     }

@@ -117,6 +117,8 @@ public partial class PixelNature : Node
         string N = Name + "_" + Variant;
         C.ToImage().SavePng(LmOut.PathJoin(N + ".png"));
         LmIndex[N] = new Godot.Collections.Array { C.Anchor.X, C.Anchor.Y, Radius };
+        if (Harvestables.TypeOf(N) >= 0)
+            SaveHarvestVariants(Name, Variant, C, Radius, LmOut, LmIndex);
         GD.Print("drew ", N, " (", C.W, ", ", C.H, ")");
     }
 
@@ -294,8 +296,11 @@ public partial class PixelNature : Node
         for (int I = 0; I < N; I++) Order.Add(-MathF.PI + I * MathF.Tau / N + (float)(R.NextDouble() - 0.5) * 0.3f);
         // the fronds at the back first
         Order.Sort((A, B) => MathF.Sin(A).CompareTo(MathF.Sin(B)));
+        var CutOrder = Order.ToArray();
+        Array.Sort(CutOrder, (A, B) => MathF.Abs(MathF.Cos(B)).CompareTo(MathF.Abs(MathF.Cos(A))));
         foreach (float A in Order)
         {
+            int FrondTag = 100 + Array.IndexOf(CutOrder, A);
             var Dir = new Vector2(MathF.Cos(A), MathF.Sin(A) * 0.45f);
             float Len = 27 + (float)R.NextDouble() * 6;
             bool Back = MathF.Sin(A) < -0.2f;
@@ -307,7 +312,7 @@ public partial class PixelNature : Node
                 var Along = (Dir * Len + new Vector2(0, 2 * T * 20 - 5)).Normalized();
                 var Perp = new Vector2(-Along.Y, Along.X);
                 int Base = Back ? 1 : 2;
-                C.Put((int)P.X, (int)P.Y, Pick(PALM_LEAF, Base - 1));
+                C.Put((int)P.X, (int)P.Y, Pick(PALM_LEAF, Base - 1), 2, FrondTag);
                 float Lf = (1 - T * 0.8f) * 7f;
                 for (int Side = -1; Side <= 1; Side += 2)
                 {
@@ -316,7 +321,7 @@ public partial class PixelNature : Node
                     {
                         var Q = P + Dir2 * K;
                         bool Lit = (Perp * Side).Dot(LIGHT2) > 0;
-                        C.Put((int)Q.X, (int)Q.Y, Pick(PALM_LEAF, Base + (Lit ? 1 : 0) + (K == 1 && !Back ? 1 : 0)));
+                        C.Put((int)Q.X, (int)Q.Y, Pick(PALM_LEAF, Base + (Lit ? 1 : 0) + (K == 1 && !Back ? 1 : 0)), 2, FrondTag);
                     }
                 }
             }

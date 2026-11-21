@@ -172,6 +172,7 @@ public partial class Main : Node2D
                 return;
             }
             CraftOpen = !(Gd.Truth(CraftOpen));
+            SelectCraftTier(CraftTier);
             BagOpen = false;
         }
         else if (Gd.Equal(Code, 4194306))
@@ -196,10 +197,11 @@ public partial class Main : Node2D
             if (Gd.Truth(CraftOpen))
             {
                 // a number key shows that recipe and crafts it at once (ui/gameplay/Main.CraftPanel.cs)
-                if (((N >= 0) && (N < Gd.Size(GameSim.RECIPES))))
+                var Choices = CraftChoices();
+                if (N >= 0 && N < Choices.Count)
                 {
-                    CraftSel = N;
-                    this.Act("craft", N);
+                    CraftSel = Choices[N];
+                    this.Act("craft", CraftSel);
                 }
             }
             else if (((N >= 0) && (N < GameSim.HOTBAR)))
@@ -221,6 +223,10 @@ public partial class Main : Node2D
 
     public void GameplayRightClick()
     {
-        this.Act("flask", Gd.Native(this, "get_global_mouse_position"));
+        if (UiCapturesMouse()) return;
+        dynamic Me = Gd.Get(Snap.Ps, MyId);
+        dynamic Slot = Me == null ? null : Gd.At(Gd.At(Me, 7), Gd.Int(Gd.At(Me, 25)));
+        bool Use = Slot != null && GameSim.IsTacticalUse(Gd.Str(Gd.At(Slot, 0)));
+        this.Act(Use ? "use_item" : "flask", Gd.Native(this, "get_global_mouse_position"));
     }
 }

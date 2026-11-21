@@ -12,16 +12,16 @@ using HoldTilDawn;
 public partial class Main : Node2D
 {
     public static readonly dynamic ENEMY_SKIN = new GArray("grunt", "spitter", "wrecker", "wrecker");
-    public static readonly dynamic ENEMY_TINT = new GArray(Colors.White, Colors.White, Colors.White, Gd.MakeColor(1.2f, 0.85f, 1.25f));
+    public static readonly dynamic ENEMY_TINT = new GArray(Colors.White, Colors.White, Colors.White, Colors.White);
     // sprite sheet per boss archetype, in GameSim.BOSS_KINDS order (Juggernaut .. Ironhide)
     public static readonly GArray BOSS_SKIN = new GArray("boss_juggernaut", "boss_broodmother", "boss_bio_cannon", "boss_burrower", "boss_gatebreaker", "boss_phantom", "boss_ironhide");
     // boss moves with a wind-up: it holds the first attack frame (arms up) until the move lands
     static readonly HashSet<string> BOSS_WIND = new() { "glow", "charge_wind", "blow", "slam", "ambush" };
     // a dead enemy plays its "down" frames where it fell, lies there, then fades (seconds)
     const float CORPSE_TIME = 2.4f, CORPSE_FADE = 0.6f;
-    // bosses: the 48 px sheets drawn at 2x (about 3 tiles tall, three times a player), a whole number so the
-    // pixels stay even
-    const float BOSS_DRAW_SCALE = 2.0f;
+    // 3x replaces 2x: every boss, including attacks and corpses, is 1.5 times its former size.
+    // Integer scaling preserves the pixel edges; gameplay collision/reach still use the simulation radius.
+    public const float BOSS_DRAW_SCALE = 3.0f;
 
     struct Fallen
     {
@@ -209,6 +209,13 @@ public partial class Main : Node2D
             }
         }
         this.Char(Key, Skin, Foot, null, S, Mod, false, "idle", Play, PlayT);
+        if (Gd.Size(E) > 10 && Gd.Truth(Gd.At(E, 10)))
+        {
+            Vector2 At = (Vector2)Foot - new Vector2(0, Size * S * 0.65f);
+            DrawArc(At, 9f, 0, Mathf.Tau, 12, new Color("DDD681"), 2f);
+            for (int I = 0; I < 3; I++) DrawCircle(At + Vector2.FromAngle(I * Mathf.Tau / 3 + (float)Clock * 3) * 9f, 2f, new Color("FFF3B4"));
+        }
+        if (Gd.Size(E) > 11 && Gd.Truth(Gd.At(E, 11))) DrawArc((Vector2)Foot, Gd.Float(Gd.At(E, 5)), 0, Mathf.Tau, 20, new Color("83DDD8"), 3f);
         if (((Gd.At(E, 3) < Gd.At(E, 4)) && (Ty != GameSim.BOSS)))
         {
             this.Bar((Foot - Gd.MakeVector2(0, (((Size * 0.7f) * S) + 4))), (Gd.At(E, 5) * 2.2f), (Gd.At(E, 3) / Gd.At(E, 4)), NEON_RED);

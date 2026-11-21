@@ -24,6 +24,56 @@
 		42,
 		0
 	],
+	"lm_bed_dmg1_0": [
+		42,
+		42,
+		0
+	],
+	"lm_bed_dmg1_1": [
+		42,
+		42,
+		0
+	],
+	"lm_bed_dmg2_0": [
+		42,
+		42,
+		0
+	],
+	"lm_bed_dmg2_1": [
+		42,
+		42,
+		0
+	],
+	"lm_bed_dmg3_0": [
+		42,
+		42,
+		0
+	],
+	"lm_bed_dmg3_1": [
+		42,
+		42,
+		0
+	],
+	"lm_bed_dmg4_0": [
+		42,
+		42,
+		0
+	],
+	"lm_bed_dmg4_1": [
+		42,
+		42,
+		0
+	],
+	"lm_bed_empty_0": [
+		42,
+		42,
+		0
+	],
+	"lm_bed_empty_1": [
+		42,
+		42,
+		0
+	],
 	"lm_bluff_0": [
 		120,
 		150,
@@ -44,6 +94,56 @@
 		35,
 		0
 	],
+	"lm_broadleaf_dmg1_0": [
+		19,
+		35,
+		0
+	],
+	"lm_broadleaf_dmg1_1": [
+		19,
+		35,
+		0
+	],
+	"lm_broadleaf_dmg2_0": [
+		19,
+		35,
+		0
+	],
+	"lm_broadleaf_dmg2_1": [
+		19,
+		35,
+		0
+	],
+	"lm_broadleaf_dmg3_0": [
+		19,
+		35,
+		0
+	],
+	"lm_broadleaf_dmg3_1": [
+		19,
+		35,
+		0
+	],
+	"lm_broadleaf_dmg4_0": [
+		19,
+		35,
+		0
+	],
+	"lm_broadleaf_dmg4_1": [
+		19,
+		35,
+		0
+	],
+	"lm_broadleaf_empty_0": [
+		19,
+		35,
+		0
+	],
+	"lm_broadleaf_empty_1": [
+		19,
+		35,
+		0
+	],
 	"lm_buoys_0": [
 		34,
 		57,
@@ -58,6 +158,31 @@
 		22,
 		55,
 		7
+	],
+	"lm_cairn_dmg1_0": [
+		22,
+		55,
+		7
+	],
+	"lm_cairn_dmg2_0": [
+		22,
+		55,
+		7
+	],
+	"lm_cairn_dmg3_0": [
+		22,
+		55,
+		7
+	],
+	"lm_cairn_dmg4_0": [
+		22,
+		55,
+		7
+	],
+	"lm_cairn_empty_0": [
+		22,
+		55,
+		0
 	],
 	"lm_can_0": [
 		12,
@@ -119,6 +244,31 @@
 		36,
 		0
 	],
+	"lm_fern_dmg1_0": [
+		28,
+		36,
+		0
+	],
+	"lm_fern_dmg2_0": [
+		28,
+		36,
+		0
+	],
+	"lm_fern_dmg3_0": [
+		28,
+		36,
+		0
+	],
+	"lm_fern_dmg4_0": [
+		28,
+		36,
+		0
+	],
+	"lm_fern_empty_0": [
+		28,
+		36,
+		0
+	],
 	"lm_flowers_0": [
 		27,
 		27,
@@ -134,7 +284,107 @@
 		27,
 		0
 	],
+	"lm_flowers_dmg1_0": [
+		27,
+		27,
+		0
+	],
+	"lm_flowers_dmg1_1": [
+		27,
+		27,
+		0
+	],
+	"lm_flowers_dmg1_2": [
+		27,
+		27,
+		0
+	],
+	"lm_flowers_dmg2_0": [
+		27,
+		27,
+		0
+	],
+	"lm_flowers_dmg2_1": [
+		27,
+		27,
+		0
+	],
+	"lm_flowers_dmg2_2": [
+		27,
+		27,
+		0
+	],
+	"lm_flowers_dmg3_0": [
+		27,
+		27,
+		0
+	],
+	"lm_flowers_dmg3_1": [
+		27,
+		27,
+		0
+	],
+	"lm_flowers_dmg3_2": [
+		27,
+		27,
+		0
+	],
+	"lm_flowers_dmg4_0": [
+		27,
+		27,
+		0
+	],
+	"lm_flowers_dmg4_1": [
+		27,
+		27,
+		0
+	],
+	"lm_flowers_dmg4_2": [
+		27,
+		27,
+		0
+	],
+	"lm_flowers_empty_0": [
+		27,
+		27,
+		0
+	],
+	"lm_flowers_empty_1": [
+		27,
+		27,
+		0
+	],
+	"lm_flowers_empty_2": [
+		27,
+		27,
+		0
+	],
 	"lm_fossil_0": [
+		47,
+		41,
+		0
+	],
+	"lm_fossil_dmg1_0": [
+		47,
+		41,
+		0
+	],
+	"lm_fossil_dmg2_0": [
+		47,
+		41,
+		0
+	],
+	"lm_fossil_dmg3_0": [
+		47,
+		41,
+		0
+	],
+	"lm_fossil_dmg4_0": [
+		47,
+		41,
+		0
+	],
+	"lm_fossil_empty_0": [
 		47,
 		41,
 		0
@@ -154,6 +404,31 @@
 		36,
 		0
 	],
+	"lm_ginger_dmg1_0": [
+		15,
+		36,
+		0
+	],
+	"lm_ginger_dmg2_0": [
+		15,
+		36,
+		0
+	],
+	"lm_ginger_dmg3_0": [
+		15,
+		36,
+		0
+	],
+	"lm_ginger_dmg4_0": [
+		15,
+		36,
+		0
+	],
+	"lm_ginger_empty_0": [
+		15,
+		36,
+		0
+	],
 	"lm_jeep_0": [
 		48,
 		57,
@@ -165,6 +440,31 @@
 		0
 	],
 	"lm_log_0": [
+		42,
+		22,
+		0
+	],
+	"lm_log_dmg1_0": [
+		42,
+		22,
+		0
+	],
+	"lm_log_dmg2_0": [
+		42,
+		22,
+		0
+	],
+	"lm_log_dmg3_0": [
+		42,
+		22,
+		0
+	],
+	"lm_log_dmg4_0": [
+		42,
+		22,
+		0
+	],
+	"lm_log_empty_0": [
 		42,
 		22,
 		0
@@ -188,6 +488,81 @@
 		36,
 		75,
 		7
+	],
+	"lm_mangrove_dmg1_0": [
+		36,
+		75,
+		7
+	],
+	"lm_mangrove_dmg1_1": [
+		36,
+		75,
+		7
+	],
+	"lm_mangrove_dmg1_2": [
+		36,
+		75,
+		7
+	],
+	"lm_mangrove_dmg2_0": [
+		36,
+		75,
+		7
+	],
+	"lm_mangrove_dmg2_1": [
+		36,
+		75,
+		7
+	],
+	"lm_mangrove_dmg2_2": [
+		36,
+		75,
+		7
+	],
+	"lm_mangrove_dmg3_0": [
+		36,
+		75,
+		7
+	],
+	"lm_mangrove_dmg3_1": [
+		36,
+		75,
+		7
+	],
+	"lm_mangrove_dmg3_2": [
+		36,
+		75,
+		7
+	],
+	"lm_mangrove_dmg4_0": [
+		36,
+		75,
+		7
+	],
+	"lm_mangrove_dmg4_1": [
+		36,
+		75,
+		7
+	],
+	"lm_mangrove_dmg4_2": [
+		36,
+		75,
+		7
+	],
+	"lm_mangrove_empty_0": [
+		36,
+		75,
+		0
+	],
+	"lm_mangrove_empty_1": [
+		36,
+		75,
+		0
+	],
+	"lm_mangrove_empty_2": [
+		36,
+		75,
+		0
 	],
 	"lm_mast_0": [
 		20,
@@ -219,6 +594,106 @@
 		84,
 		6
 	],
+	"lm_palm_dmg1_0": [
+		38,
+		84,
+		6
+	],
+	"lm_palm_dmg1_1": [
+		38,
+		92,
+		6
+	],
+	"lm_palm_dmg1_2": [
+		38,
+		100,
+		6
+	],
+	"lm_palm_dmg1_3": [
+		38,
+		84,
+		6
+	],
+	"lm_palm_dmg2_0": [
+		38,
+		84,
+		6
+	],
+	"lm_palm_dmg2_1": [
+		38,
+		92,
+		6
+	],
+	"lm_palm_dmg2_2": [
+		38,
+		100,
+		6
+	],
+	"lm_palm_dmg2_3": [
+		38,
+		84,
+		6
+	],
+	"lm_palm_dmg3_0": [
+		38,
+		84,
+		6
+	],
+	"lm_palm_dmg3_1": [
+		38,
+		92,
+		6
+	],
+	"lm_palm_dmg3_2": [
+		38,
+		100,
+		6
+	],
+	"lm_palm_dmg3_3": [
+		38,
+		84,
+		6
+	],
+	"lm_palm_dmg4_0": [
+		38,
+		84,
+		6
+	],
+	"lm_palm_dmg4_1": [
+		38,
+		92,
+		6
+	],
+	"lm_palm_dmg4_2": [
+		38,
+		100,
+		6
+	],
+	"lm_palm_dmg4_3": [
+		38,
+		84,
+		6
+	],
+	"lm_palm_empty_0": [
+		38,
+		84,
+		0
+	],
+	"lm_palm_empty_1": [
+		38,
+		92,
+		0
+	],
+	"lm_palm_empty_2": [
+		38,
+		100,
+		0
+	],
+	"lm_palm_empty_3": [
+		38,
+		84,
+		0
+	],
 	"lm_pier_0": [
 		296,
 		40,
@@ -230,6 +705,31 @@
 		0
 	],
 	"lm_pots_0": [
+		30,
+		32,
+		0
+	],
+	"lm_pots_dmg1_0": [
+		30,
+		32,
+		0
+	],
+	"lm_pots_dmg2_0": [
+		30,
+		32,
+		0
+	],
+	"lm_pots_dmg3_0": [
+		30,
+		32,
+		0
+	],
+	"lm_pots_dmg4_0": [
+		30,
+		32,
+		0
+	],
+	"lm_pots_empty_0": [
 		30,
 		32,
 		0
@@ -299,6 +799,81 @@
 		44,
 		24
 	],
+	"lm_shelf_dmg1_0": [
+		52,
+		44,
+		18
+	],
+	"lm_shelf_dmg1_1": [
+		60,
+		44,
+		21
+	],
+	"lm_shelf_dmg1_2": [
+		68,
+		44,
+		24
+	],
+	"lm_shelf_dmg2_0": [
+		52,
+		44,
+		18
+	],
+	"lm_shelf_dmg2_1": [
+		60,
+		44,
+		21
+	],
+	"lm_shelf_dmg2_2": [
+		68,
+		44,
+		24
+	],
+	"lm_shelf_dmg3_0": [
+		52,
+		44,
+		18
+	],
+	"lm_shelf_dmg3_1": [
+		60,
+		44,
+		21
+	],
+	"lm_shelf_dmg3_2": [
+		68,
+		44,
+		24
+	],
+	"lm_shelf_dmg4_0": [
+		52,
+		44,
+		18
+	],
+	"lm_shelf_dmg4_1": [
+		60,
+		44,
+		21
+	],
+	"lm_shelf_dmg4_2": [
+		68,
+		44,
+		24
+	],
+	"lm_shelf_empty_0": [
+		52,
+		44,
+		0
+	],
+	"lm_shelf_empty_1": [
+		60,
+		44,
+		0
+	],
+	"lm_shelf_empty_2": [
+		68,
+		44,
+		0
+	],
 	"lm_ship_0": [
 		235,
 		206,
@@ -320,6 +895,31 @@
 		0
 	],
 	"lm_sticks_0": [
+		18,
+		12,
+		0
+	],
+	"lm_sticks_dmg1_0": [
+		18,
+		12,
+		0
+	],
+	"lm_sticks_dmg2_0": [
+		18,
+		12,
+		0
+	],
+	"lm_sticks_dmg3_0": [
+		18,
+		12,
+		0
+	],
+	"lm_sticks_dmg4_0": [
+		18,
+		12,
+		0
+	],
+	"lm_sticks_empty_0": [
 		18,
 		12,
 		0

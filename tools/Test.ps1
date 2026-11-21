@@ -28,7 +28,11 @@ try {
 
     Invoke-Suite 'tests/GeometryCheck.tscn' 'GEOMETRY ALL OK' 'geometry.log'
     Invoke-Suite 'tests/LandmarkGroundCheck.tscn' 'LANDMARK GROUND ALL OK' 'landmark-ground.log'
+    Invoke-Suite 'tests/HarvestCheck.tscn' 'HARVEST ALL OK' 'harvest.log'
+    Invoke-Suite 'tests/HarvestAnimCheck.tscn' 'HARVEST ANIM ALL OK' 'harvest-anim.log'
     Invoke-Suite 'tests/SimCheck.tscn' 'ALL OK' 'simulation.log'
+    Invoke-Suite 'tests/NightSpawnCheck.tscn' 'NIGHT SPAWN ALL OK' 'night-spawn.log'
+    Invoke-Suite 'tests/TacticalCraftCheck.tscn' 'TACTICAL CRAFT ALL OK' 'tactical-craft.log'
 
     # Multiplayer is removed for now; the network suite lives in git commit cf44b5f (tests/NetworkCheck.cs).
     Write-Output 'All C# checks passed.'

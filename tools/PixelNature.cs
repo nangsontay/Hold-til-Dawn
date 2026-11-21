@@ -3,7 +3,7 @@ using System;
 using System.Collections.Generic;
 using FileAccess = Godot.FileAccess;
 
-// Nature pixel art for the island (GDD 4.3 / 6.1): pines and dead trees for the outer forest, rock outcrops,
+// Nature pixel art for the island (GDD 4.3 / 6.1): harvestable living pines for the outer forest, rock outcrops,
 // shrubs, grass tufts and pebbles, the four resource nodes and what is left of them once gathered, and the
 // tileable ground texture. Same rules as tools/PixelChars.cs and tools/PixelProps.cs: 1 px = 1 game px
 // (32 px tile), muted GDD palette, light from the upper left, a dark outline, a soft shadow to the lower right.
@@ -58,13 +58,10 @@ public partial class PixelNature : Node
             return;
         }
 
-        // outer forest (GDD 4.3: only pines and dead trees on the cold island)
+        // Living, harvestable forest. Dead trees are no longer placed or indexed.
         int[][] Pines = { new[] { 36, 56 }, new[] { 40, 62 }, new[] { 44, 68 }, new[] { 38, 60 }, new[] { 42, 66 }, new[] { 34, 52 } };
         for (int I = 0; I < Pines.Length; I++)
             Save("pine", I, Pine(101 + I, Pines[I][0], Pines[I][1], PINE, false), 7);
-        int[][] Deads = { new[] { 40, 56 }, new[] { 44, 62 }, new[] { 36, 50 }, new[] { 42, 60 } };
-        for (int I = 0; I < Deads.Length; I++)
-            Save("dead", I, DeadTree(201 + I, Deads[I][0], Deads[I][1]), 6);
         for (int I = 0; I < 5; I++)
         {
             var (Rock, R) = Outcrop(301 + I, I);
@@ -92,26 +89,26 @@ public partial class PixelNature : Node
             var Tree = Pine(701 + I, 32 + 2 * I, 50 + 3 * I, FIR, true);
             Save("node_wood", I, Tree, 8);
             // needles knocked off the crown, never the trunk
-            SaveStages("node_wood", I, Tree, 8, 1.0f, Tree.Anchor.Y - 14, WOOD_CHIPS);
+            SaveStages("node_wood", I, Tree, 8);
         }
         for (int I = 0; I < 2; I++)
         {
             var Stone = StoneNode(801 + I);
             Save("node_stone", I, Stone, 20);
-            SaveStages("node_stone", I, Stone, 20, 0.6f, 999, STONE);
+            SaveStages("node_stone", I, Stone, 20);
         }
         for (int I = 0; I < 2; I++)
         {
             var Herb = HerbNode(901 + I);
             Save("node_herb", I, Herb, 0);
-            SaveStages("node_herb", I, Herb, 0, 1.0f, Herb.Anchor.Y - 3, HERB);
+            SaveStages("node_herb", I, Herb, 0);
         }
         for (int I = 0; I < 2; I++)
         {
             var (Ore, Glow) = TitaniumOre(1001 + I);
             Save("node_titanium", I, Ore, 19);
             Save("node_titanium_glow", I, Glow, 0);
-            SaveStages("node_titanium", I, Ore, 19, 0.6f, 999, TI, Glow);
+            SaveStages("node_titanium", I, Ore, 19, Glow);
         }
         // what is left of a gathered node until dawn
         Save("stump", 0, Stump(1101), 0);
@@ -127,130 +124,20 @@ public partial class PixelNature : Node
         GetTree().Quit();
     }
 
-    // A node being gathered breaks bit by bit. Each stage goes on from the last: pieces knocked out of the top
-    // (Top: how far down the body, 0..1, bites may start; never below MaxY), the broken faces catching the light,
-    // a crack running in from the edge and chips lying on the ground. Stage 4 is all but gone.
-    void SaveStages(string Name, int Variant, Canvas Full, int Radius, float Top, int MaxY, Color[] ChipPal, Canvas Glow = null)
+    // Material-specific stages keep the source silhouette coherent: a deeper axe cut, fractured stone or cut
+    // stems. Each is drawn from the full source rather than progressively deleting disconnected pixel islands.
+    void SaveStages(string Name, int Variant, Canvas Full, int Radius, Canvas Glow = null)
     {
-        var R = new Random(Name.Length * 1000 + Variant * 37 + 11);
-        var Work = Full.Clone();
-        Work.Unoutline();
         for (int Stage = 1; Stage <= 4; Stage++)
         {
-            Break(Work, R, Stage, Top, MaxY, ChipPal);
-            var Out = Work.Clone();
-            Out.Outline(Full.Ink);
+            var Out = HarvestStage(Name, Variant, Full, Stage);
             Save(Name + "_dmg" + Stage, Variant, Out, Radius);
             if (Glow != null)
             {
                 var G = Glow.Clone();
-                G.KeepWhere(Work);
+                G.KeepWhere(Out);
                 Save(Name + "_glow_dmg" + Stage, Variant, G, 0);
             }
-        }
-    }
-
-    static void Break(Canvas C, Random R, int Stage, float Top, int MaxY, Color[] ChipPal)
-    {
-        int Y0 = C.H, Y1 = -1, X0 = C.W, X1 = -1;
-        float Sx = 0, Sy = 0;
-        int Count = 0;
-        for (int Y = 0; Y < C.H; Y++)
-            for (int X = 0; X < C.W; X++)
-                if (C.Solid(X, Y))
-                {
-                    Y0 = Math.Min(Y0, Y); Y1 = Math.Max(Y1, Y); X0 = Math.Min(X0, X); X1 = Math.Max(X1, X);
-                    Sx += X; Sy += Y; Count++;
-                }
-        if (Count == 0) return;
-        var Mid = new Vector2(Sx / Count, Sy / Count);
-        float Size = Math.Clamp(Math.Max(X1 - X0, Y1 - Y0) / 30f, 0.7f, 1.6f);
-        bool Edge(int X, int Y) => C.Solid(X, Y) && (!C.Solid(X - 1, Y) || !C.Solid(X + 1, Y) || !C.Solid(X, Y - 1) || !C.Solid(X, Y + 1));
-        List<Vector2I> Edges(float Down)
-        {
-            var L = new List<Vector2I>();
-            int Lim = Math.Min(MaxY, (int)(Y0 + Down * (Y1 - Y0)));
-            for (int Y = Y0; Y <= Lim; Y++)
-                for (int X = X0; X <= X1; X++)
-                    if (Edge(X, Y)) L.Add(new Vector2I(X, Y));
-            return L;
-        }
-        // pieces knocked out
-        int Bites = Stage >= 3 ? 2 : 1;
-        for (int B = 0; B < Bites; B++)
-        {
-            var L = Edges(Top);
-            if (L.Count == 0) break;
-            var E = L[R.Next(L.Count)];
-            float Rad = (2.0f + Stage * 0.8f + (float)R.NextDouble() * 1.5f) * Size;
-            int Rr = (int)Rad + 2;
-            var Gone = new List<Vector2I>();
-            for (int Y = E.Y - Rr; Y <= E.Y + Rr; Y++)
-                for (int X = E.X - Rr; X <= E.X + Rr; X++)
-                {
-                    if (!C.Solid(X, Y) || Y > MaxY) continue;
-                    float D = new Vector2(X - E.X, Y - E.Y).Length();
-                    if (D <= Rad * (0.75f + 0.5f * Hash(X, Y, Stage * 13 + B))) Gone.Add(new Vector2I(X, Y));
-                }
-            foreach (var P in Gone) C.Clear(P.X, P.Y);
-            // a piece cut off from the foot falls away
-            var Keep = new bool[C.W * C.H];
-            var Todo = new Stack<Vector2I>();
-            for (int Y = Math.Max(0, Math.Min(Y1 - 2, C.Anchor.Y)); Y < C.H; Y++)
-                for (int X = 0; X < C.W; X++)
-                    if (C.Solid(X, Y)) Todo.Push(new Vector2I(X, Y));
-            while (Todo.Count > 0)
-            {
-                var P = Todo.Pop();
-                if (!C.Solid(P.X, P.Y) || Keep[P.Y * C.W + P.X]) continue;
-                Keep[P.Y * C.W + P.X] = true;
-                Todo.Push(new Vector2I(P.X + 1, P.Y)); Todo.Push(new Vector2I(P.X - 1, P.Y));
-                Todo.Push(new Vector2I(P.X, P.Y + 1)); Todo.Push(new Vector2I(P.X, P.Y - 1));
-            }
-            for (int Y = 0; Y < C.H; Y++)
-                for (int X = 0; X < C.W; X++)
-                    if (C.Solid(X, Y) && !Keep[Y * C.W + X]) C.Clear(X, Y);
-            // the fresh break catches the light
-            for (int Y = E.Y - Rr - 1; Y <= E.Y + Rr + 1; Y++)
-                for (int X = E.X - Rr - 1; X <= E.X + Rr + 1; X++)
-                    if (Edge(X, Y) && new Vector2(X - E.X, Y - E.Y).Length() <= Rad + 1.5f)
-                        C.Set(X, Y, C.At(X, Y).Lightened(0.22f));
-        }
-        // a crack running in from the edge toward the middle
-        {
-            var L = Edges(0.8f);
-            if (L.Count > 0)
-            {
-                var S = L[R.Next(L.Count)];
-                var P = new Vector2(S.X + 0.5f, S.Y + 0.5f);
-                var Dir = (Mid - P).Normalized();
-                int Len = (int)((4 + Stage * 2) * Size);
-                for (int I = 0; I < Len; I++)
-                {
-                    int X = (int)P.X, Y = (int)P.Y;
-                    if (!C.Solid(X, Y))
-                    {
-                        if (I > 0) break;
-                    }
-                    else
-                    {
-                        C.Set(X, Y, C.At(X, Y).Darkened(0.5f));
-                        if (C.Solid(X - 1, Y)) C.Set(X - 1, Y, C.At(X - 1, Y).Lightened(0.08f));
-                    }
-                    Dir = Dir.Rotated(((float)R.NextDouble() - 0.5f) * 0.9f);
-                    P += Dir;
-                }
-            }
-        }
-        // chips on the ground
-        for (int K = 0; K < 2; K++)
-        {
-            int Side = (R.Next(2) == 0) ? -1 : 1;
-            int X = C.Anchor.X + Side * (int)((X1 - X0) * 0.25f + 2 + R.Next(5));
-            int Y = Math.Min(C.H - 2, C.Anchor.Y + R.Next(4));
-            if (X < 1 || X >= C.W - 2 || C.Solid(X, Y)) continue;
-            C.Put(X, Y, ChipPal[1 + R.Next(ChipPal.Length - 1)]);
-            if (R.Next(2) == 0 && !C.Solid(X + 1, Y)) C.Put(X + 1, Y, ChipPal[Math.Max(0, ChipPal.Length - 2)]);
         }
     }
 
@@ -259,6 +146,8 @@ public partial class PixelNature : Node
         string N = Name + "_" + Variant;
         C.ToImage().SavePng(Out.PathJoin(N + ".png"));
         Index[N] = new Godot.Collections.Array { C.Anchor.X, C.Anchor.Y, Radius };
+        if (Harvestables.TypeOf(N) >= 0 && !Name.Contains("_dmg") && !Name.Contains("_empty"))
+            SaveHarvestVariants(Name, Variant, C, Radius, Out, Index);
         GD.Print("drew ", N, " (", C.W, ", ", C.H, ")");
     }
 
@@ -1103,6 +992,14 @@ public partial class PixelNature : Node
             Array.Copy(Kind, C.Kind, Kind.Length);
             Array.Copy(Tags, C.Tags, Tags.Length);
             return C;
+        }
+
+        public void Paste(Canvas Source, Vector2I Offset)
+        {
+            for (int Y = 0; Y < Source.H; Y++)
+                for (int X = 0; X < Source.W; X++)
+                    if (Source.Kind[Y * Source.W + X] != 0)
+                        Put(X + Offset.X, Y + Offset.Y, Source.Px[Y * Source.W + X], Source.Kind[Y * Source.W + X]);
         }
 
         public void Unoutline()

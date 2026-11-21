@@ -337,28 +337,64 @@ public partial class Main : Node2D
         {
             Spots.Add(new Vector2(Sx, North));
         }
-        foreach (Vector2 P in Spots)
+        // All eight glows are one light: they never move, so their pools of light are drawn into one texture once.
+        // On the GPU every 2D light is worked out for every pixel of the world (it is one big canvas item), so
+        // eight small lamps cost more at night than the beacon and your own light together.
+        float Rad = 2.2f * (float)T;
+        var Box = new Rect2(Spots[0], Vector2.Zero);
+        foreach (Vector2 P in Spots) Box = Box.Expand(P);
+        Box = Box.Grow(Rad + 2.0f);
+        int W = Mathf.CeilToInt(Box.Size.X), H = Mathf.CeilToInt(Box.Size.Y);
+        // each pool as the lamp texture drew it (Main.BuildScene: full out to 70% of the radius, then fading)
+        var Sum = new float[W * H];
+        float Most = 0.0f;
+        for (int Y = 0; Y < H; Y++)
         {
-            var L = new PointLight2D();
-            L.Texture = (Texture2D)Gd.Unwrap(Tex);
-            L.Color = LAMP_LIGHT;
-            L.Energy = 0.9f;
-            L.TextureScale = ((2.2f * (float)T * 2.0f) / 256.0f);
-            L.Position = P;
-            L.Enabled = false;
-            L.TextureFilter = CanvasItem.TextureFilterEnum.Linear;
-            L.TextureRepeat = CanvasItem.TextureRepeatEnum.Disabled;
-            AddChild(L);
-            BaseLamps.Add(L);
+            for (int X = 0; X < W; X++)
+            {
+                Vector2 At = Box.Position + new Vector2(X + 0.5f, Y + 0.5f);
+                float S = 0.0f;
+                foreach (Vector2 P in Spots)
+                {
+                    float D = At.DistanceTo(P) / Rad;
+                    S += (D <= 0.7f) ? 1.0f : Mathf.Max(0.0f, 1.0f - ((D - 0.7f) / 0.3f));
+                }
+                Sum[Y * W + X] = S;
+                Most = Mathf.Max(Most, S);
+            }
         }
+        // where pools overlap they add up past 1: the texture holds the sum over this, the energy puts it back
+        BaseLampGain = Mathf.Max(1.0f, Most);
+        var Bytes = new byte[W * H * 4];
+        for (int I = 0; I < Sum.Length; I++)
+        {
+            byte V = (byte)Mathf.RoundToInt(Mathf.Clamp(Sum[I] / BaseLampGain, 0.0f, 1.0f) * 255.0f);
+            Bytes[I * 4] = V;
+            Bytes[I * 4 + 1] = V;
+            Bytes[I * 4 + 2] = V;
+            Bytes[I * 4 + 3] = 255;
+        }
+        var L = new PointLight2D();
+        L.Texture = ImageTexture.CreateFromImage(Image.CreateFromData(W, H, false, Image.Format.Rgba8, Bytes));
+        L.Color = LAMP_LIGHT;
+        L.Energy = 0.9f;
+        L.TextureScale = 1.0f;
+        L.Position = Box.Position + new Vector2(W, H) / 2;
+        L.Enabled = false;
+        L.TextureFilter = CanvasItem.TextureFilterEnum.Linear;
+        L.TextureRepeat = CanvasItem.TextureRepeatEnum.Disabled;
+        AddChild(L);
+        BaseLamps.Add(L);
     }
+
+    float BaseLampGain = 1.0f;
 
     public void TickBaseLamps(float Night)
     {
         foreach (PointLight2D Pl in BaseLamps)
         {
             Pl.Enabled = (Night > 0.05f);
-            Pl.Energy = (0.75f * Night);
+            Pl.Energy = (0.75f * Night * BaseLampGain);
         }
     }
 }

@@ -154,6 +154,8 @@ public partial class GameSim : RefCounted
     {
         P.Hp = Gd.At(ROLE_HP, P.Role);
         P.Maxhp = P.Hp;
+        P.HasteUntil = 0f; P.ItemCd = 0f; P.RepairKitT = 0f;
+        P.AreaHealAt = 0f; P.TacticalThinkAt = 0f; P.NextTrapAt = 0f;
         // 0 standing, 1 downed, 2 dead
         P.State = 0;
         P.Bleed = 0.0f;
@@ -167,6 +169,7 @@ public partial class GameSim : RefCounted
         P.AtkCd = 0.0f;
         P.Swing = 0.0f;
         P.Channel = 0.0f;
+        P.RepairKitT = 0f;
         P.ReviveP = 0.0f;
         P.GatherAcc = 0.0f;
         P.RepairAcc = 0.0f;
@@ -205,7 +208,7 @@ public partial class GameSim : RefCounted
         foreach (dynamic P in Gd.Iter(Gd.Values(Players)))
         {
             P.Activity = "idle";
-            P.MoveCredit = Gd.Minf(((SPEED * ((P.Role == 0) ? (dynamic)(1.2f) : 1.0f)) * 0.2f), (P.MoveCredit + ((SPEED * ((P.Role == 0) ? (dynamic)(1.2f) : 1.0f)) * Dt)));
+            P.MoveCredit = Gd.Minf((PlayerSpeed(P) * 0.2f), (P.MoveCredit + (PlayerSpeed(P) * Dt)));
             P.Invuln -= Dt;
             P.AtkCd -= Dt;
             P.Swing -= Dt;
@@ -242,6 +245,7 @@ public partial class GameSim : RefCounted
                     }
                 }
             }
+            if (TickFieldRepair(P, Gd.Float(Dt))) continue;
             this.TickEntry(P, Dt);
             this.TickCraft(P, Dt);
             if (Gd.Truth(P.Inside))
@@ -311,7 +315,13 @@ public partial class GameSim : RefCounted
     // MEC-02 / MEC-03: a melee swing hits every enemy in the 90-degree arc once; a bow fires one arrow.
     public void Attack(dynamic P)
     {
+        string Selected = SelectedItem(P);
+        if (IsTacticalUse(Selected))
+        {
+            return;
+        }
         string W = P.Weapon;
+        if (W == "long_spear") { AttackLongSpear(P); return; }
         dynamic St = WEAPON_STATS[W];
         if ((Gd.Truth(Gd.At(St, 4)) && !this.Take(P, "arrow", 1)))
         {
@@ -335,6 +345,11 @@ public partial class GameSim : RefCounted
             if (((Gd.Length(D) <= (Reach + E.R)) && ((Gd.Length(D) < (0.5f * T)) || (Dir.Dot(D.Normalized()) >= Gd.Cos((Mathf.Pi / 4)))) && Gd.Truth(this.LineClear(P.Pos, E.Pos))))
             {
                 this.Hit(E, Gd.At(St, 0), P);
+                if (W == "stun_maul")
+                {
+                    if (E.Type == BOSS) E.SlowUntil = Gd.Float(Clock) + 1f;
+                    else E.StunUntil = Gd.Float(Clock) + 0.8f;
+                }
             }
         }
         Enemies = Gd.Filter(Enemies, (Func<dynamic, dynamic>)((E) => (E.Hp > 0)));
@@ -365,11 +380,13 @@ public partial class GameSim : RefCounted
             }
             A.Left -= Step;
             A.Pos = ((First < float.PositiveInfinity) ? (dynamic)(Start.Lerp(End, First)) : End);
+            if (First == float.PositiveInfinity && A.Left <= 0 && Gd.Truth(Gd.Get(A, "explosive", false))) ExplodeArrow(A);
             if ((First < float.PositiveInfinity))
             {
                 A.Left = 0.0f;
                 dynamic Owner = Gd.Get(Players, A.Owner);
-                if (((Victim != null) && (Owner != null)))
+                if (Gd.Truth(Gd.Get(A, "explosive", false))) ExplodeArrow(A);
+                else if (((Victim != null) && (Owner != null)))
                 {
                     this.Hit(Victim, A.Dmg, Owner);
                 }
@@ -412,7 +429,7 @@ public partial class GameSim : RefCounted
 
     public void Hit(dynamic E, dynamic Dmg, dynamic P)
     {
-        if (!this.Hittable(E))
+        if (E.Hp <= 0 || !this.Hittable(E))
         {
             return;
         }
@@ -547,7 +564,7 @@ public partial class GameSim : RefCounted
                 {
                     P.GatherPos = P.Pos;
                 }
-                P.GatherAcc += (0.35f * Dt);
+                P.GatherAcc += (0.35f * Dt * (Count(P, "gathering_kit") > 0 ? 1.25f : 1f));
                 if ((P.GatherAcc >= 1.0f))
                 {
                     P.GatherAcc = 0.0f;
@@ -575,6 +592,7 @@ public partial class GameSim : RefCounted
         P.Taken += Taken;
         P.Invuln = 1.0f;
         P.Channel = 0.0f;
+        P.RepairKitT = 0f;
         P.ReviveP = 0.0f;
         P.GatherAcc = 0.0f;
         P.CraftIdx = (-1);

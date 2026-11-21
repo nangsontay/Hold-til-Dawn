@@ -26,6 +26,15 @@ public partial class GameSim : RefCounted
         { "bandage", new GArray("Bandage", STACK, "use") },
         { "arrow", new GArray("Arrow", STACK, "ammo") },
 
+        { "long_spear", new GArray("Long spear", 1, "weapon") },
+        { "stun_maul", new GArray("Stun maul", 1, "weapon") },
+        { "vine_trap", new GArray("Vine trap", 5, "use") },
+        { "poison_flask", new GArray("Poison flask", 5, "use") },
+        { "healing_flask", new GArray("Healing flask", 5, "use") },
+        { "haste_tonic", new GArray("Haste tonic", 5, "use") },
+        { "gathering_kit", new GArray("Gathering kit", 1, "tool") },
+        { "explosive_arrow", new GArray("Explosive arrow", 12, "ammo") },
+        { "repair_kit", new GArray("Field repair kit", 3, "use") },
         { "stone_spear", new GArray("Stone spear", 1, "weapon") },
         { "titanium_blade", new GArray("Titanium blade", 1, "weapon") },
         { "starter_bow", new GArray("Starter bow", 1, "weapon") },
@@ -39,6 +48,8 @@ public partial class GameSim : RefCounted
     // id -> [damage, attacks per second, reach or range in tiles, ranged, uses arrows] (BAL-08..10, BAL-42)
     public static readonly GDict WEAPON_STATS = new GDict {
         // bare hands (no item): the GDD's basic weapon numbers (BAL-08), so the balance of FML-03 is unchanged
+        { "long_spear", new GArray(22f, 1f, 2.6f, false, false) },
+        { "stun_maul", new GArray(30f, 0.65f, 1.5f, false, false) },
         { "fists", new GArray(15.0f, 1.5f, 1.5f, false, false) },
         { "stone_spear", new GArray(20.0f, 1.5f, 1.5f, false, false) },
         { "titanium_blade", new GArray(26.0f, 1.5f, 1.5f, false, false) },

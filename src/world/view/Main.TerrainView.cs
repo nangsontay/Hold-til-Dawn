@@ -21,6 +21,42 @@ public partial class Main : Node2D
     // the coast pushed out a little, for the surf
     Vector2[] Surf;
 
+    // The island's polygons never change: each is cut into triangles once (with its ground-texture UVs) and handed
+    // to the renderer as it is every frame, instead of draw_colored_polygon cutting up the coast's thousand points
+    // again each frame. Only for arrays that live as long as the map (a new array each frame would pile up here).
+    sealed class Fill
+    {
+        public int[] Idx;
+        public Vector2[] Uv;
+    }
+    readonly Dictionary<Vector2[], Fill> Fills = new();
+    Rid GroundRid;
+
+    void FillStatic(Vector2[] Pts, Color Col, bool Textured = true)
+    {
+        if (!Fills.TryGetValue(Pts, out var F))
+        {
+            F = new Fill { Idx = Geometry2D.TriangulatePolygon(Pts), Uv = Array.ConvertAll(Pts, P => P / 256.0f) };
+            Fills[Pts] = F;
+        }
+        if (F.Idx.Length == 0)
+        {
+            // not a simple polygon: leave it to Godot as before
+            if (Textured) this.Ground(Pts, Col);
+            else DrawColoredPolygon(Pts, Col);
+            return;
+        }
+        if (Textured && !GroundRid.IsValid) GroundRid = ((Texture2D)Gd.Unwrap(GroundTex)).GetRid();
+        RenderingServer.CanvasItemAddTriangleArray(GetCanvasItem(), F.Idx, Pts, new[] { Col }, Textured ? F.Uv : null, null, null, Textured ? GroundRid : default);
+    }
+
+    // a trail's box and its two wheel ruts, worked out once
+    readonly Dictionary<Vector2[], (Rect2 Box, Vector2[] Lit, Vector2[] Edge)> TrailLook = new();
+    readonly List<(Vector2[] Path, float Width, Vector2[] Lit, Vector2[] Edge)> Seen = new();
+    Vector2[] SafeRing;
+    readonly Dictionary<Vector2[], (Vector2[] Ring, Vector2[] Low)> HillRing = new();
+    readonly Dictionary<Vector2[], (Vector2[] Bank, Vector2[] Deep, Vector2[] Rim)> PondLook = new();
+
     Rect2 Bounds(IEnumerable<Vector2> Pts, float Grow)
     {
         var R = new Rect2(Vector2.Inf, Vector2.Zero);
@@ -48,7 +84,7 @@ public partial class Main : Node2D
         float Clk = (float)Clock;
         DrawRect(View.Grow(4 * Tl), SEA);
         for (int I = IslandMap.Shallows.Count - 1; I >= 0; I--)
-            DrawColoredPolygon(IslandMap.Shallows[I], SHALLOW[Math.Min(SHALLOW.Length - 1, IslandMap.Shallows.Count - 1 - I)]);
+            FillStatic(IslandMap.Shallows[I], SHALLOW[Math.Min(SHALLOW.Length - 1, IslandMap.Shallows.Count - 1 - I)], false);
         // surf rolling in and out over the wet sand
         if (Surf == null)
         {
@@ -62,7 +98,7 @@ public partial class Main : Node2D
                 Surf[I] = C[I] + N * 0.35f * Tl;
             }
         }
-        this.Ground(IslandMap.Coast, SAND);
+        FillStatic(IslandMap.Coast, SAND);
         DrawPolyline(Closed(IslandMap.Coast), WET_SAND, 10);
         float Wave = 0.5f + 0.5f * MathF.Sin(Clk * 0.9f);
         var Foam = FOAM;
@@ -72,13 +108,17 @@ public partial class Main : Node2D
         Rolled[^1] = Rolled[0];
         DrawPolyline(Rolled, Foam, 2);
         // grass, darker past the safe zone and under the woods
-        this.Ground(IslandMap.Grass, OUTER_GRASS);
+        FillStatic(IslandMap.Grass, OUTER_GRASS);
         foreach (var Wd in IslandMap.Shade)
-            if (Bounds(Wd, Tl).Intersects(View)) this.Ground(Wd, WOOD_FLOOR);
-        dynamic Safe = this.RoundRect(GameSim.HALF, GameSim.SAFE_D);
-        this.Ground(Safe, SAFE_GRASS);
-        Gd.Append(Safe, Gd.At(Safe, 0));
-        Gd.Native(this, "draw_polyline", Safe, Gd.MakeColor(1, 1, 0.8f, 0.12f), 2);
+            if (Bounds(Wd, Tl).Intersects(View)) FillStatic(Wd, WOOD_FLOOR);
+        if (SafeRing == null)
+        {
+            var Ring = new List<Vector2>();
+            foreach (dynamic P in Gd.Iter(this.RoundRect(GameSim.HALF, GameSim.SAFE_D))) Ring.Add((Vector2)P);
+            SafeRing = Ring.ToArray();
+        }
+        FillStatic(SafeRing, SAFE_GRASS);
+        DrawPolyline(Closed(SafeRing), new Color(1, 1, 0.8f, 0.12f), 2);
         foreach (var H in IslandMap.Hills)
             if (H.Rings.Count > 0 && Bounds(H.Rings[0], Tl).Intersects(View)) DrawHill(H);
     }
@@ -91,12 +131,17 @@ public partial class Main : Node2D
         for (int I = 0; I < N; I++)
         {
             float K = (N <= 1) ? 1 : (float)I / (N - 1);
-            this.Ground(H.Rings[I], HILL_FOOT.Lerp(HILL_TOP, K) * 1.08f);
-            var Ring = Closed(H.Rings[I]);
-            var Low = new Vector2[Ring.Length];
-            for (int J = 0; J < Ring.Length; J++) Low[J] = Ring[J] + new Vector2(1.5f, 2.5f);
-            DrawPolyline(Low, new Color(0.1f, 0.12f, 0.08f, 0.22f), 2);
-            DrawPolyline(Ring, CONTOUR, 1);
+            FillStatic(H.Rings[I], HILL_FOOT.Lerp(HILL_TOP, K) * 1.08f);
+            if (!HillRing.TryGetValue(H.Rings[I], out var Look))
+            {
+                var Ring = Closed(H.Rings[I]);
+                var Low = new Vector2[Ring.Length];
+                for (int J = 0; J < Ring.Length; J++) Low[J] = Ring[J] + new Vector2(1.5f, 2.5f);
+                Look = (Ring, Low);
+                HillRing[H.Rings[I]] = Look;
+            }
+            DrawPolyline(Look.Low, new Color(0.1f, 0.12f, 0.08f, 0.22f), 2);
+            DrawPolyline(Look.Ring, CONTOUR, 1);
         }
     }
 
@@ -109,15 +154,41 @@ public partial class Main : Node2D
             DrawSwamp(W);
         // edges of every path first, then the middles, then the wear, so crossings join cleanly
         DrawLandmarkSoils(W, View);
-        var Seen = W.Trails.FindAll(Tr => Tr.Path.Length >= 2 && Bounds(Tr.Path, Tl * 2).Intersects(View));
-        foreach (var (Path, Width) in Seen) DrawPolyline(Path, TRAIL_EDGE, Width);
-        foreach (var (Path, Width) in Seen) DrawPolyline(Path, TRAIL_MID, Width - 6);
-        foreach (var (Path, Width) in Seen)
+        Seen.Clear();
+        foreach (var (Path, Width) in W.Trails)
         {
-            // wheel ruts / footpath wear
-            float Rut = (Width > WorldGeometry.TRAIL_W) ? 0.45f * Tl : 0.2f * Tl;
-            DrawPolyline(Offset(Path, -Rut), new Color(TRAIL_LIT, 0.8f), 2);
-            DrawPolyline(Offset(Path, Rut), new Color(TRAIL_EDGE, 0.6f), (Width > WorldGeometry.TRAIL_W) ? 2 : 1);
+            if (Path.Length < 2) continue;
+            if (!TrailLook.TryGetValue(Path, out var Look))
+            {
+                // wheel ruts / footpath wear
+                float Rut = (Width > WorldGeometry.TRAIL_W) ? 0.45f * Tl : 0.2f * Tl;
+                Look = (Bounds(Path, Tl * 2), Offset(Path, -Rut), Offset(Path, Rut));
+                TrailLook[Path] = Look;
+            }
+            if (!Look.Box.Intersects(View)) continue;
+            // only the stretch in view (the trails cross the whole island): runs of segments near the view, one
+            // more point each side so the bends at the cut are worked out off screen as before
+            Rect2 Near = View.Grow(Width);
+            int Start = -1;
+            for (int I = 0; I < Path.Length - 1; I++)
+            {
+                bool In = new Rect2(Path[I], Vector2.Zero).Expand(Path[I + 1]).Intersects(Near, true);
+                if (In && Start < 0) Start = Math.Max(0, I - 1);
+                else if (!In && Start >= 0)
+                {
+                    int End = Math.Min(Path.Length - 1, I + 1);
+                    Seen.Add((Path[Start..(End + 1)], Width, Look.Lit[Start..(End + 1)], Look.Edge[Start..(End + 1)]));
+                    Start = -1;
+                }
+            }
+            if (Start >= 0) Seen.Add((Path[Start..], Width, Look.Lit[Start..], Look.Edge[Start..]));
+        }
+        foreach (var (Path, Width, _, _) in Seen) DrawPolyline(Path, TRAIL_EDGE, Width);
+        foreach (var (Path, Width, _, _) in Seen) DrawPolyline(Path, TRAIL_MID, Width - 6);
+        foreach (var (_, Width, Lit, Edge) in Seen)
+        {
+            DrawPolyline(Lit, new Color(TRAIL_LIT, 0.8f), 2);
+            DrawPolyline(Edge, new Color(TRAIL_EDGE, 0.6f), (Width > WorldGeometry.TRAIL_W) ? 2 : 1);
         }
         // the landmarks' floors, the pier, the platform, steps and coral (Main.LandmarkView.cs)
         DrawLandmarkGround(W, View);
@@ -157,10 +228,10 @@ public partial class Main : Node2D
                 SwampWet.Add(Blob);
             }
         }
-        this.Ground(SwampEdge, MUD * 1.2f);
+        FillStatic(SwampEdge, MUD * 1.2f);
         foreach (var Blob in SwampWet)
         {
-            this.Ground(Blob, MUD_DARK * 1.1f);
+            FillStatic(Blob, MUD_DARK * 1.1f);
             // a glint of standing water
             Vector2 C = (Blob[0] + Blob[6]) / 2;
             DrawLine((C + new Vector2(-4, -2)).Round(), (C + new Vector2(3, -2)).Round(), new Color(0.6f, 0.75f, 0.7f, 0.35f), 1);
@@ -182,11 +253,16 @@ public partial class Main : Node2D
     {
         float Clk = (float)Clock;
         var Edge = Pd.Edge;
-        var Bank = Array.ConvertAll(Edge, P => Pd.Centre + (P - Pd.Centre) * 1.0f + (P - Pd.Centre).Normalized() * 4);
-        DrawColoredPolygon(Bank, BANK);
-        DrawColoredPolygon(Edge, WATER);
-        DrawColoredPolygon(Array.ConvertAll(Edge, P => Pd.Centre + (P - Pd.Centre) * 0.55f), DEEP);
-        DrawPolyline(Closed(Edge), new Color(0.04f, 0.08f, 0.1f, 0.35f), 1);
+        if (!PondLook.TryGetValue(Edge, out var Look))
+        {
+            Look = (Array.ConvertAll(Edge, P => Pd.Centre + (P - Pd.Centre) * 1.0f + (P - Pd.Centre).Normalized() * 4),
+                    Array.ConvertAll(Edge, P => Pd.Centre + (P - Pd.Centre) * 0.55f), Closed(Edge));
+            PondLook[Edge] = Look;
+        }
+        FillStatic(Look.Bank, BANK, false);
+        FillStatic(Edge, WATER, false);
+        FillStatic(Look.Deep, DEEP, false);
+        DrawPolyline(Look.Rim, new Color(0.04f, 0.08f, 0.1f, 0.35f), 1);
         // ripples
         for (int K = 0; K < 5; K++)
         {

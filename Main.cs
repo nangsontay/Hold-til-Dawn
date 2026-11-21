@@ -130,6 +130,9 @@ public partial class Main : Node2D
 
     public override void _Ready()
     {
+        // a cap on the frame rate (config/display/display.tres): on a 144 Hz screen the game would otherwise draw
+        // flat out all match long and the laptop's fans would follow
+        Engine.MaxFps = DisplaySettings.Current.MaxFps;
         this.BuildScene();
         this.BuildUi();
         dynamic Args = Gd.Static(typeof(OS), "get_cmdline_user_args");
@@ -369,7 +372,7 @@ public partial class Main : Node2D
         if ((Gd.Truth(Playing) && (Gd.At(Me, 5) == 0)))
         {
             dynamic Dir = Gd.MakeVector2((this.Key(68) - this.Key(65)), (this.Key(83) - this.Key(87)));
-            dynamic Destination = (LocalPos + (((Dir.Normalized() * GameSim.SPEED) * ((Gd.At(Me, 1) == 0) ? (dynamic)(1.2f) : 1.0f)) * Dt));
+            dynamic Destination = (LocalPos + (((Dir.Normalized() * GameSim.SPEED) * ((Gd.At(Me, 1) == 0) ? (dynamic)(1.2f) : 1.0f) * (Gd.Size(Me) > 30 && Gd.Truth(Gd.At(Me, 30)) ? 1.2f : 1f)) * Dt));
             LocalPos = Geometry.MoveBody(LocalPos, Destination, BODY_R, GameSim.Walls(this.DoorsOpen()));
             LocalPos = this.Bump(LocalPos, BODY_R);
         }
@@ -386,6 +389,8 @@ public partial class Main : Node2D
             // from the body, not the feet
             dynamic Aim = (Gd.Native(this, "get_global_mouse_position") - (LocalPos - Gd.MakeVector2(0, LIFT))).Angle();
             dynamic Atk = (Gd.Truth(Playing) && !this.UiCapturesMouse() && Gd.Truth(Gd.Static(typeof(Input), "is_mouse_button_pressed", 1)));
+            dynamic HandItem = Gd.At(Gd.At(Me, 7), Gd.Int(Gd.At(Me, 25)));
+            if (HandItem != null && GameSim.IsTacticalUse(Gd.Str(Gd.At(HandItem, 0)))) Atk = false;
             dynamic Inter = (Gd.Truth(Playing) && Gd.Truth(Gd.Static(typeof(Input), "is_physical_key_pressed", 69)));
             dynamic Ent = (Gd.Truth(Playing) && Gd.Truth(Gd.Static(typeof(Input), "is_physical_key_pressed", 70)));
             InputSequence += 1;
@@ -449,6 +454,13 @@ public partial class Main : Node2D
             if ((this.PauseMouse(Ev) || this.ResultMouse(Ev) || this.BuildMouse(Ev) || this.InventoryMouse(Ev) || this.CraftMouse(Ev)))
             {
                 return;
+            }
+            if (Gd.Truth(Ev.Pressed) && Ev.ButtonIndex == 1 && !UiCapturesMouse())
+            {
+                dynamic Me = Gd.Get(Snap.Ps, MyId);
+                dynamic Hand = Me == null ? null : Gd.At(Gd.At(Me, 7), Gd.Int(Gd.At(Me, 25)));
+                if (Hand != null && GameSim.IsTacticalUse(Gd.Str(Gd.At(Hand, 0))))
+                    Act("use_item", Gd.Native(this, "get_global_mouse_position"));
             }
             if ((Gd.Truth(Ev.Pressed) && (Ev.ButtonIndex == 2)))
             {
@@ -544,7 +556,7 @@ public partial class Main : Node2D
         {
             PrevPhp[Id] = Gd.At(Gd.At(D.Ps, Id), 3);
         }
-        Geometry.Rebuild(Gd.Map(Gd.Get(D, "nodes", new GArray()), (Func<dynamic, dynamic>)((N) => new GDict { { "type", Gd.At(N, 0) }, { "pos", Gd.At(N, 1) }, { "amount", Gd.At(N, 2) } })), Gd.Map(Gd.Get(D, "tw", new GArray()), (Func<dynamic, dynamic>)((Tw) => new GDict { { "pos", Gd.At(Tw, 1) } })), Gd.Map(Gd.Get(D, "walls", new GArray()), (Func<dynamic, dynamic>)((W) => new GDict { { "pos", Gd.At(W, 0) }, { "vert", Gd.At(W, 1) } })));
+        Geometry.Rebuild(NodeColliders((GArray)Gd.Get(D, "nodes", new GArray())), Gd.Map(Gd.Get(D, "tw", new GArray()), (Func<dynamic, dynamic>)((Tw) => new GDict { { "pos", Gd.At(Tw, 1) } })), Gd.Map(Gd.Get(D, "walls", new GArray()), (Func<dynamic, dynamic>)((W) => new GDict { { "pos", Gd.At(W, 0) }, { "vert", Gd.At(W, 1) } })));
         if (((Mine != null) && (Gd.At(Mine, 15) == LocalTp) && (Gd.Size(Mine) > 24)))
         {
             int Acknowledged = Gd.Int(Gd.At(Mine, 24));
@@ -839,11 +851,12 @@ public partial class Main : Node2D
             for (int I = 0; I < ScatterTyped.Length; I++) ScatterTyped[I] = ((Vector2)Gd.At(Gd.At(Scatter, I), 0), Gd.Str(Gd.At(Gd.At(Scatter, I), 1)));
         }
         Rect2 SeenRect = (Rect2)View;
+        Color ColdTyped = (Color)COLD;
         foreach (var (Sp, Sn) in ScatterTyped)
         {
             if (SeenRect.HasPoint(Sp))
             {
-                this.Sprite(Sn, Sp, 1.0f, COLD);
+                this.Sprite(Sn, Sp, 1.0f, ColdTyped);
             }
         }
         foreach (dynamic I in Gd.Iter(3))
@@ -867,6 +880,7 @@ public partial class Main : Node2D
         Gd.Native(this, "draw_rect", Gd.MakeRect2((-H), (H * 2)), Gd.MakeColor("4F4B42"));
         this.DrawBaseFloor();
         this.DrawTelegraphs();
+        DrawTacticalAreas();
         // from outside, the inside of the base is fogged over (src/world/view/Main.BaseFog.cs)
         this.TickBaseFog();
         this.DrawBaseFog();
@@ -902,13 +916,14 @@ public partial class Main : Node2D
                 Gd.Append(Items, new GArray(Gd.At(D, 0).Y, 0, Gd.At(D, 1), Gd.At(D, 0), Gd.At(D, 2), Gd.At(D, 3)));
             }
         }
+        this.PrepareHarvestFeedback();
         foreach (dynamic Nd in Gd.Iter(Snap.Nodes))
         {
             if (Gd.Truth(View.HasPoint(Gd.At(Nd, 1))))
             {
                 dynamic Hsh = Gd.Int(Gd.Absf(((Gd.At(Nd, 1).X * 7.0f) + (Gd.At(Nd, 1).Y * 13.0f))));
                 string N = this.NodeSprite(Nd, Gd.Int(Hsh));
-                Gd.Append(Items, new GArray(Gd.At(Nd, 1).Y, 0, N, Gd.At(Nd, 1), this.NodeScale(Nd), Colors.White));
+                Gd.Append(Items, new GArray(Gd.At(Nd, 1).Y, 0, N, Gd.At(Nd, 1) + this.NodeOffset(Nd), this.NodeScale(Nd), this.NodeModulate(Nd)));
             }
         }
         foreach (dynamic R in Gd.Iter(GameSim.Walls(new GArray(true, true, true))))
@@ -985,24 +1000,26 @@ public partial class Main : Node2D
             {
                 continue;
             }
-            if (Gd.Equal(Gd.At(It, 1), 0))
+            // the kind once, not one dynamic compare per branch (hundreds of items a frame)
+            int Kind = Gd.Int(Gd.At(It, 1));
+            if ((Kind == 0))
             {
                 this.Sprite(Gd.At(It, 2), Gd.At(It, 3), Gd.At(It, 4), Gd.At(It, 5));
                 this.DrawOreGlow(Gd.Str(Gd.At(It, 2)), (Vector2)Gd.At(It, 3), Gd.Float(Gd.At(It, 4)));
             }
-            else if (Gd.Equal(Gd.At(It, 1), 1))
+            else if ((Kind == 1))
             {
                 this.Wall(Gd.At(It, 2), Gd.At(It, 3), Gd.At(It, 4), Gd.At(It, 5), Gd.At(It, 6));
             }
-            else if (Gd.Equal(Gd.At(It, 1), 2))
+            else if ((Kind == 2))
             {
                 this.DrawEnemy(Gd.At(It, 2), Gd.At(It, 3));
             }
-            else if (Gd.Equal(Gd.At(It, 1), 3))
+            else if ((Kind == 3))
             {
                 this.DrawPlayer(Gd.At(It, 2), Gd.At(It, 3), Gd.At(It, 4));
             }
-            else if (Gd.Equal(Gd.At(It, 1), 4))
+            else if ((Kind == 4))
             {
                 // enemy projectile: Spitter spit or Bio-Cannon spore (art/fx)
                 dynamic B = Gd.At(It, 2);
@@ -1011,7 +1028,7 @@ public partial class Main : Node2D
                 Gd.Native(this, "draw_circle", (Bp - Gd.MakeVector2(0, LIFT)), 8, ((Gd.At(B, 1) == "orb") ? (dynamic)(Gd.MakeColor(0.5f, 2.0f, 0.6f, 0.3f)) : Gd.MakeColor(1.6f, 1.9f, 0.4f, 0.35f)));
                 this.DrawFx(Gd.At(B, 1), (Bp - Gd.MakeVector2(0, LIFT)), 0.0f);
             }
-            else if (Gd.Equal(Gd.At(It, 1), 5))
+            else if ((Kind == 5))
             {
                 dynamic D = Gd.At(It, 2);
                 if (((Gd.At(D, 3) >= 0.0f) && (Gd.At(D, 3) < 5.0f) && (Gd.Fmod(Tnow, 0.3f) < 0.12f)))
@@ -1025,36 +1042,36 @@ public partial class Main : Node2D
                 // the item's own icon, floating (art/items)
                 this.DrawItemIcon(this, Gd.At(D, 1), Dp.Round(), 1.0f);
             }
-            else if (Gd.Equal(Gd.At(It, 1), 6) && (Gd.Str(Gd.At(It, 2)) == "chest"))
+            else if ((Kind == 6) && (Gd.Str(Gd.At(It, 2)) == "chest"))
             {
                 this.DrawChest((Vector2)Gd.At(It, 3));
             }
-            else if (Gd.Equal(Gd.At(It, 1), 6))
+            else if ((Kind == 6))
             {
                 this.DrawProp(Gd.At(It, 2), Gd.At(It, 3), ((Gd.Size(It) > 4) ? (dynamic)(Gd.At(It, 4)) : Colors.White));
             }
-            else if (Gd.Equal(Gd.At(It, 1), 8))
+            else if ((Kind == 8))
             {
                 this.Pillar(Gd.At(It, 2));
             }
-            else if (Gd.Equal(Gd.At(It, 1), 9))
+            else if ((Kind == 9))
             {
                 this.DrawTower(Gd.At(It, 2));
             }
-            else if (Gd.Equal(Gd.At(It, 1), 10))
+            else if ((Kind == 10))
             {
                 this.DrawBuiltWall(Gd.At(It, 2));
             }
-            else if (Gd.Equal(Gd.At(It, 1), 12))
+            else if ((Kind == 12))
             {
                 this.DrawCorpse(Gd.Int(Gd.At(It, 2)));
             }
-            else if (Gd.Equal(Gd.At(It, 1), 11))
+            else if ((Kind == 11))
             {
                 dynamic A = Gd.At(It, 2);
-                this.DrawFx("arrow", (Gd.At(A, 0) - Gd.MakeVector2(0, LIFT)), Gd.At(A, 1));
+                this.DrawFx(Gd.Size(A) > 2 && Gd.Truth(Gd.At(A, 2)) ? "explosive_arrow" : "arrow", (Gd.At(A, 0) - Gd.MakeVector2(0, LIFT)), Gd.At(A, 1));
             }
-            else if (Gd.Equal(Gd.At(It, 1), 7))
+            else if ((Kind == 7))
             {
                 Rect2 G = (Rect2)(Gd.At(It, 2));
                 foreach (dynamic K in Gd.Iter(5))
@@ -1066,6 +1083,7 @@ public partial class Main : Node2D
         }
         // chips flying off nodes being gathered
         this.DrawChips();
+        this.DrawHarvestFeedback();
         if (Gd.Truth(DebugGeometry))
         {
             foreach (dynamic I in Gd.Iter(Geometry.Candidates(View.Position, View.End, 0.0f)))
@@ -1155,14 +1173,16 @@ public partial class Main : Node2D
         }
         // the attack frames of the weapon in hand (src/gameplay/view/Main.Anim.cs)
         (string Name, float T)? Attack = this.PlayerAttack(Id, P, Skin);
-        this.Char(Id, Skin, Foot, Aim, 1.0f, Colors.White, (Gd.Truth(Fighting) || (Activity != "idle")), Activity, Attack?.Name, (Attack?.T ?? 0.0f));
+        string Gather = Activity == "gather" && Attack == null ? GatherAnimation((Vector2)Gd.At(P, 23)) : null;
+        this.Char(Id, Skin, Foot, Aim, 1.0f, Colors.White, (Gd.Truth(Fighting) || (Activity != "idle")), Activity, Attack?.Name ?? Gather, (Attack?.T ?? 0.0f), Gather != null);
         this.DrawActivity(Foot, Aim, Activity);
+        DrawTacticalWeapon(P, (Vector2)Foot, Aim);
     }
 
     // compass octant (0 = right, counting clockwise on screen) to the sheet row
     public static readonly int[] OCT_ROW = { 0, 4, 1, 5, 2, 6, 3, 7 };
 
-    public void Char(dynamic Key, dynamic Skin, dynamic Foot, dynamic Aim, dynamic S, dynamic Mod, dynamic Lock = null, dynamic Activity = null, string Play = null, float PlayT = 0.0f)
+    public void Char(dynamic Key, dynamic Skin, dynamic Foot, dynamic Aim, dynamic S, dynamic Mod, dynamic Lock = null, dynamic Activity = null, string Play = null, float PlayT = 0.0f, bool Loop = false)
     {
         Lock ??= false;
         Activity ??= "idle";
@@ -1171,7 +1191,11 @@ public partial class Main : Node2D
         // frame holds. Knocked down it keeps the direction it last faced.
         // While it walks it faces where it walks (no moonwalking); standing still it faces `aim` (the mouse),
         // and with `lock` (fighting) it faces `aim` even on the move. With aim null (enemies) it faces its walk.
-        dynamic M = Gd.Get(Cmove, Key, new GArray(Foot, (-1.0f), (Mathf.Pi / 2), (-1)));
+        dynamic M = Gd.Get(Cmove, Key);
+        if (M is null)
+        {
+            M = new GArray(Foot, (-1.0f), (Mathf.Pi / 2), (-1));
+        }
         Vector2 Step = (Vector2)((Foot - Gd.At(M, 0)));
         if ((Gd.Length(Step) > 0.2f))
         {
@@ -1214,19 +1238,20 @@ public partial class Main : Node2D
         {
             Dir = Gd.Wrapi(Gd.Roundi((Ang / (Mathf.Pi / 2.0f))), 0, 4);
         }
-        string State = ((Activity != "idle") ? (dynamic)(Activity) : Anim);
-        dynamic Timing = Gd.Get(AnimState, Key, new GArray(State, Clock));
-        if ((Gd.At(Timing, 0) != State))
+        string State = Loop ? Play : ((Activity != "idle") ? (dynamic)(Activity) : Anim);
+        dynamic Timing = Gd.Get(AnimState, Key);
+        if (Timing is null || (Gd.At(Timing, 0) != State))
         {
             Timing = new GArray(State, Clock);
         }
         AnimState[Key] = Timing;
         float PhaseTime = Gd.Float((Clock - Gd.At(Timing, 1)));
-        if (Gd.Contains(new GArray("gather", "repair"), Activity))
+        string Act = Gd.Str(Activity);
+        if (Act == "repair")
         {
             Foot += ((Gd.MakeVector2(Gd.Cos(Ang), 0) * Gd.Sin((PhaseTime * 12.0f))) * 2.0f);
         }
-        else if (Gd.Contains(new GArray("heal", "revive"), Activity))
+        else if (Act == "heal" || Act == "revive")
         {
             Foot.Y += 2.0f;
         }
@@ -1240,12 +1265,14 @@ public partial class Main : Node2D
         int F = Gd.Int((Gd.Int(Gd.At(Fr, 0)) + K));
         if ((One != null))
         {
-            F = (Gd.Int(Gd.At(One, 0)) + Mathf.Min((Gd.Int(Gd.At(One, 1)) - 1), (int)(PlayT * Gd.Float(Gd.At(One, 2)))));
+            int Count = Gd.Int(Gd.At(One, 1));
+            int Frame = (int)((Loop ? PhaseTime : PlayT) * Gd.Float(Gd.At(One, 2)));
+            F = Gd.Int(Gd.At(One, 0)) + (Loop ? Frame % Count : Mathf.Min(Count - 1, Frame));
         }
         dynamic C = Gd.At(Cinfo.Chars, Skin);
         dynamic Size = Gd.MakeVector2(C.Size, C.Size);
         dynamic Anchor = Gd.MakeVector2(Gd.At(C.Anchor, 0), Gd.At(C.Anchor, 1));
-        Gd.Native(this, "draw_texture_rect_region", Tex, Gd.MakeRect2((Foot - (Anchor * S)), (Size * S)), Gd.MakeRect2((Gd.MakeVector2(F, Dir) * Size), Size), Mod);
+        DrawTextureRectRegion((Texture2D)Gd.Unwrap(Tex), (Rect2)Gd.MakeRect2((Foot - (Anchor * S)), (Size * S)), (Rect2)Gd.MakeRect2((Gd.MakeVector2(F, Dir) * Size), Size), (Color)Mod);
     }
 
     // How a node looks as it is gathered (broken stages, chips): src/world/view/Main.NodeBreak.cs
@@ -1326,11 +1353,35 @@ public partial class Main : Node2D
 
     public void Sprite(dynamic N, dynamic Pos, dynamic S, dynamic Mod = null)
     {
+        if (N is string Name && Pos is Vector2 At)
+        {
+            this.Sprite(Name, At, (S is float F) ? F : (float)Gd.Float(S), (Mod is Color C) ? C : Colors.White);
+            return;
+        }
         Mod ??= Colors.White;
         dynamic Sp = Gd.Get(Spr, N);
         if ((Sp != null))
         {
             Gd.Native(this, "draw_texture_rect", Gd.At(Sp, 0), this.SpriteRect(N, Pos, S), false, Mod);
+        }
+    }
+
+    // the sprites of Spr with their anchor and size, typed: thousands are drawn every frame (grass, rocks, trees)
+    readonly System.Collections.Generic.Dictionary<string, (Texture2D Tex, Vector2 Anchor, Vector2 Size)> SprTyped = new();
+
+    public void Sprite(string N, Vector2 Pos, float S, Color Mod)
+    {
+        if (!SprTyped.TryGetValue(N, out var E))
+        {
+            dynamic Sp = Gd.Get(Spr, N);
+            var Tex = (Sp == null) ? null : (Texture2D)Gd.Unwrap(Gd.At(Sp, 0));
+            float Px = Gd.Float(SPR);
+            E = (Tex, (Tex == null) ? Vector2.Zero : (Vector2)Gd.At(Sp, 1) * Px, (Tex == null) ? Vector2.Zero : Tex.GetSize() * Px);
+            SprTyped[N] = E;
+        }
+        if (E.Tex != null)
+        {
+            DrawTextureRect(E.Tex, new Rect2(Pos - E.Anchor * S, E.Size * S), false, Mod);
         }
     }
 
@@ -2182,7 +2233,7 @@ public partial class Main : Node2D
         C.DrawColoredPolygon(Gd.PackedVector2Array(new GArray(Lamp, (Lamp + Gd.MakeVector2(240, ((-105) + Sweep))), (Lamp + Gd.MakeVector2(245, ((-12) + Sweep))))), Gd.MakeColor(0.92f, 0.72f, 0.32f, 0.055f));
         C.DrawColoredPolygon(Gd.PackedVector2Array(new GArray(Lamp, (Lamp + Gd.MakeVector2((-245), ((-70) - Sweep))), (Lamp + Gd.MakeVector2((-245), ((-8) - Sweep))))), Gd.MakeColor(0.92f, 0.72f, 0.32f, 0.04f));
         this.FrontSprite("pine_2", (Foot + Gd.MakeVector2((-112), (-15))), 2.4f, Gd.MakeColor("577276"));
-        this.FrontSprite("dead_1", (Foot + Gd.MakeVector2(106, (-5))), 2.4f, Gd.MakeColor("52656A"));
+        this.FrontSprite("pine_3", (Foot + Gd.MakeVector2(106, (-5))), 2.4f, Gd.MakeColor("52656A"));
         if (Gd.Truth(Gd.Has(Prop, "lighthouse")))
         {
             dynamic P = Prop.Lighthouse;
@@ -2244,7 +2295,7 @@ public partial class Main : Node2D
 
     public void DrawActivity(dynamic Foot, dynamic Aim, dynamic Activity)
     {
-        if (Gd.Contains(new GArray("gather", "repair"), Activity))
+        if (Activity == "repair")
         {
             dynamic Centre = (Foot - Gd.MakeVector2(0, 15));
             dynamic Angle = (Aim + (Gd.Sin((Clock * 12)) * 0.8f));

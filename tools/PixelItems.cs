@@ -285,6 +285,7 @@ public partial class PixelItems : Node
 
     public override void _Ready()
     {
+        AddTacticalArt();
         string Out = "res://art";
         foreach (string A in OS.GetCmdlineUserArgs())
         {

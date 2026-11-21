@@ -15,8 +15,24 @@ namespace HoldTilDawn;
 /// </summary>
 public static class Gd
 {
-    public static string Pascal(string value) => value == "t" ? "TimeLeft" : value.All(c => !char.IsLetter(c) || char.IsUpper(c)) ? value : string.Concat(value.Trim('_').Split('_').Select(s => s.Length == 0 ? s : char.ToUpperInvariant(s[0]) + s[1..]));
-    public static string Snake(string value) => Regex.Replace(value, "(?<=[a-z0-9])([A-Z])", "_$1").ToLowerInvariant();
+    // Record fields are read and written by name thousands of times a tick (E.Pos, E.NavT...): each name is
+    // converted once and remembered, not run through string splitting or a regex on every access.
+    static readonly ConcurrentDictionary<string, string> PascalNames = new(), SnakeNames = new();
+    const int NAME_CACHE = 20000;
+    public static string Pascal(string value)
+    {
+        if (PascalNames.TryGetValue(value, out var Known)) return Known;
+        string Name = value == "t" ? "TimeLeft" : value.All(c => !char.IsLetter(c) || char.IsUpper(c)) ? value : string.Concat(value.Trim('_').Split('_').Select(s => s.Length == 0 ? s : char.ToUpperInvariant(s[0]) + s[1..]));
+        if (PascalNames.Count < NAME_CACHE) PascalNames[value] = Name;
+        return Name;
+    }
+    public static string Snake(string value)
+    {
+        if (SnakeNames.TryGetValue(value, out var Known)) return Known;
+        string Name = Regex.Replace(value, "(?<=[a-z0-9])([A-Z])", "_$1").ToLowerInvariant();
+        if (SnakeNames.Count < NAME_CACHE) SnakeNames[value] = Name;
+        return Name;
+    }
     public static bool IsNumber(object value) => value is byte or sbyte or short or ushort or int or uint or long or ulong or float or double or decimal;
     public static int Int(object value) => value is string s ? int.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out int i) ? i : 0 : (int)Convert.ToDouble(value, CultureInfo.InvariantCulture);
     public static float Float(object value) => Convert.ToSingle(value, CultureInfo.InvariantCulture);

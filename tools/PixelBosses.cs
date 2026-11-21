@@ -5,8 +5,8 @@ using System.Collections.Generic;
 // Pixel-art sprite sheets of the seven NOX bosses (AGT-05..11, table 4.2), in the same sheet layout as
 // tools/PixelChars.cs so the game animates them the same way: rows = right, down, left (mirrored), up;
 // columns = idle 0-1, walk 2-5, attack 6-9 (wind-up, slam, impact, recover), knocked down 10-13 (staggers,
-// knees give, falling, lying with the eyes shut). 48 x 48 px (a boss is 1.8 tiles across). Every boss is the same hulking NOX
-// brute drawn from shaded shapes, with the parts that show its move: Juggernaut horns (charge), Broodmother egg
+// knees give, falling, lying with the eyes shut). 48 x 48 px, displayed at 3x in game. Each boss has its own
+// palette and silhouette, with the parts that show its move: Juggernaut horns (charge), Broodmother egg
 // sacs (summons), Bio-Cannon spore pods (volley), Burrower claws (burrow), Gatebreaker ram fist (door blow),
 // Phantom hood and cloak (cloak), Ironhide front plates (front armour; its back is bare, where it is weak).
 // Not part of the game. Run: godot --headless --path . tools/PixelBosses.tscn  (-- --out=<dir> to preview)
@@ -44,13 +44,13 @@ public partial class PixelBosses : Node
 
     static readonly Boss[] Bosses =
     {
-        new() { Name = "juggernaut", Body = Tones("8E3E66", "6B2A4A", "47182F"), Part = Tones("F4F0DC", "D8D0B8", "9A927A"), Eye = new("FF5A5A"), ShoulderR = 6.5f },
-        new() { Name = "broodmother", Body = Tones("7E5294", "5A3670", "35204A"), Part = Tones("F0FFA0", "C8E05A", "7E9A2A"), Eye = new("F0FFA0"), TorsoRx = 13, TorsoRy = 11, HeadR = 5 },
-        new() { Name = "bio_cannon", Body = Tones("6E9460", "4E6E44", "2E4A2C"), Part = Tones("D8FFC0", "7BE36A", "3FA54E"), Eye = new("C8FFB0") },
-        new() { Name = "burrower", Body = Tones("B08858", "8A6640", "5A4028"), Part = Tones("F4F0DC", "D8D0B8", "9A927A"), Eye = new("1A1418"), HeadR = 5.5f },
-        new() { Name = "gatebreaker", Body = Tones("94604A", "6E4434", "46281E"), Part = Tones("D2DEEA", "8FA3B8", "5B6B7C"), Eye = new("FFB070"), ShoulderR = 6 },
-        new() { Name = "phantom", Body = Tones("E4DAFF", "B8A8E8", "7E6CB8", 0.82f), Part = Tones("9A88D0", "6E5CA8", "4A3C78", 0.9f), Eye = new("6FF0FF"), Legs = false, ShoulderR = 4 },
-        new() { Name = "ironhide", Body = Tones("6A7486", "4C5464", "2E3440"), Part = Tones("D8E4EE", "A8B8C8", "6A7A8C"), Eye = new("F2B544"), ShoulderR = 6 },
+        new() { Name = "juggernaut", Body = Tones("E77949", "AA402D", "60251F"), Part = Tones("FFF0CC", "D9BD8A", "98724F"), Eye = new("FFF080"), ShoulderR = 7, HeadR = 6.5f },
+        new() { Name = "broodmother", Body = Tones("D67385", "973B55", "53273F"), Part = Tones("FFF1CC", "EABD72", "A97044"), Eye = new("FFEC9A"), TorsoRx = 14, TorsoRy = 12, HeadR = 4.5f, ShoulderR = 4 },
+        new() { Name = "bio_cannon", Body = Tones("7C9A50", "425D34", "25382B"), Part = Tones("F1FFAE", "BCDF48", "6D9429"), Eye = new("F1FFAE"), TorsoRx = 9, HeadR = 5 },
+        new() { Name = "burrower", Body = Tones("D4A553", "9C6F33", "624322"), Part = Tones("FFF2D6", "DCCA9F", "A48A65"), Eye = new("E94732"), TorsoRx = 12, TorsoRy = 9, HeadR = 5.5f, ShoulderR = 4 },
+        new() { Name = "gatebreaker", Body = Tones("C3854A", "84552E", "503522"), Part = Tones("B9DFD6", "6C9C9B", "3C626C"), Eye = new("FFB85E"), ShoulderR = 6 },
+        new() { Name = "phantom", Body = Tones("D9FAFF", "83CFD9", "3E7D9F", 0.86f), Part = Tones("A8E3EE", "5293B2", "305477", 0.94f), Eye = new("E6FFFF"), Legs = false, TorsoRx = 8, ShoulderR = 3, HeadR = 5 },
+        new() { Name = "ironhide", Body = Tones("68829F", "3C536F", "25354C"), Part = Tones("DFE8EB", "99B1C4", "526D8C"), Eye = new("FFD16B"), TorsoRx = 12, ShoulderR = 7 },
     };
 
     // columns: idle 2, walk 4, attack 4, knocked down 4
@@ -286,7 +286,9 @@ public partial class PixelBosses : Node
                 break;
             case "gatebreaker" when Right:
                 // the ram: a steel block on the right fist
-                Ell(Im, Fx, Fy, 5.5f, 4.5f, B.Part);
+                Fill(Im, (int)Fx - 5, (int)Fy - 4, 11, 9, B.Part[2]);
+                Fill(Im, (int)Fx - 5, (int)Fy - 4, 9, 6, B.Part[1]);
+                Fill(Im, (int)Fx - 5, (int)Fy - 4, 10, 2, B.Part[0]);
                 Fill(Im, (int)(Fx - 4), (int)(Fy - 1), 9, 1, B.Part[2]);
                 Px(Im, (int)(Fx - 2), (int)(Fy - 3), new Color("D9534A"), 2);
                 break;
@@ -329,6 +331,7 @@ public partial class PixelBosses : Node
     // Parts on the back (drawn before the arms and head).
     static void Back(Image Im, Boss B, string View, int Y)
     {
+        Silhouette(Im, B, View, Y);
         switch (B.Name)
         {
             case "broodmother":
@@ -404,16 +407,16 @@ public partial class PixelBosses : Node
                 // horns for the charge
                 if (View == "side")
                 {
-                    Fill(Im, (int)(Hx + 3), (int)(Hy - 4), 4, 1, B.Part[1]);
-                    Fill(Im, (int)(Hx + 6), (int)(Hy - 6), 1, 3, B.Part[0]);
+                    Fill(Im, (int)(Hx + 3), (int)(Hy - 4), 6, 2, B.Part[1]);
+                    Fill(Im, (int)(Hx + 7), (int)(Hy - 8), 2, 5, B.Part[0]);
                 }
                 else
                 {
                     foreach (int Dir in new[] { -1, 1 })
                     {
                         Fill(Im, (int)(Hx + (Dir * 5)), (int)(Hy - 3), 1, 2, B.Part[1]);
-                        Fill(Im, (int)(Hx + (Dir * 6)), (int)(Hy - 6), 1, 4, B.Part[0]);
-                        Px(Im, (int)(Hx + (Dir * 7)), (int)(Hy - 7), B.Part[0]);
+                        Fill(Im, (int)(Hx + (Dir * 6)), (int)(Hy - 8), 2, 6, B.Part[0]);
+                        Px(Im, (int)(Hx + (Dir * 7)), (int)(Hy - 9), B.Part[0]);
                     }
                 }
                 break;
@@ -513,6 +516,78 @@ public partial class PixelBosses : Node
                     }
                 }
                 break;
+        }
+    }
+
+    // Large silhouette features remain readable in shadow and in all animation frames.
+    static void Silhouette(Image Im, Boss B, string View, int Y)
+    {
+        bool Side = View == "side";
+        switch (B.Name)
+        {
+            case "broodmother":
+                // Three pairs of jointed insect legs frame a swollen abdomen.
+                for (int K = 0; K < 3; K++)
+                    foreach (int D in new[] { -1, 1 })
+                    {
+                        int X = Side ? 19 : 24;
+                        int Knee = X + D * (18 - K);
+                        Stroke(Im, new Vector2(X + D * 9, 26 + K * 3 + Y), new Vector2(Knee, 23 + K * 5 + Y), B.Body[0], 2);
+                        Stroke(Im, new Vector2(Knee, 23 + K * 5 + Y), new Vector2(X + D * 20, 32 + K * 5), B.Body[2], 2);
+                    }
+                break;
+            case "bio_cannon":
+                // Two tall, open spore chimneys instead of a round shoulder profile.
+                foreach (int X in Side ? new[] { 13, 19 } : new[] { 10, 33 })
+                {
+                    Fill(Im, X, 7 + Y, 5, 14, B.Body[2]);
+                    Fill(Im, X, 7 + Y, 2, 12, B.Part[1]);
+                    Ell(Im, X + 2, 7 + Y, 4, 2, B.Part);
+                    Fill(Im, X, 6 + Y, 4, 2, new Color("25382B"));
+                }
+                break;
+            case "burrower":
+                // A low ridged carapace, with ivory digging blades along its back.
+                for (int K = 0; K < 4; K++)
+                {
+                    int X = Side ? 12 + K * 3 : 15 + K * 6;
+                    Stroke(Im, new Vector2(X, 21 + Y), new Vector2(X - 3, 12 + Y + K % 2), B.Part[1], 2);
+                }
+                break;
+            case "gatebreaker":
+                // A squared, riveted siege harness across the shoulders.
+                Fill(Im, Side ? 17 : 7, 18 + Y, Side ? 14 : 34, 6, B.Part[2]);
+                Fill(Im, Side ? 17 : 7, 18 + Y, Side ? 14 : 34, 2, B.Part[0]);
+                for (int X = Side ? 18 : 8; X < (Side ? 31 : 41); X += 5) Px(Im, X, 21 + Y, B.Eye);
+                break;
+            case "phantom":
+                // A pointed hood and long drifting ribbons with no solid feet.
+                Stroke(Im, new Vector2(24, 12 + Y), new Vector2(22, 2 + Y), B.Part[0], 3);
+                foreach (int D in new[] { -1, 1 })
+                {
+                    Stroke(Im, new Vector2(24 + D * 7, 28 + Y), new Vector2(24 + D * 13, 38), B.Body[1], 2);
+                    Stroke(Im, new Vector2(24 + D * 13, 38), new Vector2(24 + D * 9, 44), B.Body[0], 1);
+                }
+                break;
+            case "ironhide":
+                // Tall angular steel fins distinguish its armour from the horned Juggernaut.
+                foreach (int X in Side ? new[] { 16, 22 } : new[] { 10, 35 })
+                {
+                    Fill(Im, X, 12 + Y, 4, 10, B.Part[2]);
+                    Fill(Im, X, 10 + Y, 2, 10, B.Part[0]);
+                    Fill(Im, X + 1, 8 + Y, 1, 3, B.Part[0]);
+                }
+                break;
+        }
+    }
+
+    static void Stroke(Image Im, Vector2 A, Vector2 B, Color C, int Width)
+    {
+        int Steps = Mathf.CeilToInt(A.DistanceTo(B) * 2);
+        for (int I = 0; I <= Steps; I++)
+        {
+            Vector2 P = A.Lerp(B, I / (float)Math.Max(1, Steps));
+            Fill(Im, Mathf.RoundToInt(P.X), Mathf.RoundToInt(P.Y), Width, Width, C);
         }
     }
 

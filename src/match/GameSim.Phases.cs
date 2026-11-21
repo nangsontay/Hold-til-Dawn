@@ -11,6 +11,8 @@ public partial class GameSim : RefCounted
     // --- phases -------------------------------------------------------------
     public void Dawn()
     {
+        ResetNightSpawns();
+        ResetTacticalItems();
         Phase = "day";
         TimeLeft = DAY_MAX;
         Gd.Clear(Votes);
@@ -87,8 +89,8 @@ public partial class GameSim : RefCounted
         TimeLeft = Gd.At(NIGHT_LEN, (K - 1));
         Elapsed = 0.0f;
         Wave = 0;
-        NextWave = FIRST_WAVE_DELAY;
-        Carry = 0.0f;
+        ResetNightSpawns();
+        NextWave = NightFirstWaveDelay;
         BossSpawned = false;
         Ext = (-1.0f);
         PadClear = new GArray(0.0f, 0.0f, 0.0f);
@@ -119,6 +121,8 @@ public partial class GameSim : RefCounted
 
     public void End(dynamic Win, dynamic Why)
     {
+        ResetTacticalItems();
+        ResetNightSpawns();
         // section 2.5: the result screen stays until the players go back to the lobby
         Phase = "result";
         TimeLeft = 0.0f;
@@ -131,6 +135,8 @@ public partial class GameSim : RefCounted
 
     public void ToLobby()
     {
+        ResetTacticalItems();
+        ResetNightSpawns();
         Phase = "lobby";
         Msg = "";
         Result = null;

@@ -35,10 +35,17 @@ public partial class GameSim : RefCounted
         new GArray("Bow + 5 arrows", new GDict { { "wood", 6 }, { "titanium", 2 } }, 1, "bow", 1, false),
         new GArray("5 arrows", new GDict { { "wood", 1 } }, 1, "arrow", 5, false),
         new GArray("Titanium blade", new GDict { { "wood", 10 }, { "titanium", 20 } }, 2, "titanium_blade", 1, false),
-        new GArray("Titanium armour", new GDict { { "titanium", 24 } }, 2, "titanium_armour", 1, false));
+        new GArray("Titanium armour", new GDict { { "titanium", 24 } }, 2, "titanium_armour", 1, false),
+        new GArray("Long spear", new GDict { { "wood", 10 }, { "stone", 8 } }, 1, "long_spear", 1, false),
+        new GArray("Stun maul", new GDict { { "wood", 8 }, { "titanium", 6 } }, 2, "stun_maul", 1, false),
+        new GArray("Vine trap", new GDict { { "wood", 3 }, { "herb", 2 } }, 0, "vine_trap", 1, false),
+        new GArray("Poison flask", new GDict { { "herb", 4 }, { "stone", 2 } }, 1, "poison_flask", 1, false),
+        new GArray("Healing flask", new GDict { { "herb", 6 }, { "titanium", 2 } }, 1, "healing_flask", 1, false),
+        new GArray("Haste tonic", new GDict { { "herb", 3 } }, 0, "haste_tonic", 1, false),
+        new GArray("Gathering kit", new GDict { { "wood", 6 }, { "stone", 4 } }, 0, "gathering_kit", 1, false),
+        new GArray("3 explosive arrows", new GDict { { "wood", 3 }, { "stone", 4 }, { "titanium", 2 } }, 2, "explosive_arrow", 3, false),
+        new GArray("Field repair kit", new GDict { { "wood", 4 }, { "stone", 3 }, { "titanium", 1 } }, 1, "repair_kit", 1, true));
     public dynamic World = new WorldGeometry();
-    public dynamic WallCache = new GArray();
-    public dynamic WallKey = "";
     public dynamic Phase = "lobby";
     public dynamic TimeLeft = 0.0f;
     public dynamic Elapsed = 0.0f;
@@ -255,6 +262,10 @@ public partial class GameSim : RefCounted
         {
             P.CraftIdx = (-1);
         }
+        else if (Gd.Equal(Kind, "use_item"))
+        {
+            if (Gd.IsType(Arg, typeof(Vector2))) UseSelectedItem(P, (Vector2)Arg);
+        }
         else if (Gd.Equal(Kind, "flask"))
         {
             if (Gd.IsType(Arg, typeof(Vector2)))
@@ -314,6 +325,7 @@ public partial class GameSim : RefCounted
         Gd.Clear(Enemies);
         Gd.Clear(Proj);
         Gd.Clear(Arrows);
+        ResetTacticalItems();
         Gd.Clear(Tele);
         Gd.Clear(Drops);
         Storage = GameSim.EmptySlots(STORAGE_SLOTS);
@@ -359,6 +371,7 @@ public partial class GameSim : RefCounted
         {
             this.TickRoamers(Dt);
         }
+        this.TickTacticalItems();
         this.TickEnemies(Dt);
         this.TickTowers(Dt);
         this.TickProj(Dt);
@@ -391,16 +404,17 @@ public partial class GameSim : RefCounted
     // Player array layout: 0 name, 1 role, 2 pos, 3 hp, 4 maxhp, 5 state, 6 bleed, 7 inventory slots, 8 weapon id,
     // 9 armour tier, 10 flasks, 11 swinging, 12 aim, 13 bandage channel, 14 revive progress, 15 teleport count,
     // 16 note, 17 kills, 18 damage dealt, 19 inside, 20 entry, 21 gather, 22 activity, 23 activity target,
-    // 24 input ack, 25 selected hotbar slot, 26 craft recipe (-1 none), 27 craft progress 0..1, 28 revives, 29 damage taken.
+    // 24 input ack, 25 selected hotbar slot, 26 craft recipe (-1 none), 27 craft progress 0..1, 28 revives, 29 damage taken,
+    // 30 haste active, 31 field repair seconds remaining. Enemy fields 10/11: rooted or stunned / slowed.
     public dynamic Snapshot()
     {
         dynamic Ps = new GDict {  };
         foreach (dynamic Id in Gd.Iter(Players))
         {
             dynamic P = Gd.At(Players, Id);
-            Ps[Id] = new GArray(P.Name, P.Role, P.Pos, P.Hp, P.Maxhp, P.State, P.Bleed, P.Inv, P.Weapon, P.Armour, P.Flasks, (P.Swing > 0), P.Aim, P.Channel, P.ReviveP, P.Tp, ((P.NoteT > 0) ? (dynamic)(P.Note) : ""), P.Kills, P.Dmg, P.Inside, P.Entry, P.GatherAcc, P.Activity, P.ActivityTarget, P.InputSequence, P.Sel, P.CraftIdx, ((P.CraftIdx >= 0) ? (dynamic)((P.CraftT / this.CraftDuration(P.CraftIdx))) : 0.0f), P.Revives, P.Taken);
+            Ps[Id] = new GArray(P.Name, P.Role, P.Pos, P.Hp, P.Maxhp, P.State, P.Bleed, P.Inv, P.Weapon, P.Armour, P.Flasks, (P.Swing > 0), P.Aim, P.Channel, P.ReviveP, P.Tp, ((P.NoteT > 0) ? (dynamic)(P.Note) : ""), P.Kills, P.Dmg, P.Inside, P.Entry, P.GatherAcc, P.Activity, P.ActivityTarget, P.InputSequence, P.Sel, P.CraftIdx, ((P.CraftIdx >= 0) ? (dynamic)((P.CraftT / this.CraftDuration(P.CraftIdx))) : 0.0f), P.Revives, P.Taken, (Gd.Get(P, "haste_until", 0f) > Clock), Gd.Get(P, "repair_kit_t", 0f));
         }
-        return new GDict { { "ph", Phase }, { "t", TimeLeft }, { "k", K }, { "base", BaseHp }, { "doors", Doors }, { "active", Active }, { "ps", Ps }, { "en", Gd.Map(Enemies, (Func<dynamic, dynamic>)((E) => new GArray(E.Id, E.Type, E.Pos, E.Hp, E.Maxhp, E.R, Gd.Get(E, "kind", (-1)), this.BossLook(E), Gd.Get(E, "face", 0.0f), (Gd.Get(E, "swing", 0.0f) > 0)))) }, { "proj", Gd.Map(Proj, (Func<dynamic, dynamic>)((B) => new GArray(B.Pos, Gd.Get(B, "kind", "spit")))) }, { "tele", Gd.Map(Tele, (Func<dynamic, dynamic>)((Tl) => new GArray(Tl.Pos, Tl.R, (Tl.TimeLeft / Tl.Dur), Tl.Kind, Tl.End, Tl.Ang, Tl.Spread))) }, { "nodes", Gd.Map(Nodes, (Func<dynamic, dynamic>)((Nd) => new GArray(Nd.Type, Nd.Pos, Nd.Amount))) }, { "drops", Gd.Map(Drops, (Func<dynamic, dynamic>)((D) => new GArray(D.Pos, D.Item, D.N, D.Ttl))) }, { "msg", (((MsgT > 0) || (Phase == "result")) ? (dynamic)(Msg) : "") }, { "unlock", Unlock }, { "votes", Gd.Size(Votes) }, { "need", Gd.Ceili((0.6f * this.Humans())) }, { "leader", this.Leader() }, { "mode", Mode }, { "ext", Ext }, { "pads", PadClear }, { "broken", Broken }, { "dpause", Gd.Map(DoorPause, (Func<dynamic, dynamic>)((V) => (V > 0))) }, { "inside_en", this.EnemyInside() }, { "tw", Gd.Map(Gd.Filter(Towers, (Func<dynamic, dynamic>)((Tw) => (Tw != null))), (Func<dynamic, dynamic>)((Tw) => new GArray(Tw.Door, Tw.Pos, Tw.Hp, Tw.Wrecked, (Tw.Target != null), ((Tw.Target != null) ? (dynamic)(Tw.Target) : Vector2.Zero)))) }, { "free_tower", FreeTower }, { "boss_next", (((K == 2) || (K == 4)) ? (dynamic)(this.BossKindFor(K)) : (-1)) }, { "sto", Storage }, { "walls", Gd.Map(BuiltWalls, (Func<dynamic, dynamic>)((W) => new GArray(W.Pos, W.Vert, W.Hp, W.Maxhp, W.Kind))) }, { "result", Result }, { "arrows", Gd.Map(Arrows, (Func<dynamic, dynamic>)((A) => new GArray(A.Pos, A.Vel.Angle()))) } };
+        return new GDict { { "ph", Phase }, { "t", TimeLeft }, { "k", K }, { "base", BaseHp }, { "doors", Doors }, { "active", Active }, { "ps", Ps }, { "en", Gd.Map(Enemies, (Func<dynamic, dynamic>)((E) => new GArray(E.Id, E.Type, E.Pos, E.Hp, E.Maxhp, E.R, Gd.Get(E, "kind", (-1)), this.BossLook(E), Gd.Get(E, "face", 0.0f), (Gd.Get(E, "swing", 0.0f) > 0), (Gd.Get(E, "stun_until", 0f) > Clock), (Gd.Get(E, "slow_until", 0f) > Clock)))) }, { "proj", Gd.Map(Proj, (Func<dynamic, dynamic>)((B) => new GArray(B.Pos, Gd.Get(B, "kind", "spit")))) }, { "tele", Gd.Map(Tele, (Func<dynamic, dynamic>)((Tl) => new GArray(Tl.Pos, Tl.R, (Tl.TimeLeft / Tl.Dur), Tl.Kind, Tl.End, Tl.Ang, Tl.Spread))) }, { "nodes", SnapshotNodes() }, { "drops", Gd.Map(Drops, (Func<dynamic, dynamic>)((D) => new GArray(D.Pos, D.Item, D.N, D.Ttl))) }, { "msg", (((MsgT > 0) || (Phase == "result")) ? (dynamic)(Msg) : "") }, { "unlock", Unlock }, { "votes", Gd.Size(Votes) }, { "need", Gd.Ceili((0.6f * this.Humans())) }, { "leader", this.Leader() }, { "mode", Mode }, { "ext", Ext }, { "pads", PadClear }, { "broken", Broken }, { "dpause", Gd.Map(DoorPause, (Func<dynamic, dynamic>)((V) => (V > 0))) }, { "inside_en", this.EnemyInside() }, { "tw", Gd.Map(Gd.Filter(Towers, (Func<dynamic, dynamic>)((Tw) => (Tw != null))), (Func<dynamic, dynamic>)((Tw) => new GArray(Tw.Door, Tw.Pos, Tw.Hp, Tw.Wrecked, (Tw.Target != null), ((Tw.Target != null) ? (dynamic)(Tw.Target) : Vector2.Zero)))) }, { "free_tower", FreeTower }, { "boss_next", (((K == 2) || (K == 4)) ? (dynamic)(this.BossKindFor(K)) : (-1)) }, { "sto", Storage }, { "walls", Gd.Map(BuiltWalls, (Func<dynamic, dynamic>)((W) => new GArray(W.Pos, W.Vert, W.Hp, W.Maxhp, W.Kind))) }, { "result", Result }, { "tactical", TacticalSnapshot() }, { "arrows", Gd.Map(Arrows, (Func<dynamic, dynamic>)((A) => new GArray(A.Pos, A.Vel.Angle(), Gd.Get(A, "explosive", false)))) } };
     }
 
     public static readonly dynamic WALL_IN = 12.0f;

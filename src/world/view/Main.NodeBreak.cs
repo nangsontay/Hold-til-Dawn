@@ -5,9 +5,10 @@ using HoldTilDawn;
 
 // Owner: Vu Duc Viet Anh. A resource node breaks bit by bit as it is gathered instead of shrinking: each unit taken
 // (5 to a node) swaps in the next broken stage of its sprite (art/nature/<node>_dmg<k>_<variant>.png, drawn by
-// tools/PixelNature.cs: pieces knocked out, cracks, chips on the ground), the node jolts, and a burst of chips in
-// its colours flies off (wood chips, stone shards, leaves, blue crystal). While someone works it, it shakes and a
-// few small chips fly now and then. Once empty it shows its remains (stump, rubble, ...) until dawn.
+// tools/PixelHarvestDamage.cs: trunk notches, rock fractures, cut stems), the node jolts, and a burst of chips in
+// its colours flies off (wood chips, stone shards, leaves, blue crystal). Each tool contact triggers a short
+// highlight and a rigid jolt; five small slots show resource/progress on the worked node only.
+// Once empty it shows its remains (stump, rubble, ...) until dawn.
 public partial class Main : Node2D
 {
     const int NODE_FULL = 5;
@@ -29,7 +30,10 @@ public partial class Main : Node2D
     // what each node held last frame, when it last lost a unit, when it last threw a chip while worked
     readonly Dictionary<Vector2, int> NodeSeen = new();
     readonly Dictionary<Vector2, float> NodeHitAt = new();
-    readonly Dictionary<Vector2, float> NodeChipAt = new();
+    readonly Dictionary<Vector2, float> WorkedNodes = new();
+    readonly Dictionary<string, (Vector2 Target, float Start, int Cycle)> HarvestStrikes = new();
+    readonly Dictionary<Vector2, int> VisibleNodeAmounts = new();
+    readonly Dictionary<Vector2, string> WorkedSprites = new();
 
     // chip colours per node type: wood, stone, herb, titanium
     static readonly Color[][] CHIP_COLS =
@@ -54,9 +58,16 @@ public partial class Main : Node2D
             NodeHitAt[Pos] = (float)Clock;
         }
         NodeSeen[Pos] = Amount;
+        VisibleNodeAmounts[Pos] = Amount;
+        string Custom = Gd.Size(Nd) > 3 ? Gd.Str(Gd.At(Nd, 3)) : "";
+        if (Custom.Length > 0)
+        {
+            string Sprite = Amount <= 0 ? Harvestables.StageSprite(Custom, 5) : Amount < NODE_FULL ? Harvestables.StageSprite(Custom, NODE_FULL - Amount) : Custom;
+            if (Gd.Has(Spr, Sprite)) return RememberWorkedSprite(Pos, Sprite);
+        }
         if (Amount <= 0)
         {
-            return Gd.Str(this.Var(Gd.At(NODE_EMPTY, Type), Hsh));
+            return RememberWorkedSprite(Pos, Gd.Str(this.Var(Gd.At(NODE_EMPTY, Type), Hsh)));
         }
         string Name = Gd.Str(Gd.At(NODE_SPR, Type));
         int Stage = Mathf.Clamp((NODE_FULL - Amount), 0, NODE_STAGES);
@@ -68,47 +79,82 @@ public partial class Main : Node2D
                 Name = Broken;
             }
         }
-        return Gd.Str(this.Var(Name, Hsh));
+        return RememberWorkedSprite(Pos, Gd.Str(this.Var(Name, Hsh)));
     }
 
-    // Full size; it shakes while someone works it (and throws a small chip now and then) and jolts as a piece breaks off.
-    public float NodeScale(dynamic Nd)
+    string RememberWorkedSprite(Vector2 Pos, string Name)
     {
-        Vector2 Pos = (Vector2)Gd.At(Nd, 1);
-        if (Gd.Int(Gd.At(Nd, 2)) <= 0)
-        {
-            return 1.0f;
-        }
-        bool Worked = false;
+        if (WorkedNodes.ContainsKey(Pos)) WorkedSprites[Pos] = Name;
+        return Name;
+    }
+
+    // Once per frame, time impacts to the contact frame of each character's harvesting animation.
+    public void PrepareHarvestFeedback()
+    {
+        WorkedNodes.Clear();
+        VisibleNodeAmounts.Clear();
+        WorkedSprites.Clear();
         foreach (dynamic Id in Gd.Iter(Snap.Ps))
         {
             dynamic P = Gd.At(Snap.Ps, Id);
-            if (((Gd.At(P, 22) == "gather") && (((Vector2)Gd.At(P, 23)).DistanceTo(Pos) < 1.0f)))
-            {
-                Worked = true;
-                break;
-            }
+            if (Gd.Str(Gd.At(P, 22)) != "gather") continue;
+            Vector2 Pos = (Vector2)Gd.At(P, 23);
+            WorkedNodes[Pos] = Math.Max(WorkedNodes.GetValueOrDefault(Pos), Gd.Float(Gd.At(P, 21)));
+            dynamic Timing = Gd.Get(AnimState, Id);
+            if (Timing == null || !Gd.Str(Gd.At(Timing, 0)).StartsWith("gather_")) continue;
+            float Start = Gd.Float(Gd.At(Timing, 1));
+            float Time = Math.Max(0, (float)Clock - Start);
+            string Skin = Gd.Str(Gd.At(ROLE_SKIN, Gd.At(P, 1)));
+            dynamic Anim = Gd.At(Gd.At(Cinfo.Chars, Skin).Anims, Gd.At(Timing, 0));
+            int Count = Gd.Int(Gd.At(Anim, 1));
+            int Frame = (int)(Time * Gd.Float(Gd.At(Anim, 2))), Cycle = Frame / Count;
+            if (Frame % Count < 3) continue;
+            string Key = Gd.Str(Id);
+            if (HarvestStrikes.TryGetValue(Key, out var Last) && Last.Target == Pos && Last.Start == Start && Last.Cycle == Cycle) continue;
+            HarvestStrikes[Key] = (Pos, Start, Cycle);
+            if (!HarvestTypes.TryGetValue(Pos, out int Type)) continue;
+            NodeHitAt[Pos] = (float)Clock;
+            BurstChips(Type, Pos, Type == 2 ? 6 : 8, 0.65f);
         }
-        float Now = (float)Clock;
-        float S = 1.0f;
-        if (Worked)
+    }
+
+    public float NodeScale(dynamic Nd) => 1.0f;
+
+    public Color NodeModulate(dynamic Nd)
+    {
+        Vector2 Pos = (Vector2)Gd.At(Nd, 1);
+        float Age = (float)Clock - NodeHitAt.GetValueOrDefault(Pos, -9);
+        float Light = 1 + 0.38f * Mathf.Clamp(1 - Age / 0.13f, 0, 1);
+        return new Color(Light, Light, Light, 1);
+    }
+
+    public Vector2 NodeOffset(dynamic Nd)
+    {
+        Vector2 Pos = (Vector2)Gd.At(Nd, 1);
+        if (NodeHitAt.TryGetValue(Pos, out float At) && (float)Clock - At < 0.2f)
+            return new Vector2(MathF.Sin(((float)Clock - At) * 65) * 2 * (1 - ((float)Clock - At) / 0.2f), 0).Round();
+        return Vector2.Zero;
+    }
+
+    public void DrawHarvestFeedback()
+    {
+        foreach (var (Pos, Progress) in WorkedNodes)
         {
-            S *= (1.0f + (0.025f * Mathf.Sin((Now * 28.0f))));
-            if ((Now - NodeChipAt.GetValueOrDefault(Pos, -9.0f)) > 0.32f)
+            if (!VisibleNodeAmounts.TryGetValue(Pos, out int Amount) || Amount <= 0 || HiddenInBase(Pos)) continue;
+            // Five small slots show units left; the next slot empties while E is held.
+            if (!WorkedSprites.TryGetValue(Pos, out string Sprite)) continue;
+            Rect2 Bounds = (Rect2)SpriteRect(Sprite, Pos, 1.0f);
+            Vector2 At = new Vector2(Pos.X - 16, Bounds.Position.Y - 10).Round();
+            DrawRect(new Rect2(At - Vector2.One * 2, new Vector2(36, 8)), new Color("141019"));
+            Color Col = CHIP_COLS[HarvestTypes.GetValueOrDefault(Pos)][0];
+            for (int I = 0; I < NODE_FULL; I++)
             {
-                NodeChipAt[Pos] = Now;
-                this.BurstChips(Gd.Int(Gd.At(Nd, 0)), Pos, 2, 0.5f);
+                Vector2 Slot = At + new Vector2(I * 7, 0);
+                DrawRect(new Rect2(Slot, new Vector2(5, 4)), new Color("41464B"));
+                float Fill = I < Amount - 1 ? 1 : I == Amount - 1 ? 1 - Mathf.Clamp(Progress, 0, 1) : 0;
+                if (Fill > 0) DrawRect(new Rect2(Slot, new Vector2(Math.Max(1, Mathf.Ceil(5 * Fill)), 4)), Col);
             }
         }
-        if (NodeHitAt.TryGetValue(Pos, out float At))
-        {
-            float K = ((Now - At) / 0.2f);
-            if (K < 1.0f)
-            {
-                S *= (1.0f + (0.08f * (1.0f - K)));
-            }
-        }
-        return S;
     }
 
     void BurstChips(int Type, Vector2 Foot, int N, float Power)
@@ -127,7 +173,7 @@ public partial class Main : Node2D
                 Floor = (Foot.Y + Mathf.Lerp(-4.0f, 8.0f, GD.Randf())),
                 Age = 0.0f,
                 Life = Mathf.Lerp(0.6f, 1.1f, GD.Randf()),
-                Size = ((GD.Randf() < 0.3f) ? 2.0f : 1.0f) * ((Power >= 1.0f) ? 2.0f : 1.0f),
+                Size = GD.Randf() < 0.3f ? 3 : 2,
                 Col = Cols[(int)(GD.Randi() % (uint)Cols.Length)],
             });
         }

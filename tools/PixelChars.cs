@@ -16,7 +16,8 @@ public partial class PixelChars : Node
     // Sheet layout: rows = right, down, left, up, down-right, down-left, up-left, up-right; columns = idle 0-1,
     // walk 2-5, then the fight frames of tools/PixelPoses.cs, 4 per attack (players: bare hands, stone spear,
     // metal blade, hammer, bow; enemies: their own attack), and last 4 frames knocked down (hit, knees give,
-    // falling, lying with the eyes shut). chars.json lists them under "anims". A cell is the body plus
+    // falling, lying with the eyes shut). Players then have three 6-frame harvesting cycles (wood, stone,
+    // herbs) from PixelGatherPoses.cs. chars.json lists them under "anims". A cell is the body plus
     // PixelPoses.M pixels on every side, so a weapon at full reach fits; "body" is the character's own size.
     // The PNGs can be repainted by hand (Aseprite, Piskel, ...): the game reads them as they are.
     // #
@@ -48,6 +49,7 @@ public partial class PixelChars : Node
         foreach (string outputArgument in OS.GetCmdlineUserArgs())
             if (outputArgument.StartsWith("--out=", StringComparison.Ordinal)) Out = outputArgument[6..];
         DirAccess.MakeDirRecursiveAbsolute(Out);
+        ConfigureEnemyDesigns();
         this.AddThreeQuarterViews();
         dynamic Info = new GDict { { "frames", new GDict { { "idle", new GArray(0, 2) }, { "run", new GArray(2, 4) } } }, { "fps", new GDict { { "idle", 2.0f }, { "run", 10.0f } } }, { "dirs", new GArray("right", "down", "left", "up", "down_right", "down_left", "up_left", "up_right") }, { "chars", new GDict {  } } };
         foreach (dynamic N in Gd.Iter(CHARACTERS))
@@ -62,7 +64,9 @@ public partial class PixelChars : Node
             float Ground = ((Feet + PixelPoses.M) + 1);
             bool Player = (BodyName == "human");
             string[] Attacks = (Player ? PixelPoses.PLAYER_ATTACKS : new[] { ENEMY_ATTACK[Name] });
-            int Cols = ((6 + (PixelPoses.ATTACK_FRAMES * Attacks.Length)) + 4);
+            int DownFirst = 6 + PixelPoses.ATTACK_FRAMES * Attacks.Length;
+            int GatherFirst = DownFirst + 4;
+            int Cols = GatherFirst + (Player ? PixelPoses.GATHER_FRAMES * PixelPoses.GATHER_KINDS.Length : 0);
             var Sheet = Image.CreateEmpty((Cell * Cols), (Cell * 8), false, Image.Format.Rgba8);
             dynamic Pal = this.Palette(N);
             for (int Row = 0; Row < 8; Row++)
@@ -86,6 +90,9 @@ public partial class PixelChars : Node
                 {
                     Frames.Add(PixelPoses.Finish(Im, Ground, Srx));
                 }
+                if (Player)
+                    foreach (string Kind in PixelPoses.GATHER_KINDS)
+                        Frames.AddRange(PixelPoses.Gather(Kind, Raw(this.Compose(N, View, false, true)), View, R, Legs, Feet, Cell, Rx));
                 for (int Col = 0; Col < Cols; Col++)
                 {
                     var F = Frames[Col];
@@ -111,7 +118,10 @@ public partial class PixelChars : Node
                     Anims["attack"] = new GArray(First, PixelPoses.ATTACK_FRAMES, ENEMY_ATTACK_FPS);
                 }
             }
-            Anims["down"] = new GArray((Cols - 4), 4, DOWN_FPS);
+            Anims["down"] = new GArray(DownFirst, 4, DOWN_FPS);
+            if (Player)
+                for (int I = 0; I < PixelPoses.GATHER_KINDS.Length; I++)
+                    Anims["gather_" + PixelPoses.GATHER_KINDS[I]] = new GArray(GatherFirst + I * PixelPoses.GATHER_FRAMES, PixelPoses.GATHER_FRAMES, PixelPoses.GATHER_FPS);
             // size: the sheet cell; body: the drawn character (what the game scales to its size in tiles)
             Info.Chars[N] = new GDict { { "size", Cell }, { "body", Size }, { "anchor", new GArray((Cell / 2.0f), Ground) }, { "anims", Anims } };
             GD.Print("drew ", N, " ", Cell, "x", Cell, ", ", Cols, " columns");
@@ -152,6 +162,7 @@ public partial class PixelChars : Node
                 }
                 break;
             case "nox":
+            case "spitter":
                 R = new PixelPoses.Rig { ArmW = 3, HandW = 3, Reach = 1.1f, Arm = C("N"), Hand = C("N"), Claw = C("A") };
                 L = new Vector2(9.5f, 19.5f); Rr = new Vector2(23, 19.5f);
                 El = new Rect2I(8, 19, 3, 6); Er = new Rect2I(22, 19, 2, 6);
@@ -192,7 +203,7 @@ public partial class PixelChars : Node
     }
 
     // Shut: the eyes closed (lying knocked down)
-    public dynamic Compose(dynamic N, dynamic View, bool Shut = false)
+    public dynamic Compose(dynamic N, dynamic View, bool Shut = false, bool Working = false)
     {
         dynamic Ch = Gd.At(CHARACTERS, N);
         dynamic Body = Gd.At(BODIES, Ch.Body);
@@ -220,6 +231,10 @@ public partial class PixelChars : Node
                     {
                         continue;
                     }
+                    // Stow the resting bow, hammer or vial while holding a harvesting tool.
+                    if (Working && (((string)N == "scout" && (K == "W" || K == "w")) ||
+                        ((string)N == "engineer" && (K == "M" || K == "m" || K == "W")) ||
+                        ((string)N == "healer" && K == "Z"))) continue;
                     if (!(Gd.Truth(Gd.Has(Pal, K))))
                     {
                         GD.PushError(Gd.Format("%s %s: no colour for '%s'", new GArray(N, View, K)));
@@ -229,6 +244,7 @@ public partial class PixelChars : Node
                 }
             }
         }
+        PaintEnemyDetails((string)N, (string)View, Raw(Im), Shut);
         return Im;
     }
 
@@ -253,6 +269,8 @@ public partial class PixelChars : Node
             { 5, ".NNNNYYNNNNYYNn." },
             { 7, ".nNNNNDTDTTDTDn." } });
         Turned(NOX, "up", new GDict {  });
+        Turned(Gd.At(BODIES, "spitter"), "down", new GDict { });
+        Turned(Gd.At(BODIES, "spitter"), "up", new GDict { });
         Turned(WRECKER_BODY, "down", new GDict {
             { 6, "..NNNNYYYNNNNYYYNn.." },
             { 8, "..nNNNNDTDTDTDTDNn.." } });

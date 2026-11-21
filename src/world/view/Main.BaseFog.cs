@@ -38,9 +38,18 @@ public partial class Main : Node2D
     // open door. Drawn on the ground layer, so the walls and everything outside draw over it.
     float RoofAlpha;
 
+    // the roof is about 1500 rects a frame from outside: its colours are parsed once, not on every rect
+    static readonly System.Collections.Generic.Dictionary<string, Color> RoofHex = new();
+    static readonly Color ROOF_SLAB = new Color("B0A58B"), ROOF_SLAB_LIT = new Color("C6BBA1");
+    static readonly Vector2[] RIVETS = { new Vector2(2, 2), new Vector2(32 - 4, 2), new Vector2(2, 25 - 4), new Vector2(32 - 4, 25 - 4), new Vector2((32 / 2) - 1, 2), new Vector2((32 / 2) - 1, 25 - 4) };
+
     Color Rf(string Hex, float A = 1.0f)
     {
-        var C = new Color(Hex);
+        if (!RoofHex.TryGetValue(Hex, out var C))
+        {
+            C = new Color(Hex);
+            RoofHex[Hex] = C;
+        }
         C.A = (A * RoofAlpha);
         return C;
     }
@@ -89,12 +98,12 @@ public partial class Main : Node2D
                     continue;
                 }
                 int Hs = Hash(Mathf.RoundToInt(X), Mathf.RoundToInt(Y) + 999);
-                DrawRect(P, Rf(new Color("B0A58B").Lerp(new Color("C6BBA1"), ((Hs % 100) / 100.0f))));
+                DrawRect(P, Rf(ROOF_SLAB.Lerp(ROOF_SLAB_LIT, ((Hs % 100) / 100.0f))));
                 DrawRect(new Rect2(P.Position, new Vector2(P.Size.X, 1)), Rf("DDD3BB", 0.8f));
                 DrawRect(new Rect2(P.Position, new Vector2(1, P.Size.Y)), Rf("DDD3BB", 0.5f));
                 DrawRect(new Rect2(P.Position.X, (P.End.Y - 1), P.Size.X, 1), Rf("857B66", 0.6f));
                 // rivets at the corners and halfway along the long edges
-                foreach (var Rv in new[] { new Vector2(2, 2), new Vector2((Pw - 4), 2), new Vector2(2, (Ph - 4)), new Vector2((Pw - 4), (Ph - 4)), new Vector2(((Pw / 2) - 1), 2), new Vector2(((Pw / 2) - 1), (Ph - 4)) })
+                foreach (var Rv in RIVETS)
                 {
                     Vector2 At = (P.Position + Rv);
                     if (P.HasPoint(At))

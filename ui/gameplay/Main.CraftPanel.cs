@@ -12,6 +12,26 @@ public partial class Main : Node2D
 {
     // the recipe shown on the right
     public int CraftSel;
+    public int CraftTier;
+    public List<int> CraftChoices()
+    {
+        var Choices = new List<int>();
+        for (int I = 0; I < Gd.Size(GameSim.RECIPES); I++)
+            if (Gd.Int(Gd.At(Gd.At(GameSim.RECIPES, I), 2)) == CraftTier) Choices.Add(I);
+        return Choices;
+    }
+    public Rect2 CraftTierButton(Vector2 Vs, int Tier)
+    {
+        Rect2 P = CraftPanelRect(Vs);
+        float W = (CraftLeftW(P) - 16) / 3;
+        return new Rect2(P.Position.X + 20 + Tier * (W + 4), P.Position.Y + HEAD_H + 4, W, 26);
+    }
+    public void SelectCraftTier(int Tier)
+    {
+        CraftTier = Mathf.Clamp(Tier, 0, 2);
+        var Choices = CraftChoices();
+        if (!Choices.Contains(CraftSel)) CraftSel = Choices[0];
+    }
 
     static readonly Dictionary<string, string> RES_FROM = new()
     {
@@ -56,14 +76,8 @@ public partial class Main : Node2D
                 K++;
             }
         }
-        float Y = (this.CraftRowTop(P, Tier) + 18);
-        return new Rect2((P.Position.X + 20 + (K * (Cw + CARD_GAP))), Y, Cw, CARD_H);
-    }
-
-    // top of a tier's row: its title, then its cards 18 px lower
-    float CraftRowTop(Rect2 P, int Tier)
-    {
-        return ((P.Position.Y + HEAD_H) + (Tier * (CARD_H + 28)));
+        float Y = P.Position.Y + HEAD_H + 44 + (K / 4) * (CARD_H + 12);
+        return new Rect2(P.Position.X + 20 + (K % 4) * (Cw + CARD_GAP), Y, Cw, CARD_H);
     }
 
     Rect2 CraftDetail(Rect2 P)
@@ -88,7 +102,9 @@ public partial class Main : Node2D
 
     static string KeyOf(int I)
     {
-        return Gd.Str(((I + 1) % 10));
+        int N = 0, Tier = Gd.Int(Gd.At(Gd.At(GameSim.RECIPES, I), 2));
+        for (int J = 0; J <= I; J++) if (Gd.Int(Gd.At(Gd.At(GameSim.RECIPES, J), 2)) == Tier) N++;
+        return Gd.Str(N % 10);
     }
 
     float CraftSeconds(dynamic R)
@@ -121,6 +137,8 @@ public partial class Main : Node2D
     List<string> CraftDesc(string Id)
     {
         var Out = new List<string>();
+        string[] Tactical = GameSim.TacticalDescription(Id);
+        if (Tactical.Length > 0) return new List<string>(Tactical);
         if (Gd.Truth(GameSim.WEAPON_STATS.Has(Id)))
         {
             dynamic S = GameSim.WEAPON_STATS[Id];
@@ -248,19 +266,25 @@ public partial class Main : Node2D
         this.Text(C, (P.Position + new Vector2(20, 28)), "WORKBENCH", 18, GOLD, 0, -1.0f, true);
         bool At = this.AtBenchLocal(Me);
         this.Text(C, (P.Position + new Vector2(150, 27)), (At ? "You are at the workbench" : "Walk to the workbench (north wall, west of door B) to craft"), 11, (At ? new Color("7FD38A") : new Color(1, 0.6f, 0.55f)));
-        this.Text(C, new Vector2((P.End.X - 420), (P.Position.Y + 27)), "click a recipe  -  number key crafts at once  -  C close", 10, new Color(1, 1, 1, 0.5f), 2, 400.0f);
+        this.Text(C, new Vector2((P.End.X - 420), (P.Position.Y + 27)), "Choose tier / recipe  -  1-8 craft  -  C close", 10, new Color(1, 1, 1, 0.5f), 2, 400.0f);
         // --- recipe cards, by tier
         float Lw = this.CraftLeftW(P);
         for (int T = 0; T < 3; T++)
         {
-            float Hy = (this.CraftRowTop(P, T) + 12);
-            bool Open = (T <= Gd.Int(Gd.Get(Snap, "unlock", 0)));
-            this.Text(C, new Vector2((P.Position.X + 20), Hy), TIER_TITLES[T], 10, (Open ? GOLD : new Color(1, 1, 1, 0.4f)), 0, -1.0f, true);
+            Rect2 Tab = CraftTierButton(V, T);
+            bool Open = T <= Gd.Int(Gd.Get(Snap, "unlock", 0));
+            C.DrawRect(Tab, CraftTier == T ? new Color(0.35f, 0.29f, 0.14f, 0.95f) : new Color(0.08f, 0.09f, 0.12f, 0.9f));
+            C.DrawRect(Tab, CraftTier == T ? GOLD : new Color(1, 1, 1, 0.2f), false, 1f);
+            this.Text(C, new Vector2(Tab.Position.X, Tab.Position.Y + 18), (T == 0 ? "BASIC" : T == 1 ? "STONE" : "TITANIUM") + (Open ? "" : " [locked]"), 11, Open ? GOLD : Colors.Gray, 1, Tab.Size.X, true);
         }
+        string UnlockHint = CraftTier == 0 ? "Available from day 1" : CraftTier == 1 ? "Unlock: survive night 1" : "Unlock: defeat the first boss";
+        this.Text(C, new Vector2(P.Position.X + 20, P.Position.Y + 350), UnlockHint, 11, GOLD);
+        this.Text(C, new Vector2(P.Position.X + 20, P.Position.Y + 374), "Use items: move to hotbar (Tab), select 1-4, then click.", 11, Colors.White);
+        this.Text(C, new Vector2(P.Position.X + 20, P.Position.Y + 393), "Gathering kit: passive while carried. Q: bandage.", 11, Colors.Gray);
         int Busy = Gd.Int(Gd.At(Me, 26));
         for (int I = 0; I < Gd.Size(GameSim.RECIPES); I++)
         {
-            this.DrawCraftCard(C, Me, I, this.CraftCard(V, I), Mouse, Busy);
+            if (Gd.Int(Gd.At(Gd.At(GameSim.RECIPES, I), 2)) == CraftTier) this.DrawCraftCard(C, Me, I, this.CraftCard(V, I), Mouse, Busy);
         }
         // what you carry and what is in the chest
         float By = (P.End.Y - 20);
@@ -343,14 +367,14 @@ public partial class Main : Node2D
         float Tx = (D.Position.X + 110);
         this.Text(C, new Vector2(Tx, (D.Position.Y + 20)), Gd.Str(Gd.At(R, 0)), 17, Colors.White, 0, -1.0f, true);
         this.Text(C, new Vector2(Tx, (D.Position.Y + 38)), this.CraftTag(Id), 10, GOLD, 0, -1.0f, true);
-        float Ly = (D.Position.Y + 58);
+        float Ly = (D.Position.Y + 114);
         foreach (string Line in this.CraftDesc(Id))
         {
-            this.Text(C, new Vector2(Tx, Ly), Line, 11, new Color(1, 1, 1, 0.85f));
+            this.Text(C, new Vector2(D.Position.X, Ly), Line, 11, new Color(1, 1, 1, 0.85f));
             Ly += 16;
         }
         // how it is made: ingredients + ingredients -> result
-        float Hy = (D.Position.Y + 128);
+        float Hy = (D.Position.Y + 196);
         this.Text(C, new Vector2(D.Position.X, Hy), "HOW TO CRAFT", 11, GOLD, 0, -1.0f, true);
         float X = D.Position.X;
         float Y = (Hy + 12);
@@ -396,12 +420,12 @@ public partial class Main : Node2D
         {
             string Name = Gd.Str(Res);
             string From = RES_FROM.GetValueOrDefault(Name, "");
-            Gather.Add((Gd.Str(Gd.At(Cost, Res)) + " " + Name + " (" + From + ")"));
+            Gather.Add(Gd.Str(Gd.At(Cost, Res)) + " " + Name);
         }
-        Steps.Add(("Gather " + string.Join(" and ", Gather) + "."));
+        Steps.Add(("Gather " + string.Join(" + ", Gather) + "."));
         Steps.Add("Carry them: crafting uses your bag, not the chest.");
-        Steps.Add(("Stand at the workbench, press Craft or key " + KeyOf(I) + "."));
-        Steps.Add(("Hold on " + Num(this.CraftSeconds(R)) + " s: a hit or walking away stops it."));
+        Steps.Add(("At the workbench: Craft or key " + KeyOf(I) + "."));
+        Steps.Add(("Wait " + Num(this.CraftSeconds(R)) + " s. Moving or damage cancels."));
         for (int K = 0; K < Steps.Count; K++)
         {
             this.Text(C, new Vector2(D.Position.X, Sy), Gd.Format("%d.", (K + 1)), 11, GOLD, 0, -1.0f, true);
@@ -450,7 +474,9 @@ public partial class Main : Node2D
         {
             Vector2 Vs = (Vector2)Hud.Size;
             Vector2 Mouse = (Vector2)(Hud.GetLocalMousePosition());
-            for (int I = 0; I < Gd.Size(GameSim.RECIPES); I++)
+            for (int T = 0; T < 3; T++)
+                if (CraftTierButton(Vs, T).HasPoint(Mouse)) { SelectCraftTier(T); return true; }
+            foreach (int I in CraftChoices())
             {
                 if (this.CraftCard(Vs, I).HasPoint(Mouse))
                 {

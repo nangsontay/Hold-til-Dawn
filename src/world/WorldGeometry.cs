@@ -57,6 +57,7 @@ public partial class WorldGeometry : RefCounted
     {
         Gd.Clear(Deco);
         Gd.Clear(Scatter);
+        HarvestSites.Clear();
         dynamic Random = Gd.Wrap(new RandomNumberGenerator());
         Random.Seed = 7;
         // paths, ponds, the swamp and the cave spires first, so the scenery grows around them (WorldTerrain.cs)
@@ -65,7 +66,6 @@ public partial class WorldGeometry : RefCounted
         this.BuildLandmarks();
         // sprite names without the variant number (art/nature/<name>_<k>.png, tools/PixelNature.cs)
         dynamic Pines = new GArray("pine");
-        dynamic Dead = new GArray("dead");
         dynamic Rocks = new GArray("rock");
         dynamic Variants = Gd.FromVariant(Json.ParseString(Gd.Static(typeof(FileAccess), "get_file_as_string", "res://art/nature/index.json")));
         // and the landmarks' sprites (art/landmarks, tools/PixelLandmarks.cs)
@@ -89,13 +89,13 @@ public partial class WorldGeometry : RefCounted
         // a tree for every tree on the design map, most with one to three more beside it (the island is larger than the map)
         foreach (Vector2 Dot in IslandMap.Trees)
         {
-            int Count = 1 + ((Random.Randf() < 0.8f) ? 1 : 0) + ((Random.Randf() < 0.5f) ? 1 : 0) + ((Random.Randf() < 0.25f) ? 1 : 0);
+            int Count = 1; // harvestable forest: spaced trees, without overlapping decorative copies
             foreach (dynamic K in Gd.Iter(Count))
             {
                 Vector2 P = ((K == 0) ? Dot : (Dot + (Vector2.FromAngle((Random.Randf() * Mathf.Tau)) * Random.RandfRange((0.8f * T), (2.6f * T)))));
                 if (Free(P))
                 {
-                    dynamic Pool = ((Random.Randf() < 0.15f) ? (dynamic)(Dead) : Pines);
+                    dynamic Pool = Pines;
                     // coconut palms in the Coconut Grove
                     if (this.InGrove(P))
                     {
@@ -110,7 +110,7 @@ public partial class WorldGeometry : RefCounted
         {
             var Wb = new Rect2(Wood[0], Vector2.Zero);
             foreach (Vector2 Q in Wood) Wb = Wb.Expand(Q);
-            int Many = (int)((Wb.Area / (T * T)) / 70.0f);
+            int Many = (int)((Wb.Area / (T * T)) / 110.0f);
             foreach (dynamic K in Gd.Iter(Many))
             {
                 var P = new Vector2(Mathf.Lerp(Wb.Position.X, Wb.End.X, Random.Randf()), Mathf.Lerp(Wb.Position.Y, Wb.End.Y, Random.Randf()));
@@ -135,14 +135,6 @@ public partial class WorldGeometry : RefCounted
                 {
                     Gd.Append(Deco, new GArray(P, Variant(Gd.At(Rocks, (Random.Randi() % Gd.Size(Rocks))), Random.Randi()), 1.0f, COLD));
                 }
-            }
-        }
-        foreach (dynamic I in Gd.Iter(90))
-        {
-            Vector2 P = Anywhere();
-            if (Outer(P))
-            {
-                Gd.Append(Deco, new GArray(P, Variant(Gd.At(Dead, (Random.Randi() % Gd.Size(Dead))), Random.Randi()), 1.0f, COLD));
             }
         }
         // low shrubs in the safe zone
@@ -198,6 +190,7 @@ public partial class WorldGeometry : RefCounted
         {
             Gd.Append(Deco, new GArray(Lp, Ls, 1.0f, COLD));
         }
+        ExtractHarvestables(Variants);
         // Hand-placed objects are editable with Godot's 2D editor.
         dynamic Layout = LAYOUT.Instantiate();
         Gd.Clear(StaticSolids);
@@ -215,6 +208,14 @@ public partial class WorldGeometry : RefCounted
         {
             if ((Gd.IsType(Child, typeof(Sprite2D)) && (Child.Texture != null)))
             {
+                string Sprite = Gd.GetBasename(Gd.GetFile(Child.Texture.ResourcePath));
+                if (Sprite.StartsWith("dead_", StringComparison.Ordinal)) continue;
+                int ResourceType = Harvestables.TypeOf(Sprite);
+                if (ResourceType >= 0)
+                {
+                    HarvestSites.Add(new Harvestables.Site((Vector2)Child.Position, Sprite, ResourceType, Gd.Float(Child.SolidRadius * Gd.Absf(Child.Scale.X))));
+                    continue;
+                }
                 Gd.Append(Deco, new GArray(Child.Position, Gd.GetBasename(Gd.GetFile(Child.Texture.ResourcePath)), Child.Scale.X, Child.Modulate));
                 if ((Child.SolidRadius > 0))
                 {
@@ -241,30 +242,8 @@ public partial class WorldGeometry : RefCounted
 
     public void Rebuild(dynamic Nodes, dynamic Towers, dynamic Walls = null)
     {
-        dynamic Next = Gd.Duplicate(StaticSolids);
-        foreach (dynamic W in Gd.Iter((Walls ?? new GArray())))
-        {
-            foreach (dynamic Piece in Gd.Iter(WorldGeometry.WallPieces(W.Pos, W.Vert)))
-            {
-                Gd.Append(Next, new GArray(Piece, (WALL_PIECE * T), true));
-            }
-        }
-        foreach (dynamic Nd in Gd.Iter(Nodes))
-        {
-            float R = Gd.Float((Gd.At(new GArray(0.25f, 0.62f, 0.0f, 0.6f), Nd.Type) * T));
-            if (((Nd.Amount > 0) && (R > 0)))
-            {
-                Gd.Append(Next, new GArray(Nd.Pos, R, true));
-            }
-        }
-        foreach (dynamic Tw in Gd.Iter(Towers))
-        {
-            if ((Tw != null))
-            {
-                Gd.Append(Next, new GArray(Tw.Pos, (0.7f * T), true));
-            }
-        }
-        if ((Next == Solids))
+        dynamic Next = UpdatedColliders((GArray)Nodes, (GArray)Towers, (GArray)Walls);
+        if (Next == null)
         {
             return;
         }
@@ -272,6 +251,7 @@ public partial class WorldGeometry : RefCounted
         Gd.Clear(Buckets);
         Gd.Clear(Grids);
         Gd.Clear(Paths);
+        InvalidateFastNavigation();
         Revision += 1;
         foreach (dynamic I in Gd.Iter(Gd.Size(Solids)))
         {
@@ -294,6 +274,8 @@ public partial class WorldGeometry : RefCounted
                 }
             }
         }
+        // the typed copy the moves use every tick (WorldGeometry.FastMove.cs)
+        this.MirrorSolids();
     }
 
     public dynamic Candidates(dynamic A, dynamic B, dynamic Radius)

@@ -11,3 +11,9 @@ image generator was used.
 AI disclosure: the pixel maps and the script were written by an AI coding assistant (Claude)
 from the team's GDD; declare them in GDD Appendix B as AI-made assets. The PNGs can be repainted
 by hand (Aseprite, Piskel, ...): keep the file name and the game uses the edited file.
+
+Tactical additions: long_spear, stun_maul, vine_trap, poison_flask, healing_flask,
+haste_tonic, gathering_kit, explosive_arrow, repair_kit, plus the explosive arrow
+projectile in art/fx. Original pixel maps in tools/PixelTacticalItems.cs, generated
+with the existing PixelItems outline and palette pipeline. Authored with Codex;
+no third-party assets or image generator. Regenerate via tools/PixelItems.tscn.
