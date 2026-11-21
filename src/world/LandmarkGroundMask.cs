@@ -27,7 +27,6 @@ public sealed class LandmarkGroundMask
     {
         if (!IslandMap.OnLand(P) || !IslandMap.OnGrass(P, Margin)) return false;
         foreach (var (Floor, _) in World.Floors) if (Floor.Grow(Margin).HasPoint(P)) return false;
-        if (World.CrossingTerrain(P, Margin) >= 0) return false;
         foreach (var Pond in World.Ponds)
             if (P.DistanceTo(Pond.Centre) < Pond.Radius * 1.6f + Margin && IslandMap.InPolygon(Pond.Edge, P)) return false;
         foreach (var (A, Delta, Length2, HalfWidth) in Segments)

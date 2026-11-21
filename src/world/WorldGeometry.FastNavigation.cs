@@ -126,6 +126,10 @@ public partial class WorldGeometry
         }
         foreach (Rect2 Wall in Walls)
             if (SegmentBoxFast(From, To, Wall.Grow(Radius))) return false;
+        // no short cut over the water: the sea, and the rivers beside their bridges (IslandMap.OnLand)
+        int Samples = (int)(Mathf.Sqrt(Length2) / 12.0f) + 1;
+        for (int K = 1; K <= Samples; K++)
+            if (!IslandMap.OnLand(From + Step * ((float)K / Samples), Radius * 0.9f)) return false;
         return true;
     }
 

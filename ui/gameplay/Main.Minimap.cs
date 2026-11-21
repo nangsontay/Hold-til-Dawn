@@ -86,8 +86,10 @@ public partial class Main : Node2D
                     if (P.DistanceTo(Terrain.SwampCentre) < Terrain.SwampR * 0.85f) Col = new Color("55583A");
                     foreach (var Pd in Terrain.Ponds)
                         if (IslandMap.InPolygon(Pd.Edge, P)) Col = new Color("3B6A86");
-                    if (Terrain.CrossingTerrain(P) == 1) Col = new Color("396772");
                 }
+                // the rivers, and their bridges across them
+                if (D >= 0 && IslandMap.InRiver(P)) Col = IslandMap.OnBridge(P) ? new Color("9C7A4E") : Shallow[2];
+                else if (D >= 0 && IslandMap.InRiver(P, IslandMap.RIVER_BANK)) Col = new Color("6B6A45");
                 Im.SetPixel(X, Y, Col);
             }
         // the landmarks' concrete and the pier (src/world/WorldLandmarks.cs)
@@ -168,11 +170,6 @@ public partial class Main : Node2D
             Ci.DrawCircle(Pos, Big ? 10 : 4, new Color("192027"));
             Ci.DrawArc(Pos, Big ? 10 : 4, 0, Mathf.Tau, 16, SUPPLY_COL, 2);
             if (Big) DrawComponentIcon(Ci, Gd.Int(S[0]), Pos, 1);
-        }
-        foreach (var Crossing in W.Crossings)
-        {
-            Vector2 Pos = To(Crossing.At);
-            if (Inside.HasPoint(Pos)) Ci.DrawLine(Pos - Crossing.Along * 3, Pos + Crossing.Along * 3, new Color("C9A572"), Big ? 3 : 2);
         }
         // towers
         foreach (dynamic Tw in Gd.Iter(Gd.Get(Snap, "tw", new GArray())))

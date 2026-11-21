@@ -18,7 +18,6 @@ public partial class Main : Node2D
 
     void DrawLandmarkGround(WorldGeometry W, Rect2 View)
     {
-        DrawCrossings(W, View);
         float Tl = (float)T;
         foreach (var (F, Drawn) in W.Floors)
             if (Drawn && F.Intersects(View)) DrawSlab(F);

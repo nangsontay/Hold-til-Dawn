@@ -64,7 +64,7 @@ public partial class WorldGeometry
         SouthCape(R);
         HerbGarden(R);
         DressLandmarks();
-        BuildCrossings();
+        BuildRamps();
         DressExploration();
     }
 

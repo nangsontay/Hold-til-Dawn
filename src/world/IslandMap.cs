@@ -6,9 +6,10 @@ using FileAccess = Godot.FileAccess;
 // Owner: Vu Duc Viet Anh. The island from the level-design map (maps/island_map.json, made from the PDF by
 // tools/island_from_pdf.py): its coast with 4-6 tile beaches, the shallows, hills, woods, the three main gathering
 // routes and the exploration trails, and the 18 landmarks. Positions in the file are tiles from the outpost
-// centre; here they are pixels, scaled up by SCALE. Shared by every peer (no rendering): the sea stops everyone, and scenery,
+// centre; here they are pixels, scaled up by SCALE. Shared by every peer (no rendering): the sea and the two rivers
+// (src/world/IslandRivers.cs) stop everyone, and scenery,
 // nodes and spawns are placed from it.
-public static class IslandMap
+public static partial class IslandMap
 {
     const float TL = 32.0f;
     // The island is drawn 1.5 times the size of the design map, round the outpost (which keeps its size, as do the
@@ -77,6 +78,8 @@ public static class IslandMap
         N = (int)(2 * REACH / STEP) + 1;
         CoastDepth = DepthGrid(Coast);
         GrassDepth = DepthGrid(Grass);
+        // the two rivers and their bridges (src/world/IslandRivers.cs)
+        BuildRivers();
     }
 
     static Vector2 Pt(Variant V)
@@ -164,7 +167,8 @@ public static class IslandMap
     // pixels inland from the waterline (negative out at sea)
     public static float Depth(Vector2 P) => Sample(CoastDepth, P);
 
-    public static bool OnLand(Vector2 P, float Margin = 0) => Depth(P) >= Margin || OnDock(P, Margin);
+    // the rivers are water like the sea: only their bridges cross them (src/world/IslandRivers.cs)
+    public static bool OnLand(Vector2 P, float Margin = 0) => (Depth(P) >= Margin && !InRiver(P, Margin)) || OnDock(P, Margin) || OnBridge(P, Margin);
 
     static bool OnDock(Vector2 P, float Margin)
     {
@@ -173,7 +177,8 @@ public static class IslandMap
         return false;
     }
 
-    public static bool OnGrass(Vector2 P, float Margin = 0) => Sample(GrassDepth, P) >= Margin;
+    // grass stops at the rivers' banks too
+    public static bool OnGrass(Vector2 P, float Margin = 0) => Sample(GrassDepth, P) >= Margin && !InRiver(P, RIVER_BANK + Margin);
 
     // pixels in from the edge of the grass (negative on the beach and at sea)
     public static float GrassIn(Vector2 P) => Sample(GrassDepth, P);

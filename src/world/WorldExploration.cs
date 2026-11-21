@@ -5,30 +5,12 @@ using HoldTilDawn;
 
 public partial class WorldGeometry
 {
-    public readonly record struct Crossing(Vector2 At, Vector2 Along);
-    public readonly List<Crossing> Crossings = new();
     public readonly List<(Vector2 At, Vector2 Along)> Ramps = new();
 
-    // Short storm washouts across exploration paths. The middle is a walkable timber bridge;
-    // the water to either side uses the same circles for bodies and the navigation grid.
-    void BuildCrossings()
+    // Stone steps where a path climbs a hill. (The rivers and their bridges are src/world/IslandRivers.cs.)
+    void BuildRamps()
     {
-        Crossings.Clear(); Ramps.Clear();
-        for (int K = 6; K < Trails.Count && Crossings.Count < 5; K++)
-        {
-            var Path = Trails[K].Path;
-            for (int I = Path.Length / 3; I < Path.Length - 2; I += 7)
-            {
-                Vector2 At = Path[I], Along = (Path[I + 1] - At).Normalized(), Across = Along.Orthogonal();
-                if (At.Length() < 28 * TL || IslandMap.Near(At, 9 * TL) != null
-                    || !IslandMap.OnGrass(At + Across * 8 * TL, TL) || !IslandMap.OnGrass(At - Across * 8 * TL, TL)) continue;
-                bool Clear = true;
-                foreach (var C in Crossings) if (C.At.DistanceTo(At) < 18 * TL) Clear = false;
-                foreach (var P in Ponds) if (P.Centre.DistanceTo(At) < P.Radius + 10 * TL) Clear = false;
-                if (!Clear) continue;
-                Crossings.Add(new Crossing(At.Round(), Along)); break;
-            }
-        }
+        Ramps.Clear();
         foreach (var H in IslandMap.Hills)
         {
             var (At, Along) = OnPath(H.Top);
@@ -36,23 +18,6 @@ public partial class WorldGeometry
             Ramps.Add((At, Along));
             for (int I = -4; I <= 4; I++) Steps.Add((At + Along * I * .7f * TL, Along.Orthogonal()));
         }
-    }
-    public int CrossingTerrain(Vector2 P, float Margin = 0)
-    {
-        foreach (var C in Crossings)
-        {
-            Vector2 D = P - C.At;
-            if (MathF.Abs(D.Dot(C.Along)) < 1.3f * TL + Margin && MathF.Abs(D.Dot(C.Along.Orthogonal())) < 8.3f * TL)
-                return MathF.Abs(D.Dot(C.Along.Orthogonal())) < 1.6f * TL - Margin ? 5 : 1;
-        }
-        return -1;
-    }
-    void AddCrossingSolids(dynamic Into)
-    {
-        foreach (var C in Crossings)
-            foreach (int Side in new[] { -1, 1 })
-                for (float D = 2.7f; D <= 8.1f; D += .8f)
-                    Gd.Append(Into, new GArray(C.At + C.Along.Orthogonal() * Side * D * TL, .9f * TL, false));
     }
     void DressExploration()
     {

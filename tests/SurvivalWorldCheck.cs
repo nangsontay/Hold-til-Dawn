@@ -19,12 +19,41 @@ public partial class SurvivalWorldCheck : Node
         var W = (WorldGeometry)S.World;
         Check(IslandMap.ById(8).Pos.Y < -30 * 32 && W.SwampCentre.Y < 0, "swamp marker, pools and scene moved north");
         Check(W.HarvestSites.Count > 850, $"denser harvestable world: {W.HarvestSites.Count} sites");
-        Check(W.Crossings.Count >= 3 && W.Ramps.Count >= 3, $"exploration has {W.Crossings.Count} bridges and {W.Ramps.Count} slopes");
-        foreach (var C in W.Crossings)
+        Check(IslandMap.Rivers.Count == 2 && IslandMap.Bridges.Count == 4 && W.Ramps.Count >= 3, $"two rivers with {IslandMap.Bridges.Count} bridges and {W.Ramps.Count} slopes");
+        for (int R = 0; R < 2; R++)
         {
-            Check(W.CrossingTerrain(C.At) == 5 && W.ResolveFast(C.At, 10).IsEqualApprox(C.At), "bridge deck is walkable");
-            Vector2 Bank = C.At + C.Along.Orthogonal() * 4 * 32;
-            Check(W.CrossingTerrain(Bank) == 1 && !W.ResolveFast(Bank, 10).IsEqualApprox(Bank), "water beside bridge blocks bodies");
+            var Path = IslandMap.Rivers[R];
+            Check(IslandMap.Bridges.Count(B => B.River == R) == 2, $"river {R} has two bridges");
+            Check(IslandMap.Depth(Path[0]) < 0 && IslandMap.Depth(Path[^1]) < 0 && Path[0].Y < -60 * 32 && Path[^1].Y > 60 * 32, $"river {R} runs from the north coast to the south coast");
+            Check(R == 0 ? Path.All(P => P.X < -25 * 32) : Path.All(P => P.X > 25 * 32), $"river {R} keeps to its side of the island");
+        }
+        foreach (var (_, At) in IslandMap.Bridges)
+        {
+            Check(IslandMap.OnLand(At, 35) && W.ResolveFast(At, 10).IsEqualApprox(At) && W.TerrainAt(At) == 5, "bridge deck is walkable, even for a boss");
+            Vector2 Beside = At + new Vector2(0, IslandMap.BRIDGE_HALF_W + 1.5f * 32);
+            Check(!IslandMap.OnLand(Beside, 10) && !IslandMap.OnLand(Beside), "water beside a bridge stops bodies");
+            Vector2 Far = At + new Vector2(IslandMap.BRIDGE_HALF_LEN + 32, 0), Near = At - new Vector2(IslandMap.BRIDGE_HALF_LEN + 32, 0);
+            Check(IslandMap.OnLand(Far, 12) && IslandMap.OnLand(Near, 12), "both ends of a bridge reach dry land");
+            var Way = W.WaypointFast(Near, Far, 0.5f * 32, new[] { new Rect2(-(Vector2)GameSim.HALF, (Vector2)GameSim.HALF * 2) });
+            Check(Way.DistanceTo(Near) > 1 && Mathf.Abs(Way.Y - At.Y) < IslandMap.BRIDGE_HALF_W, "enemies route straight over a bridge");
+        }
+        Check(!W.LmAt.Values.Any(P => IslandMap.InRiver(P, 6 * 32)), "no landmark stands in or by a river");
+        Check(!W.LmProps.Any(P => IslandMap.InRiver(P.Pos)) && !W.HarvestSites.Any(S => IslandMap.InRiver(S.Pos, 8)), "no prop, tree or rock stands in a river");
+        int Wet = 0;
+        foreach (var (Path, Width) in W.Trails)
+            foreach (var Pt in Path)
+                if (IslandMap.InRiver(Pt) && !IslandMap.NearBridge(Pt)) { Wet++; GD.Print("wet path point ", Pt / 32, " width ", Width / 32, " of ", Path.Length); }
+        Check(Wet == 0, "paths cross a river only on a bridge");
+        // a body cannot swim across: walking straight at the river it stops at the bank
+        using (var Walker = new GameSim())
+        {
+            Walker.AddPlayer(1, "Scout", 0); Walker.StartMatch();
+            dynamic Wp = Walker.Players[1];
+            var Path = IslandMap.Rivers[0];
+            Vector2 Mid = Path[Path.Length / 3];
+            Wp.Pos = Mid + new Vector2(IslandMap.RIVER_HALF + 3 * 32, 0);
+            for (int I = 0; I < 120; I++) Wp.Pos = Walker.MoveActor(Wp.Pos, Wp.Pos + new Vector2(-6, 0), 0.3f * 32);
+            Check(((Vector2)Wp.Pos).X > Mid.X + IslandMap.RIVER_HALF - 4, "players cannot walk through a river");
         }
         foreach (string Name in new[] { "lm_tent_0", "lm_console_0", "lm_cart_0", "lm_warning_0", "lm_cargo_stack_0", "lm_waterpump_0" })
         {

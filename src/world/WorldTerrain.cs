@@ -50,13 +50,16 @@ public partial class WorldGeometry
             for (float D = 1.5f; D <= 60; D += 0.5f)
             {
                 Vector2 P = Door + Dir * D * TL + Side * MathF.Sin(D * 0.23f + I) * 0.45f * TL;
-                if (!IslandMap.OnGrass(P, TL)) break;
+                // the road crosses a river on its bridge
+                if (!IslandMap.OnGrass(P, TL) && !IslandMap.NearBridge(P, TL)) break;
                 Pts.Add(P);
             }
             Trails.Add((Pts.ToArray(), ROUTE_W));
         }
         foreach (var Rt in IslandMap.Routes) Trails.Add((Rt, ROUTE_W));
         foreach (var Tr in IslandMap.Trails) Trails.Add((Tr, TRAIL_W));
+        // paths cut by a river turn along its bank to a bridge (WorldRivers.cs)
+        CutPathsAtRivers();
         // the Rainwater Pond, just off the trail at landmark 15
         var Rain = IslandMap.ById(15);
         if (Rain != null) Ponds.Add(MakePond(R, Rain.Pos + Tiles(4.2f, 0.8f) * S, 2.8f * 1.25f));
@@ -139,9 +142,9 @@ public partial class WorldGeometry
         if (!IslandMap.OnLand(P)) return 8;
         foreach (var (F, _) in Floors)
             if (F.Grow(Margin).HasPoint(P)) return 6;
+        // a bridge's deck is a path; the rivers' muddy banks count as beach
+        if (IslandMap.NearBridge(P, Margin) && IslandMap.InRiver(P, IslandMap.RIVER_BANK + Margin)) return 5;
         if (!IslandMap.OnGrass(P, Margin)) return 7;
-        int Crossing = CrossingTerrain(P, Margin);
-        if (Crossing >= 0) return Crossing;
         foreach (var Pd in Ponds)
             if (P.DistanceTo(Pd.Centre) < Pd.Radius * 1.6f + Margin && IslandMap.InPolygon(Pd.Edge, P)) return 1;
         foreach (var (Path, Width) in Trails)
@@ -165,7 +168,6 @@ public partial class WorldGeometry
     // Solid circles: ponds and pools. Crags are added with the other scenery from their sprites' radius.
     void AddTerrainSolids(dynamic Into)
     {
-        AddCrossingSolids(Into);
         // three circles across each (they are wider than tall)
         foreach (var Pd in Ponds)
             foreach (float K in new[] { -0.45f, 0.0f, 0.45f })

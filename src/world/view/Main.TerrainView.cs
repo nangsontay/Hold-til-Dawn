@@ -190,6 +190,8 @@ public partial class Main : Node2D
             DrawPolyline(Lit, new Color(TRAIL_LIT, 0.8f), 2);
             DrawPolyline(Edge, new Color(TRAIL_EDGE, 0.6f), (Width > WorldGeometry.TRAIL_W) ? 2 : 1);
         }
+        // the rivers over the paths they cut, and their bridges (Main.Rivers.cs)
+        DrawRivers(View);
         // the landmarks' floors, the pier, the platform, steps and coral (Main.LandmarkView.cs)
         DrawLandmarkGround(W, View);
         for (int I = 0; I < W.Ponds.Count; I++)

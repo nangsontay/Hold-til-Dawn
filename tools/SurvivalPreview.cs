@@ -17,7 +17,7 @@ public partial class SurvivalPreview : Node
             for (int Stage = 0; Stage < 6; Stage++)
             {
                 Vector2 At = Stage switch {
-                    0 => W.Crossings[0].At, 1 => W.SwampCentre,
+                    0 => IslandMap.Bridges[0].At, 1 => W.SwampCentre,
                     2 => W.LmAt[9], _ => GameSim.WORKBENCH_POS };
                 Game.Sim.Teleport(P, At + new Vector2(0, Stage >= 3 ? 24 : 65));
                 P.Hp = Stage == 4 ? P.Maxhp * .2f : P.Maxhp;

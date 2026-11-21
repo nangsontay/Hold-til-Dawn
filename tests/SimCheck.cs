@@ -236,6 +236,12 @@ public partial class SimCheck : Node
         S = this.NewMatch();
         dynamic Vic = Gd.At(S.Players, 2);
         Vic.Pos = Gd.MakeVector2(0, (Wall + (50 * 32)));
+        // a clear spot near there (the scenery is dense), with open ground 3 tiles to the east
+        for (int Try = 0; Try < 40; Try++)
+        {
+            Vector2 Spot = S.World.ResolveFast(new Vector2((Try % 8) * 64, Wall + (50 + Try / 8 * 2) * 32), 0.3f * 32);
+            if (Gd.Truth(S.LineClear(Spot, Spot + new Vector2(3 * 32, 0))) && S.World.ResolveFast(Spot + new Vector2(3 * 32, 0), 16f).IsEqualApprox(Spot + new Vector2(3 * 32, 0))) { Vic.Pos = Spot; break; }
+        }
         S.SpawnRoamers(Vic);
         dynamic R0 = Gd.Filter(S.Enemies, (Func<dynamic, dynamic>)((E) => Gd.Has(E, "home")));
         this.Check((Gd.Size(R0) == 2), "a roamer group is a pair");
