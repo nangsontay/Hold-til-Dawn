@@ -223,14 +223,46 @@ public partial class Main : Node2D
     }
 
     // --- HUD drawing (screen space) -----------------------------------------
+    // Night: how many of the night's enemies are down, under the generator panel. It fills as they die; full (and
+    // the three supplies in) means dawn comes (GameSim.NightSpawns.cs).
+    public const float NIGHT_BAR_H = 30f;
+
+    public void DrawNightBar(CanvasItem C, float Cx)
+    {
+        if ((Gd.Get(Snap, "ph", "") != "night"))
+        {
+            return;
+        }
+        dynamic Nq = Gd.Get(Snap, "nq", null);
+        if ((Nq == null) || (Gd.Int(Gd.At(Nq, 1)) <= 0))
+        {
+            return;
+        }
+        int Down = Gd.Int(Gd.At(Nq, 0));
+        int All = Gd.Int(Gd.At(Nq, 1));
+        float Frac = Mathf.Clamp(((float)Down / All), 0f, 1f);
+        var Box = new Rect2((Cx - 160), 56, 320, (NIGHT_BAR_H - 4));
+        dynamic Cw = Gd.Wrap(C);
+        this.Panel(Cw, Box);
+        this.Text(Cw, new Vector2((Cx - 150), 70), Gd.Format("NIGHT %d", Snap.K), 11, GOLD, 0, (-1.0f), true);
+        var Bar = new Rect2((Cx - 90), 64, 240, 7);
+        C.DrawRect(Bar.Grow(1), INK);
+        C.DrawRect(Bar, new Color(0.22f, 0.24f, 0.3f));
+        // red while the night still has enemies, green once the last one is down
+        Color Fill = ((Frac >= 1f) ? new Color("3DBE5A") : ((Color)NEON_RED).Lerp(new Color("F2B544"), Frac));
+        C.DrawRect(new Rect2(Bar.Position, new Vector2((Bar.Size.X * Frac), Bar.Size.Y)), Fill);
+    }
+
     public void DrawBossBar(dynamic C, dynamic Cx)
     {
         foreach (dynamic E in Gd.Iter(Snap.En))
         {
             if ((Gd.At(E, 1) == GameSim.BOSS))
             {
-                dynamic Br = Gd.MakeRect2((Cx - 230), 66, 460, 10);
-                this.Text(C, Gd.MakeVector2((Cx - 230), 62), GameSim.BossTitle(Gd.At(E, 6)).ToUpper(), 12, NEON_PINK, 1, 460, true);
+                // below the night bar
+                float Dy = ((Gd.Get(Snap, "ph", "") == "night") ? NIGHT_BAR_H : 0f);
+                dynamic Br = Gd.MakeRect2((Cx - 230), (66 + Dy), 460, 10);
+                this.Text(C, Gd.MakeVector2((Cx - 230), (62 + Dy)), GameSim.BossTitle(Gd.At(E, 6)).ToUpper(), 12, NEON_PINK, 1, 460, true);
                 C.DrawRect(Br.Grow(2), INK);
                 C.DrawRect(Gd.MakeRect2(Br.Position, Gd.MakeVector2(((Br.Size.X * Gd.At(E, 3)) / Gd.At(E, 4)), Br.Size.Y)), NEON_PINK);
                 foreach (dynamic X in Gd.Iter(new GArray((Br.Position.X - 6), (Br.End.X + 6))))

@@ -6,26 +6,56 @@ using System.Threading.Tasks;
 using HoldTilDawn;
 
 // Owner: Pham Minh Hieu. Defence towers: placing, shooting, light (AGT-12, MEC-11, MEC-28, BAL-28).
+// Team change: a tower goes anywhere outside the base except on a landing pad (was 3-8 tiles in front of a door).
 public partial class GameSim : RefCounted
 {
     public static readonly dynamic TOWER_HP = 300.0f;
     public static readonly dynamic TOWER_DPS = 8.0f;
     public static readonly dynamic TOWER_RANGE = (6.0f * T);
     public static readonly dynamic TOWER_LIGHT = (6.0f * T);
-    public static readonly dynamic TOWER_BAND = (Gd.MakeVector2(3.0f, 8.0f) * T);
-    public static readonly dynamic TOWER_SIDE = (3.0f * T);
     public static readonly dynamic TOWER_COST = new GDict { { "wood", 10 }, { "titanium", 5 } };
+    // the team has this many tower slots (a wrecked tower keeps its slot and can be repaired)
+    public const int MAX_TOWERS = 3;
+    // the tower's footprint (its collider, WorldGeometry.DynamicColliders)
+    public const float TOWER_R = 0.7f;
 
     // --- towers (AGT-12, MEC-11, MEC-28) -------------------------------------
-    public static dynamic TowerSlot(dynamic Pos)
+    // A tower goes anywhere outside the base on open land, except on a helicopter landing pad (FML-13) and
+    // right in front of a door. Returns "" when the spot is fine, else what is wrong.
+    public static string TowerSpotProblem(Vector2 Pos, dynamic World)
     {
-        // The door whose tower band (3-8 tiles in front of it, 3 to either side) holds pos, else -1.
+        if (Gd.Truth(GameSim.InsideBase(Pos, (TOWER_R * T))))
+        {
+            return "Towers go outside the base";
+        }
         foreach (dynamic I in Gd.Iter(3))
         {
-            Vector2 Rel = (Vector2)((Pos - Gd.At(DOOR_POS, I)));
-            Vector2 Dd = (Vector2)(Gd.At(DOOR_DIR, I));
-            dynamic Along = Rel.Dot(Dd);
-            if (((Along >= TOWER_BAND.X) && (Along <= TOWER_BAND.Y) && (Gd.Absf(Rel.Dot(Gd.MakeVector2((-Dd.Y), Dd.X))) <= TOWER_SIDE)))
+            if ((Pos.DistanceTo((Vector2)GameSim.PadPos(I)) < ((float)PAD_R + (TOWER_R * T))))
+            {
+                return "Keep the landing pads clear";
+            }
+            if ((Pos.DistanceTo((Vector2)Gd.At(DOOR_POS, I)) < (WALL_DOOR_GAP * T)))
+            {
+                return "Too close to a door (3 tiles)";
+            }
+        }
+        if (!IslandMap.OnLand(Pos, (TOWER_R * T)))
+        {
+            return "Too close to the water";
+        }
+        if (((World != null) && ((Vector2)World.Resolve(Pos, (TOWER_R * T)) != Pos)))
+        {
+            return "Something is in the way";
+        }
+        return "";
+    }
+
+    // The first free tower slot, or -1 when all MAX_TOWERS are taken.
+    public int FreeTowerSlot()
+    {
+        for (int I = 0; I < MAX_TOWERS; I++)
+        {
+            if ((Gd.At(Towers, I) == null))
             {
                 return I;
             }
@@ -33,17 +63,43 @@ public partial class GameSim : RefCounted
         return (-1);
     }
 
+    // Where the unplaced free tower appears at dusk: in front of the door, beside its landing pad.
+    public Vector2 FreeTowerSpot(int Door)
+    {
+        Vector2 Dp = (Vector2)Gd.At(DOOR_POS, Door);
+        Vector2 Dd = (Vector2)Gd.At(DOOR_DIR, Door);
+        Vector2 Side = new Vector2((-Dd.Y), Dd.X);
+        float Out = (float)PAD_DIST;
+        float Off = ((float)PAD_R + ((TOWER_R + 1.0f) * T));
+        foreach (float Grow in new[] { 0.0f, 1.0f, 2.0f, 3.0f, 4.0f })
+        {
+            foreach (float Sgn in new[] { 1.0f, -1.0f })
+            {
+                foreach (float Along in new[] { 0.0f, -1.5f, 1.5f })
+                {
+                    Vector2 P = ((Dp + (Dd * (Out + (Along * T)))) + (Side * (Sgn * (Off + (Grow * T)))));
+                    if ((GameSim.TowerSpotProblem(P, this.World) == ""))
+                    {
+                        return P;
+                    }
+                }
+            }
+        }
+        // nothing free beside the pad: just past its far edge
+        return ((Dp + (Dd * (Out + (float)PAD_R + ((TOWER_R + 1.0f) * T)))));
+    }
+
     public void BuildTower(dynamic P, dynamic At = null)
     {
         Vector2 Spot = (Vector2)((At ?? P.Pos));
         if (((P.Role != 2) || (P.State != 0) || Gd.Truth(P.Inside)))
         {
-            this.Note(P, "Only an Engineer can build towers");
+            this.Note(P, "Engineer only");
             return;
         }
         if ((this.Count(P, "hammer") <= 0))
         {
-            this.Note(P, "Building needs the Engineer's hammer");
+            this.Note(P, "Needs the hammer");
             return;
         }
         if ((Spot.DistanceTo(P.Pos) > (BUILD_REACH * T)))
@@ -51,21 +107,25 @@ public partial class GameSim : RefCounted
             this.Note(P, "Too far away to build there");
             return;
         }
-        // placed from the build menu at the cursor: the spot must be free (T places it at the Engineer's feet)
-        if (((At != null) && (Gd.Truth((this.World.Resolve(Spot, (0.7f * T)) != Spot)) || Gd.Truth(Gd.Any(Gd.Values(Players), (Func<dynamic, dynamic>)((Q) => (Q.Pos.DistanceTo(Spot) < (1.1f * T))))))))
+        // T places it at the Engineer's feet (they stand there already); from the build menu the spot must be free of people too
+        string Why = GameSim.TowerSpotProblem(Spot, ((At != null) ? this.World : null));
+        if (((Why == "") && (At != null) && Gd.Truth(Gd.Any(Gd.Values(Players), (Func<dynamic, dynamic>)((Q) => (Q.Pos.DistanceTo(Spot) < (1.1f * T)))))))
         {
-            this.Note(P, "Something is in the way");
+            Why = "Someone is standing there";
+        }
+        if (((Why == "") && Gd.Truth(Gd.Any(Towers, (Func<dynamic, dynamic>)((Tw) => ((Tw != null) && (((Vector2)Tw.Pos).DistanceTo(Spot) < ((2.0f * TOWER_R) * T))))))))
+        {
+            Why = "Something is in the way";
+        }
+        if ((Why != ""))
+        {
+            this.Note(P, Why);
             return;
         }
-        dynamic I = GameSim.TowerSlot(Spot);
+        int I = this.FreeTowerSlot();
         if ((I < 0))
         {
-            this.Note(P, "Stand 3-8 tiles in front of a door to build a tower");
-            return;
-        }
-        if ((Gd.At(Towers, I) != null))
-        {
-            this.Note(P, Gd.Format("Door %s already has a tower", Gd.At(DOOR_NAMES, I)));
+            this.Note(P, Gd.Format("The team already has %d towers", MAX_TOWERS));
             return;
         }
         if (Gd.Truth(FreeTower))
@@ -76,7 +136,7 @@ public partial class GameSim : RefCounted
         {
             if ((Unlock < 2))
             {
-                this.Note(P, "More towers unlock after the first boss");
+                this.Note(P, "Unlocks after the first boss");
                 return;
             }
             foreach (dynamic Res in Gd.Iter(TOWER_COST))
@@ -93,12 +153,12 @@ public partial class GameSim : RefCounted
             }
         }
         this.PlaceTower(I, Spot);
-        this.Note(P, Gd.Format("Tower built at door %s", Gd.At(DOOR_NAMES, I)));
+        this.Note(P, "Tower built");
     }
 
-    public void PlaceTower(dynamic Door, dynamic Pos)
+    public void PlaceTower(dynamic Slot, dynamic Pos)
     {
-        Towers[Door] = new GDict { { "door", Door }, { "pos", Pos }, { "hp", TOWER_HP }, { "wrecked", false }, { "pause", 0.0f }, { "target", null } };
+        Towers[Slot] = new GDict { { "slot", Slot }, { "pos", Pos }, { "hp", TOWER_HP }, { "wrecked", false }, { "pause", 0.0f }, { "target", null } };
     }
 
     public void TickTowers(dynamic Dt)

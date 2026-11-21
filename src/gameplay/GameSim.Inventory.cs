@@ -5,11 +5,11 @@ using System;
 using System.Threading.Tasks;
 using HoldTilDawn;
 
-// Owner: Pham Minh Hieu. Items, the 12-slot inventory with its 4-slot hotbar, shared base storage,
+// Owner: Pham Minh Hieu. Items, the 8-slot inventory with its 4-slot hotbar, shared base storage,
 // giving, dropping and picking up (MEC-09, BAL-18, ITM-01..13).
 public partial class GameSim : RefCounted
 {
-    public const int INV_SLOTS = 12;
+    public const int INV_SLOTS = 8;
     public const int HOTBAR = 4;
     public const int STORAGE_SLOTS = 40;
     public const int STACK = 20;
@@ -25,6 +25,8 @@ public partial class GameSim : RefCounted
         { "titanium", new GArray("Titanium", STACK, "res") },
         { "bandage", new GArray("Bandage", STACK, "use") },
         { "arrow", new GArray("Arrow", STACK, "ammo") },
+        // carried to a dead teammate and used on them (hold E), GameSim.Interact
+        { "revive", new GArray("Revival kit", 3, "use") },
 
         { "long_spear", new GArray("Long spear", 1, "weapon") },
         { "stun_maul", new GArray("Stun maul", 1, "weapon") },
@@ -278,12 +280,18 @@ public partial class GameSim : RefCounted
     // Puts items in the inventory; whatever does not fit is dropped at the player's feet.
     public void AddItem(dynamic P, dynamic Id, dynamic N)
     {
+        // armour is worn at once and takes no bag slot
+        if (GameSim.KindOf(Id) == "armour")
+        {
+            P.Armour = Math.Max(Gd.Int(P.Armour), Gd.Find(ARMOUR_ITEMS, Id));
+            return;
+        }
         int Left = GameSim.AddTo(P.Inv, Id, Gd.Int(N));
         GameSim.LoadBows(P.Inv);
         if ((Left > 0))
         {
             this.PlayerDrop(P.Pos, Id, Left);
-            this.Note(P, "Inventory full - dropped at your feet");
+            this.Note(P, "Bag full - dropped");
         }
     }
 
@@ -327,16 +335,26 @@ public partial class GameSim : RefCounted
     }
 
     // Armour is worn from the inventory: the best piece carried counts (BAL-11).
+    // The armour worn (0 none, 1 light, 2 stone, 3 titanium). Armour is not kept in the bag: it is worn as soon as
+    // it is crafted or picked up, the best piece kept.
     public int ArmourTier(dynamic P)
     {
-        for (int Tier = 3; Tier > 0; Tier--)
+        return Gd.Int(P.Armour);
+    }
+
+    // Any armour that reached the bag (taken from storage, picked up) is put on at once and leaves the bag.
+    public void WearArmour(dynamic P)
+    {
+        for (int Tier = 1; Tier < Gd.Size(ARMOUR_ITEMS); Tier++)
         {
-            if ((this.Count(P, Gd.At(ARMOUR_ITEMS, Tier)) > 0))
+            dynamic Id = Gd.At(ARMOUR_ITEMS, Tier);
+            int Have = this.Count(P, Id);
+            if (Have > 0)
             {
-                return Tier;
+                GameSim.TakeFrom(P.Inv, Id, Have);
+                P.Armour = Math.Max(Gd.Int(P.Armour), Tier);
             }
         }
-        return 0;
     }
 
     // Storage is the chest by the north wall (GameSim.STORAGE_POS): reachable standing at it, inside the base by
@@ -359,7 +377,7 @@ public partial class GameSim : RefCounted
         dynamic To = (ToSto ? Storage : P.Inv);
         if (((FromSto || ToSto) && !this.AtStorage(P)))
         {
-            this.Note(P, "Storage is the chest in the base, by the north wall");
+            this.Note(P, "Go to the storage chest");
             return;
         }
         int A = Gd.Int(Gd.At(Arg, 1));
@@ -385,7 +403,7 @@ public partial class GameSim : RefCounted
             // the bow stays in its slot, what is left of the arrows stays in theirs
             From[A] = (GameSim.IsBow(Sa) ? Full : Rest);
             To[B] = (GameSim.IsBow(Sb) ? Full : Rest);
-            this.Note(P, Gd.Format("Loaded %d arrows into the bow (%d / %d)", new GArray(Put, GameSim.Loaded(Full), QUIVER)));
+            this.Note(P, Gd.Format("+%d arrows", Put));
             return;
         }
         if (((Sb != null) && Gd.Equal(Gd.At(Sa, 0), Gd.At(Sb, 0)) && (GameSim.StackOf(Gd.At(Sa, 0)) > 1)))

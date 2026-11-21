@@ -4,12 +4,11 @@ using System.Collections.Generic;
 using HoldTilDawn;
 
 // Owner: Mai Thien Ngon. Minimap (top left) so players do not get lost on the island: it shows the part of the
-// island around you, and M shows the whole island large, laid out like the level-design map
-// (src/world/IslandMap.cs): numbered landmarks with their names, the main gathering routes, the exploration
-// trails, the safe zone, the night spawn bands, the boss spawns and the names of the bays.
-// The ground (sea and shallows, beach, grass, safe zone, woods, hills, pond, swamp, trees and rocks) is drawn once
-// into a pixel image; paths, markers, nodes, towers, doors, pads, teammates, you and the camera view are drawn on
-// top every frame. Walking into a landmark's area shows its name at the top of the screen.
+// island around you, and M shows the whole island large. Each landmark is a dot where its structure stands
+// (WorldGeometry.LmAt), named in black on the large map, the labels kept apart from each other.
+// The ground (sea and shallows, beach, grass, safe zone, woods, hills, pond, swamp, concrete) is drawn once into a
+// pixel image; the roads, landmark dots, towers, doors, pads, teammates, you and the camera view are drawn on top
+// every frame. Walking into a landmark's area shows its name at the top of the screen.
 // Enemies are not shown: the GDD only shows what players can see (section 6.1).
 public partial class Main : Node2D
 {
@@ -23,7 +22,7 @@ public partial class Main : Node2D
     IslandMap.Landmark HereNow;
     float HereSince = -99.0f;
 
-    static readonly Color MAP_ROUTE = new Color("FFD98C"), MAP_TRAIL = new Color("E6CA96"), MAP_BAND = new Color(0.95f, 0.64f, 0.72f);
+    static readonly Color MAP_INK = new Color("141210"), MAP_HALO = new Color(0.96f, 0.93f, 0.84f, 0.75f);
 
     // world half-width covered by the map: the island plus a strip of sea
     public static float MapReach() => 82.0f * IslandMap.SCALE * (float)T;
@@ -90,21 +89,6 @@ public partial class Main : Node2D
                 }
                 Im.SetPixel(X, Y, Col);
             }
-        // forest and rock outcrops, so the map shows the same landmarks the player walks past
-        foreach (dynamic D in Gd.Iter(Deco))
-        {
-            string Name = Gd.Str(Gd.At(D, 1));
-            Color Col;
-            if (Name.StartsWith("pine")) Col = new Color("2A4A3A");
-            else if (Name.StartsWith("dead")) Col = new Color("4E4741");
-            else if (Name.StartsWith("rock") || Name.StartsWith("crag")) Col = new Color("9AA2A8");
-            else if (Name.StartsWith("lm_palm") || Name.StartsWith("lm_mangrove")) Col = new Color("2F5A34");
-            else if (Name.StartsWith("lm_")) Col = new Color("D8CDB0");
-            else continue;
-            Vector2 P = (Vector2)Gd.At(D, 0);
-            int Px = (int)((P.X + Reach) / Per), Py = (int)((P.Y + Reach) / Per);
-            if (Px >= 0 && Py >= 0 && Px < MAP_TEX && Py < MAP_TEX) Im.SetPixel(Px, Py, Col);
-        }
         // the landmarks' concrete and the pier (src/world/WorldLandmarks.cs)
         void Fill(Rect2 F, Color Col)
         {
@@ -121,36 +105,12 @@ public partial class Main : Node2D
     {
         if (Gd.Truth(MapBig))
         {
-            float S = Mathf.Floor(Mathf.Min((float)Vs.Y - 110, 3 * MAP_PX) / MAP_PX) * MAP_PX;
-            return new Rect2(((float)Vs.X - S) / 2 - 70, ((float)Vs.Y - S) / 2 + 4, S, S);
+            // 480 HUD units = 720 window pixels = 2 per pixel of the ground image, so it stays crisp
+            float S = Mathf.Min(4 * MAP_PX, (float)Vs.Y - 40);
+            return new Rect2(((float)Vs.X - S) / 2, ((float)Vs.Y - S) / 2, S, S);
         }
         // top left, where the day and timer were (they moved to the top right)
         return new Rect2(10, 10, MAP_PX, MAP_PX);
-    }
-
-    // a dashed polyline in screen space
-    static void Dashed(CanvasItem C, IList<Vector2> Pts, Color Col, float Width, float Dash, float Gap)
-    {
-        float Left = Dash;
-        bool On = true;
-        for (int I = 0; I < Pts.Count - 1; I++)
-        {
-            Vector2 A = Pts[I], B = Pts[I + 1];
-            float Len = A.DistanceTo(B);
-            float At = 0;
-            while (At < Len)
-            {
-                float Step = Mathf.Min(Left, Len - At);
-                if (On) C.DrawLine(A.Lerp(B, At / Len), A.Lerp(B, (At + Step) / Len), Col, Width);
-                At += Step;
-                Left -= Step;
-                if (Left <= 0.001f)
-                {
-                    On = !On;
-                    Left = On ? Dash : Gap;
-                }
-            }
-        }
     }
 
     public void DrawMinimap(dynamic C, dynamic Vs, dynamic Me)
@@ -172,12 +132,11 @@ public partial class Main : Node2D
         Vector2 To(dynamic P) => (Mid + ((Vector2)P - Focus) * Scale).Round();
         Rect2 Inside = R.Grow(-1);
         float Dot = Big ? 3 : 2;
-        float Tl = (float)T;
         this.Panel(C, R.Grow(4));
         float Texel = MAP_TEX / (2 * Reach);
         var Src = new Rect2((Focus - Vector2.One * View + Vector2.One * Reach) * Texel, Vector2.One * (2 * View * Texel));
         C.DrawTextureRectRegion(MapTex, R, Src);
-        // paths: door roads, exploration trails, then the main gathering routes on top (clipped to the map)
+        // the roads out of the three doors (clipped to the map)
         WorldGeometry W = (WorldGeometry)Geometry;
         List<Vector2> Clip(Vector2[] Path)
         {
@@ -186,35 +145,8 @@ public partial class Main : Node2D
             return Out;
         }
         for (int I = 0; I < 3 && I < W.Trails.Count; I++) Ci.DrawPolyline(Clip(W.Trails[I].Path).ToArray(), new Color("8C7F5B"), Big ? 3 : 2);
-        foreach (var Tr in IslandMap.Trails) Dashed(Ci, Clip(Tr), MAP_TRAIL, 1, Big ? 2 : 1.5f, Big ? 3 : 2);
-        foreach (var Rt in IslandMap.Routes)
-        {
-            var Pts = Clip(Rt);
-            Ci.DrawPolyline(Pts.ToArray(), new Color(0.13f, 0.18f, 0.13f, 0.8f), Big ? 3.5f : 2.5f);
-            Dashed(Ci, Pts, MAP_ROUTE, Big ? 1.6f : 1.2f, Big ? 5 : 3, Big ? 4 : 2);
-        }
         if (Big)
         {
-            // the safe zone, the night spawn bands and the boss spawns with their way in
-            var Ring = new List<Vector2>();
-            foreach (dynamic P in Gd.Iter(this.RoundRect(GameSim.HALF, GameSim.SAFE_D))) Ring.Add(To(P));
-            Ring.Add(Ring[0]);
-            Dashed(Ci, Ring, new Color(0.88f, 0.91f, 0.65f, 0.85f), 1, 4, 4);
-            for (int I = 0; I < 3; I++)
-            {
-                Vector2 Door = (Vector2)Gd.At(GameSim.DOOR_POS, I), Dir = (Vector2)Gd.At(GameSim.DOOR_DIR, I);
-                Vector2 Side = new Vector2(-Dir.Y, Dir.X);
-                Vector2 Band = Door + Dir * 30 * Tl;
-                var Corners = new[] { To(Band - Dir * 5 * Tl - Side * 5 * Tl), To(Band + Dir * 5 * Tl - Side * 5 * Tl), To(Band + Dir * 5 * Tl + Side * 5 * Tl), To(Band - Dir * 5 * Tl + Side * 5 * Tl) };
-                Ci.DrawColoredPolygon(Corners, new Color(MAP_BAND, 0.28f));
-                Ci.DrawPolyline(new[] { Corners[0], Corners[1], Corners[2], Corners[3], Corners[0] }, new Color(MAP_BAND, 0.8f), 1);
-                Vector2 Boss = IslandMap.PullInland(Door + Dir * 60 * Tl, 2 * Tl);
-                Dashed(Ci, new List<Vector2> { To(Boss), To(Door + Dir * 13 * Tl) }, new Color(MAP_BAND, 0.85f), 1.2f, 3, 3);
-                Vector2 Bp = To(Boss);
-                Ci.DrawColoredPolygon(new[] { Bp + new Vector2(0, -6), Bp + new Vector2(6, 0), Bp + new Vector2(0, 6), Bp + new Vector2(-6, 0) }, new Color("4A2B45"));
-                Ci.DrawPolyline(new[] { Bp + new Vector2(0, -6), Bp + new Vector2(6, 0), Bp + new Vector2(0, 6), Bp + new Vector2(-6, 0), Bp + new Vector2(0, -6) }, new Color("FFC4D4"), 1.2f);
-                this.Text(C, Bp + new Vector2(-30, 18), "BOSS " + Gd.At(GameSim.DOOR_NAMES, I), 9, new Color("FFC4D4"), 1, 60);
-            }
             foreach (var (Name, Pos) in IslandMap.Bays)
                 if (Inside.HasPoint(To(Pos))) this.Text(C, To(Pos) + new Vector2(-50, 4), Name.ToUpper(), 9, new Color(0.75f, 0.85f, 0.88f, 0.8f), 1, 100);
         }
@@ -225,31 +157,8 @@ public partial class Main : Node2D
         Vector2 A = To(Inv * Vector2.Zero), B = To(Inv * Screen);
         var Cam = new Rect2(A, B - A).Intersection(R);
         if (Cam.HasArea()) C.DrawRect(Cam, new Color(1, 1, 1, 0.35f), false, 1);
-        // resource nodes still holding resources
-        foreach (dynamic Nd in Gd.Iter(Gd.Get(Snap, "nodes", new GArray())))
-        {
-            if (Gd.At(Nd, 2) <= 0 || !Inside.HasPoint(To(Gd.At(Nd, 1)))) continue;
-            C.DrawRect(new Rect2(To(Gd.At(Nd, 1)) - Vector2.One * (Dot / 2), Vector2.One * Dot), Gd.At(RES_COL, Gd.At(Nd, 0)));
-        }
-        // landmarks: numbered rings (numbers on the large map)
-        foreach (var L in IslandMap.Landmarks)
-        {
-            if (L.Id == 1) continue;
-            Vector2 Lp = To(L.Pos);
-            if (!Inside.Grow(-3).HasPoint(Lp)) continue;
-            Color Lc = KindColour(L.Kind);
-            if (Big)
-            {
-                Ci.DrawCircle(Lp, 8, new Color("142832"));
-                Ci.DrawArc(Lp, 8, 0, Mathf.Tau, 20, Lc, 1.4f);
-                this.Text(C, Lp + new Vector2(-10, 3.5f), L.Id.ToString("00"), 9, Lc, 1, 20);
-            }
-            else
-            {
-                Ci.DrawCircle(Lp, 3, new Color("142832"));
-                Ci.DrawArc(Lp, 3, 0, Mathf.Tau, 10, Lc, 1);
-            }
-        }
+        // landmarks: a dot where each one's structure stands, named on the large map
+        this.DrawLandmarkDots(Ci, Inside, To, Big);
         // towers
         foreach (dynamic Tw in Gd.Iter(Gd.Get(Snap, "tw", new GArray())))
         {
@@ -287,8 +196,9 @@ public partial class Main : Node2D
             if (Gd.At(P, 5) != 0) Pc = Pc.Darkened(0.5f);
             Vector2 Pp = To(Gd.Get(ShownP, Id, Gd.At(P, 2)));
             if (!Inside.HasPoint(Pp)) continue;
-            C.DrawRect(new Rect2(Pp - Vector2.One * (Dot / 2 + 1), Vector2.One * (Dot + 2)), INK);
-            C.DrawRect(new Rect2(Pp - Vector2.One * (Dot / 2), Vector2.One * Dot), Pc);
+            C.DrawRect(new Rect2(Pp - Vector2.One * (Dot / 2 + 2), Vector2.One * (Dot + 4)), INK);
+            C.DrawRect(new Rect2(Pp - Vector2.One * (Dot / 2 + 1), Vector2.One * (Dot + 2)), Pc);
+            if (Big) this.Text(C, Pp + new Vector2(-40, -6), Gd.Str(Gd.At(P, 0)), 8, Pc.Lightened(0.3f), 1, 80);
         }
         if (Me != null)
         {
@@ -297,49 +207,86 @@ public partial class Main : Node2D
             C.DrawRect(new Rect2(Mp - Vector2.One * (Dot / 2 + 2), Vector2.One * (Dot + 4)), Colors.White);
             C.DrawRect(new Rect2(Mp - Vector2.One * (Dot / 2 + 1), Vector2.One * (Dot + 2)), (Color)Gd.At(ROLE_COL, Gd.At(Me, 1)));
         }
-        if (Big)
-        {
-            this.Text(C, R.Position + new Vector2(0, -10), "ISLAND MAP  (M to close)", 12, GOLD, 1, R.Size.X, true);
-            this.DrawMapKey(C, R);
-        }
-        else
+        if (!Big)
         {
             this.Text(C, R.Position + new Vector2(3, 10), "M", 10, new Color(1, 1, 1, 0.6f), 0, -1.0f, true);
             this.DrawHereName(C, Vs);
         }
     }
 
-    // beside the large map: the landmark list and what the lines mean
-    void DrawMapKey(dynamic C, Rect2 R)
+    // where each landmark's label sits on the large map, worked out once per map size
+    readonly List<(Vector2 Dot, Rect2 Box, string Name)> LabelPlan = new();
+    Rect2 LabelPlanFor;
+
+    void DrawLandmarkDots(CanvasItem Ci, Rect2 Inside, Func<dynamic, Vector2> To, bool Big)
     {
-        CanvasItem Ci = (CanvasItem)Gd.Unwrap(C);
-        var Box = new Rect2(R.End.X + 14, R.Position.Y - 4, 236, R.Size.Y + 8);
-        this.Panel(C, Box);
-        float X = Box.Position.X + 10, Y = Box.Position.Y + 16;
-        this.Text(C, new Vector2(X, Y), "LANDMARKS", 11, GOLD, 0, -1.0f, true);
-        Y += 15;
+        var W = (WorldGeometry)Geometry;
+        float Dr = Big ? 3.5f : 2.0f;
         foreach (var L in IslandMap.Landmarks)
         {
-            Color Lc = KindColour(L.Kind);
-            Ci.DrawArc(new Vector2(X + 6, Y - 4), 6, 0, Mathf.Tau, 14, Lc, 1);
-            this.Text(C, new Vector2(X - 4, Y - 1), L.Id.ToString("00"), 7, Lc, 1, 20);
-            this.Text(C, new Vector2(X + 16, Y), L.Name, 9, Colors.White);
-            this.Text(C, new Vector2(X + 16, Y), L.What, 8, new Color(1, 1, 1, 0.55f), 2, Box.Size.X - 36);
-            Y += 13.2f;
+            if (L.Id == 1 || !W.LmAt.TryGetValue(L.Id, out Vector2 At)) continue;
+            Vector2 P = To(At);
+            if (!Inside.Grow(-2).HasPoint(P)) continue;
+            Ci.DrawCircle(P, Dr + 1.5f, MAP_HALO);
+            Ci.DrawCircle(P, Dr, MAP_INK);
         }
-        Y += 4;
-        Ci.DrawLine(new Vector2(X, Y - 8), new Vector2(Box.End.X - 10, Y - 8), new Color(1, 1, 1, 0.15f), 1);
-        void Key(string Label, Action<Vector2> Swatch)
+        if (!Big) return;
+        Font F = (Font)Gd.Unwrap(FontUi);
+        const int SIZE = 10;
+        if (LabelPlanFor != Inside || LabelPlan.Count == 0)
         {
-            Swatch(new Vector2(X, Y - 4));
-            this.Text(C, new Vector2(X + 30, Y), Label, 8, new Color(1, 1, 1, 0.8f));
-            Y += 12;
+            LabelPlanFor = Inside;
+            LabelPlan.Clear();
+            var Dots = new List<Rect2>();
+            var Order = new List<(Vector2 P, string Name)>();
+            foreach (var L in IslandMap.Landmarks)
+            {
+                if (L.Id == 1 || !W.LmAt.TryGetValue(L.Id, out Vector2 At)) continue;
+                Vector2 P = To(At);
+                Order.Add((P, L.Name));
+                Dots.Add(new Rect2(P - Vector2.One * 5, Vector2.One * 10));
+            }
+            // the base sits in the middle: keep labels off it
+            Dots.Add(new Rect2(To(Vector2.Zero) - Vector2.One * 14, Vector2.One * 28));
+            var Placed = new List<Rect2>();
+            foreach (var (P, Name) in Order)
+            {
+                Vector2 Sz = F.GetStringSize(Name, HorizontalAlignment.Left, -1, SIZE) + new Vector2(4, 0);
+                float H = Sz.Y;
+                // right, left, above, below, then the corners
+                var Tries = new[]
+                {
+                    new Vector2(P.X + 7, P.Y - H / 2), new Vector2(P.X - 7 - Sz.X, P.Y - H / 2),
+                    new Vector2(P.X - Sz.X / 2, P.Y - 6 - H), new Vector2(P.X - Sz.X / 2, P.Y + 6),
+                    new Vector2(P.X + 5, P.Y - 4 - H), new Vector2(P.X - 5 - Sz.X, P.Y - 4 - H),
+                    new Vector2(P.X + 5, P.Y + 4), new Vector2(P.X - 5 - Sz.X, P.Y + 4),
+                };
+                Rect2 Best = new Rect2(Tries[0], Sz);
+                float BestCost = float.MaxValue;
+                foreach (var T0 in Tries)
+                {
+                    var Box = new Rect2(T0, Sz);
+                    float Cost = 0;
+                    foreach (var O in Placed) if (O.Intersects(Box)) Cost += O.Intersection(Box).Area + 50;
+                    foreach (var O in Dots) if (O.Intersects(Box)) Cost += O.Intersection(Box).Area + 20;
+                    if (!Inside.Grow(-2).Encloses(Box)) Cost += 10000;
+                    if (Cost < BestCost)
+                    {
+                        BestCost = Cost;
+                        Best = Box;
+                    }
+                    if (Cost == 0) break;
+                }
+                Placed.Add(Best);
+                LabelPlan.Add((P, Best, Name));
+            }
         }
-        Key("Main gathering route", P => Dashed(Ci, new List<Vector2> { P, P + new Vector2(22, 0) }, MAP_ROUTE, 1.6f, 5, 4));
-        Key("Exploration trail", P => Dashed(Ci, new List<Vector2> { P, P + new Vector2(22, 0) }, MAP_TRAIL, 1, 2, 3));
-        Key("Safe zone (20 tiles)", P => Dashed(Ci, new List<Vector2> { P, P + new Vector2(22, 0) }, new Color(0.88f, 0.91f, 0.65f), 1, 4, 4));
-        Key("Night enemy spawn band", P => Ci.DrawRect(new Rect2(P + new Vector2(2, -4), new Vector2(18, 8)), new Color(MAP_BAND, 0.5f)));
-        Key("Boss spawn and way in", P => Ci.DrawColoredPolygon(new[] { P + new Vector2(11, -5), P + new Vector2(16, 0), P + new Vector2(11, 5), P + new Vector2(6, 0) }, new Color("FFC4D4")));
+        foreach (var (_, Box, Name) in LabelPlan)
+        {
+            Vector2 Base = new Vector2(Box.Position.X + 2, Box.Position.Y + F.GetAscent(SIZE));
+            Ci.DrawStringOutline(F, Base, Name, HorizontalAlignment.Left, -1, SIZE, 3, MAP_HALO);
+            Ci.DrawString(F, Base, Name, HorizontalAlignment.Left, -1, SIZE, MAP_INK);
+        }
     }
 
     // the name of the landmark you just walked into, for a few seconds under the radio line
@@ -358,7 +305,8 @@ public partial class Main : Node2D
         if (Age > 4.0f) return;
         float A = Mathf.Clamp(Age / 0.3f, 0, 1) * Mathf.Clamp((4.0f - Age) / 0.8f, 0, 1);
         Color Lc = KindColour(HereNow.Kind);
-        this.Text(C, new Vector2(0, 142), HereNow.Id.ToString("00") + "   " + HereNow.Name.ToUpper(), 15, new Color(Lc, A), 1, Vs.X, true);
-        this.Text(C, new Vector2(0, 158), HereNow.What, 11, new Color(1, 1, 1, 0.75f * A), 1, Vs.X);
+        // under the radio line, which sits lower at night (the night bar)
+        float Y = (Gd.Get(Snap, "ph", "") == "night") ? 116 + NIGHT_BAR_H : 142;
+        this.Text(C, new Vector2(0, Y), HereNow.Name.ToUpper(), 15, new Color(Lc, A), 1, Vs.X, true);
     }
 }

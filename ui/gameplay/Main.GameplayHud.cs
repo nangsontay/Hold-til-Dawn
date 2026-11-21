@@ -17,16 +17,37 @@ public partial class Main : Node2D
         {
             Hint = LocalNote;
         }
+        // a downed teammate, or a dead one (with a Revival kit in the bag)
+        if (((Hint == "") && (Gd.At(Me, 5) == 0)))
+        {
+            foreach (dynamic Qid in Gd.Iter(Snap.Ps))
+            {
+                dynamic Q = Gd.At(Snap.Ps, Qid);
+                if ((Qid == MyId) || (Gd.At(Q, 5) == 0) || (LocalPos.DistanceTo((Vector2)Gd.Get(ShownP, Qid, Gd.At(Q, 2))) > (1.5f * T)))
+                {
+                    continue;
+                }
+                if (Gd.At(Q, 5) == 1)
+                {
+                    Hint = "E: revive";
+                }
+                else
+                {
+                    Hint = ((Main.Carried(Me, "revive") > 0) ? "E: use Revival kit" : "Needs a Revival kit");
+                }
+                break;
+            }
+        }
         // standing at the base furniture
         if (((Hint == "") && (Gd.At(Me, 5) == 0)))
         {
             if (this.AtBenchLocal(Me))
             {
-                Hint = "Workbench: C to craft";
+                Hint = "C: craft";
             }
             else if (this.AtStorageLocal(Me))
             {
-                Hint = "Storage chest: Tab to open the shared storage";
+                Hint = "Tab: storage";
             }
         }
         dynamic GatheringHint = false;
@@ -38,25 +59,13 @@ public partial class Main : Node2D
                 if ((LocalPos.DistanceTo(Gd.At(Tw, 1)) <= (1.5f * T)))
                 {
                     float Tcap = Gd.Float((GameSim.TOWER_HP * (Gd.Truth(Gd.At(Tw, 3)) ? (dynamic)(0.3f) : 1.0f)));
-                    Hint = (Gd.Format("Tower at door %s: %d / %d", new GArray(Gd.At(GameSim.DOOR_NAMES, Gd.At(Tw, 0)), Gd.At(Tw, 2), Tcap)) + ((Gd.At(Tw, 2) < Tcap) ? (dynamic)(Gd.Format("   |   hold E to repair (wood %d)", Main.Carried(Me, "wood"))) : ""));
+                    Hint = (Gd.Format("Tower %d/%d", new GArray(Gd.At(Tw, 2), Tcap)) + ((Gd.At(Tw, 2) < Tcap) ? (dynamic)("  |  E: repair") : ""));
                     break;
                 }
             }
-            dynamic Slot = GameSim.TowerSlot(LocalPos);
-            if (((Hint == "") && (Slot >= 0) && !(Gd.Truth(Gd.Any(Tws, (Func<dynamic, dynamic>)((Tw) => (Gd.At(Tw, 0) == Slot)))))))
+            if (((Hint == "") && this.FreeTowerHere()))
             {
-                if (Gd.Truth(Gd.Get(Snap, "free_tower", false)))
-                {
-                    Hint = Gd.Format("B then 3: place the free tower at door %s (or T here)", Gd.At(GameSim.DOOR_NAMES, Slot));
-                }
-                else if ((Snap.Unlock < 2))
-                {
-                    Hint = "More towers unlock after the first boss";
-                }
-                else
-                {
-                    Hint = Gd.Format("B then 3: build a tower at door %s (10 wood + 5 titanium)", Gd.At(GameSim.DOOR_NAMES, Slot));
-                }
+                Hint = "T: place free tower";
             }
         }
         if (((Hint == "") && Gd.Contains(new GArray("day", "dusk"), Ph) && (Gd.At(Me, 5) == 0)))
@@ -66,7 +75,7 @@ public partial class Main : Node2D
                 if (((Gd.At(Nd, 2) > 0) && (LocalPos.DistanceTo(Gd.At(Nd, 1)) <= (1.5f * T))))
                 {
                     dynamic Pct = Gd.Int((Gd.At(Me, 21) * 100));
-                    Hint = ((Gd.At(Me, 21) > 0) ? (dynamic)(Gd.Format("Gathering %s... %d%%", new GArray(Gd.At(GameSim.RES, Gd.At(Nd, 0)), Pct))) : Gd.Format("Hold E (stand still) to gather %s - %d left", new GArray(Gd.At(GameSim.RES, Gd.At(Nd, 0)), Gd.At(Nd, 2))));
+                    Hint = ((Gd.At(Me, 21) > 0) ? (dynamic)(Gd.Format("Gathering %s... %d%%", new GArray(Gd.At(GameSim.RES, Gd.At(Nd, 0)), Pct))) : Gd.Format("E: gather %s", Gd.At(GameSim.RES, Gd.At(Nd, 0))));
                     GatheringHint = true;
                     break;
                 }
@@ -85,27 +94,27 @@ public partial class Main : Node2D
                 float Dur = Gd.Float(Gd.At(Snap.Doors, I));
                 if ((Dur >= Cap))
                 {
-                    Hint = Gd.Format("Door %s is at full durability (%d)", new GArray(Dn, Dur));
+                    Hint = "";
                 }
                 else if ((Gd.Truth(Gd.At(Snap.Broken, I)) && Gd.Truth(Snap.InsideEn)))
                 {
-                    Hint = Gd.Format("Door %s is broken - clear the enemies inside before repairing", Dn);
+                    Hint = "Clear the enemies inside first";
                 }
                 else if ((Main.Carried(Me, "wood") <= 0))
                 {
-                    Hint = Gd.Format("Need wood to repair door %s (1 wood per 10 durability)", Dn);
+                    Hint = "Need wood";
                 }
                 else if (Gd.Truth(Gd.Static(typeof(Input), "is_physical_key_pressed", 69)))
                 {
-                    Hint = (Gd.Truth(Gd.At(Snap.Dpause, I)) ? (dynamic)(Gd.Format("Repair interrupted by a hit on door %s!", Dn)) : Gd.Format("Repairing door %s  %d / %d", new GArray(Dn, Dur, Cap)));
+                    Hint = (Gd.Truth(Gd.At(Snap.Dpause, I)) ? (dynamic)("Interrupted!") : Gd.Format("Door %s %d/%d", new GArray(Dn, Dur, Cap)));
                 }
                 else
                 {
-                    Hint = Gd.Format("Hold E to repair door %s  %d / %d  (wood %d)", new GArray(Dn, Dur, Cap, Main.Carried(Me, "wood")));
+                    Hint = Gd.Format("E: repair door %s", Dn);
                 }
                 if (((Ph == "night") && (Dur > 0)))
                 {
-                    Hint += "   |   hold F to enter";
+                    Hint += ((Hint == "") ? "F: enter" : "  |  F: enter");
                 }
                 break;
             }
@@ -114,7 +123,7 @@ public partial class Main : Node2D
         {
             if (Gd.Truth(Gd.At(Me, 19)))
             {
-                Hint = "Inside the base: workbench (C) and storage chest (Tab) by the north wall  -  hold F at a door to leave";
+                Hint = "F at a door: leave";
             }
             else
             {
@@ -122,7 +131,7 @@ public partial class Main : Node2D
                 {
                     if (((Gd.At(Snap.Doors, I) > 0) && (LocalPos.DistanceTo(Gd.At(GameSim.DOOR_POS, I)) <= (2.0f * T))))
                     {
-                        Hint = "Hold F (stand still) to enter the base";
+                        Hint = "F: enter";
                     }
                 }
             }

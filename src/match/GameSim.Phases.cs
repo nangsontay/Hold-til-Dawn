@@ -13,6 +13,7 @@ public partial class GameSim : RefCounted
     {
         ResetNightSpawns();
         ResetTacticalItems();
+        ClearSupplies();
         Phase = "day";
         TimeLeft = DAY_MAX;
         Gd.Clear(Votes);
@@ -42,20 +43,20 @@ public partial class GameSim : RefCounted
         Active = Gd.Slice(Idx, 0, Gd.Mini(3, K));
         Gd.Sort(Active);
         dynamic Names = Gd.PackedStringArray(Gd.Map(Active, (Func<dynamic, dynamic>)((I) => Gd.At(DOOR_NAMES, I))));
-        dynamic S = Gd.Format("Radio: night %d/5 - %s %s will be attacked", new GArray(K, ((Gd.Size(Names) == 1) ? (dynamic)("door") : "doors"), Gd.Join(", ", Names)));
+        dynamic S = Gd.Format("Day %d/5 - %s %s tonight", new GArray(K, ((Gd.Size(Names) == 1) ? (dynamic)("door") : "doors"), Gd.Join(", ", Names)));
         if (((K == 2) || (K == 4)))
         {
             // FML-05: tonight's boss is announced at dawn so the team can prepare
-            S += Gd.Format(", and specimen %s is coming", GameSim.BossTitle(this.BossKindFor(K)).ToUpper());
+            S += Gd.Format(" - boss %s", GameSim.BossTitle(this.BossKindFor(K)).ToUpper());
         }
         if ((K == 5))
         {
-            S = "Radio: We can see your light. Keep one landing pad clear.";
+            S = "Day 5/5 - keep a landing pad clear tonight";
         }
         if ((Unlock > ShownUnlock))
         {
             ShownUnlock = Unlock;
-            S += "  |  New recipes unlocked (C)";
+            S += "  |  new recipes";
         }
         this.Say(S);
     }
@@ -78,9 +79,14 @@ public partial class GameSim : RefCounted
         {
             FreeTower = false;
             int D = Gd.Int(Gd.At(Active, 0));
-            this.PlaceTower(D, (Gd.At(DOOR_POS, D) + ((Gd.At(DOOR_DIR, D) * 5.0f) * T)));
+            int Slot = this.FreeTowerSlot();
+            if ((Slot >= 0))
+            {
+                // beside the door's landing pad, never on it
+                this.PlaceTower(Slot, this.FreeTowerSpot(D));
+            }
         }
-        this.Say(Gd.Format("Dusk: night falls in %d s - everyone out of the base", DUSK));
+        this.Say(Gd.Format("Dusk - night in %d s", DUSK));
     }
 
     public void Night()
@@ -92,6 +98,10 @@ public partial class GameSim : RefCounted
         ResetNightSpawns();
         NextWave = NightFirstWaveDelay;
         BossSpawned = false;
+        BossDownTonight = false;
+        BossAt = BOSS_AT;
+        this.PlanNightQuota();
+        this.PlaceSupplies();
         Ext = (-1.0f);
         PadClear = new GArray(0.0f, 0.0f, 0.0f);
         foreach (dynamic P in Gd.Iter(Gd.Values(Players)))
@@ -103,7 +113,7 @@ public partial class GameSim : RefCounted
                 this.Teleport(P, (Gd.At(DOOR_POS, D) + (Gd.At(DOOR_DIR, D) * T)));
             }
         }
-        this.Say(Gd.Format("Night %d - hold the doors!", K));
+        this.Say(Gd.Format("Night %d", K));
     }
 
     public void NightCleared()
@@ -123,6 +133,7 @@ public partial class GameSim : RefCounted
     {
         ResetTacticalItems();
         ResetNightSpawns();
+        ClearSupplies();
         // section 2.5: the result screen stays until the players go back to the lobby
         Phase = "result";
         TimeLeft = 0.0f;
@@ -137,6 +148,7 @@ public partial class GameSim : RefCounted
     {
         ResetTacticalItems();
         ResetNightSpawns();
+        ClearSupplies();
         Phase = "lobby";
         Msg = "";
         Result = null;
@@ -162,19 +174,31 @@ public partial class GameSim : RefCounted
             this.End(false, "Team wiped");
             return;
         }
+        // the boss counts toward the night's quota like any other enemy
         if (Gd.Truth(BossDead))
         {
             BossDead = false;
+            BossDownTonight = true;
             BossesKilled += 1;
             Unlock = Gd.Maxi(Unlock, 2);
-            this.NightCleared();
-            return;
+        }
+        // every enemy of the night is dead and the three supplies are in: dawn comes now (night 5: the helicopter)
+        if (((TimeLeft > 0) && this.NightAllDown() && this.SuppliesAllIn()))
+        {
+            if ((K < 5))
+            {
+                this.NightCleared();
+                this.Say("Dawn comes early");
+                return;
+            }
+            TimeLeft = 0.0f;
+            this.Say("The helicopter is coming");
         }
         if ((TimeLeft > 0))
         {
             return;
         }
-        if (((K == 2) || (K == 4)))
+        if ((((K == 2) || (K == 4)) && !BossDownTonight))
         {
             this.End(false, "Specimen still alive at dawn");
             return;
@@ -199,7 +223,7 @@ public partial class GameSim : RefCounted
             else if ((BaseHp > 500))
             {
                 Ext = 60.0f;
-                this.Say("Extension: keep one landing pad clear for 10 s!");
+                this.Say("Keep a landing pad clear!");
             }
             else
             {
@@ -268,7 +292,7 @@ public partial class GameSim : RefCounted
         if ((BreachEndT < 0))
         {
             BreachEndT = 5.0f;
-            this.Say("The doors hold again - everyone out in 5 s!");
+            this.Say("Everyone out in 5 s");
         }
         BreachEndT -= Dt;
         if ((BreachEndT > 0))

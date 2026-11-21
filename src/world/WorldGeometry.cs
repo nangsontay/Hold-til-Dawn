@@ -186,11 +186,13 @@ public partial class WorldGeometry : RefCounted
                 }
             }
         }
+        ExtractHarvestables(Variants);
+        // a landmark's own props are added after the resources are picked out: they stay as scenery and cannot be
+        // gathered, so each place keeps its look when everything round it has been cut down
         foreach (var (Lp, Ls) in this.LmProps)
         {
             Gd.Append(Deco, new GArray(Lp, Ls, 1.0f, COLD));
         }
-        ExtractHarvestables(Variants);
         // Hand-placed objects are editable with Godot's 2D editor.
         dynamic Layout = LAYOUT.Instantiate();
         Gd.Clear(StaticSolids);

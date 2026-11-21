@@ -116,7 +116,9 @@ public partial class Bots : RefCounted
         dynamic Foe = Bots.Foe(Sim, P, Post);
         float FoeD = Gd.Float(((Foe == null) ? (dynamic)(float.PositiveInfinity) : P.Pos.DistanceTo(Foe.Pos)));
         if (UseTacticalItems(Sim, P, Foe, FoeD)) return;
-        dynamic Down = Bots.Nearest(Sim, P, (Func<dynamic, dynamic>)((Q) => (Q.State == 1)), (25.0f * T));
+        // downed teammates, and dead ones once the bot carries a Revival kit
+        bool Kit = (Sim.Count(P, "revive") > 0);
+        dynamic Down = Bots.Nearest(Sim, P, (Func<dynamic, dynamic>)((Q) => ((Q.State == 1) || (Kit && (Q.State == 2)))), (Kit ? 200.0f : 25.0f) * T);
         if (((Down != null) && (FoeD > (2.5f * T))))
         {
             if ((P.Pos.DistanceTo(Down.Pos) > (1.0f * T)))
@@ -184,6 +186,10 @@ public partial class Bots : RefCounted
                 Bots.Craft(Sim, P);
             }
         }
+        else if (((Sim.Phase == "night") && (P.Role == 0) && Bots.FetchSupply(Sim, P, Dt)))
+        {
+            // the Scout runs for tonight's supplies while its door is quiet (src/world/GameSim.Supplies.cs)
+        }
         else
         {
             if ((P.Pos.DistanceTo(Post) > (0.3f * T)))
@@ -195,6 +201,21 @@ public partial class Bots : RefCounted
                 P.Aim = (Post - Vector2.Zero).Angle();
             }
         }
+    }
+
+    // walks to the nearest supply still out there; false when none is left
+    public static bool FetchSupply(dynamic Sim, dynamic P, dynamic Dt)
+    {
+        Vector2 Best = Vector2.Inf;
+        foreach (GArray S in (GArray)Sim.Supplies)
+        {
+            if (Gd.Truth(S[3])) continue;
+            Vector2 At = (Vector2)S[1];
+            if (!Best.IsFinite() || ((Vector2)P.Pos).DistanceTo(At) < ((Vector2)P.Pos).DistanceTo(Best)) Best = At;
+        }
+        if (!Best.IsFinite()) return false;
+        Bots.Move(Sim, P, Best, Dt);
+        return true;
     }
 
     public static dynamic Post(dynamic Sim, dynamic P, dynamic Slot)
@@ -375,7 +396,7 @@ public partial class Bots : RefCounted
                 "stone_armour" => (Sim.ArmourTier(P) < 2),
                 "titanium_armour" => (Sim.ArmourTier(P) < 3),
                 "bandage" => (Sim.Count(P, "bandage") < 2),
-                "revive" => Dead,
+                "revive" => (Dead && Sim.Count(P, "revive") == 0),
                 "base" => (Sim.BaseHp <= (GameSim.BASE_HP - 100)),
                 _ => false,
             };

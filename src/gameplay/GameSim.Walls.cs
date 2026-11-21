@@ -74,12 +74,12 @@ public partial class GameSim : RefCounted
         dynamic W = WALL_KINDS[Kind];
         if (((P.Role != 2) || (P.State != 0) || Gd.Truth(P.Inside)))
         {
-            this.Note(P, "Only an Engineer outside the base can build");
+            this.Note(P, "Engineer only, outside the base");
             return;
         }
         if ((this.Count(P, "hammer") <= 0))
         {
-            this.Note(P, "Building needs the Engineer's hammer");
+            this.Note(P, "Needs the hammer");
             return;
         }
         if ((Gd.At(W, 2) > Unlock))
@@ -113,7 +113,7 @@ public partial class GameSim : RefCounted
         {
             if ((this.Count(P, Res) < Gd.At(Gd.At(W, 1), Res)))
             {
-                this.Note(P, Gd.Format("Not enough %s for a %s", new GArray(Res, Gd.At(W, 0))));
+                this.Note(P, Gd.Format("Need more %s", Res));
                 return;
             }
         }

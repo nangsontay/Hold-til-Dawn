@@ -34,8 +34,8 @@ public partial class PixelProps : Node
         this.Save(Out, "workbench", this.Workbench(), Gd.MakeVector2(31, 45));
         // the shared storage chest: 4 frames side by side, shut to wide open (src/world/view/Main.BaseProps.cs)
         this.Save(Out, "chest", this.ChestSheet(), Gd.MakeVector2(18, 35));
-        this.Save(Out, "tower", this.Tower(false), Gd.MakeVector2(13, 57));
-        this.Save(Out, "tower_wreck", this.Tower(true), Gd.MakeVector2(13, 57));
+        this.Save(Out, "tower", this.Tower(false), Gd.MakeVector2(13, (57 + TOWER_EXTRA)));
+        this.Save(Out, "tower_wreck", this.Tower(true), Gd.MakeVector2(13, (57 + TOWER_EXTRA)));
         this.Save(Out, "pad", this.Pad(), Gd.MakeVector2(128, 128));
         // built walls (ITM-07, ITM-11): 3 x 1 tiles, anchor = centre of the footprint
         foreach (bool Stone in new[] { false, true })
@@ -366,16 +366,20 @@ public partial class PixelProps : Node
         return Im;
     }
 
+    // extra pixels of tower mast (team change: taller towers); Main.TOWER_EXTRA must match
+    public const int TOWER_EXTRA = 18;
+
     public dynamic Tower(dynamic Wreck)
     {
         // Defence tower (AGT-12): concrete footing, steel lattice mast, platform, floodlight (amber) and a small gun.
-        dynamic Im = Gd.Static(typeof(Image), "create_empty", 26, 60, false, Gd.EnumValue(typeof(Image), "FORMAT_RGBA8", 5));
-        this.Shadow(Im, Gd.MakeVector2(17, 56), 11, 3);
-        this.Block(Im, Gd.MakeRect2I(3, 50, 20, 8), CONCRETE);
-        dynamic Top = (Gd.Truth(Wreck) ? (dynamic)(32) : 20);
-        foreach (dynamic Y in Gd.Iter(Gd.Range(Top, 50)))
+        int D = TOWER_EXTRA;
+        dynamic Im = Gd.Static(typeof(Image), "create_empty", 26, (60 + D), false, Gd.EnumValue(typeof(Image), "FORMAT_RGBA8", 5));
+        this.Shadow(Im, Gd.MakeVector2(17, (56 + D)), 11, 3);
+        this.Block(Im, Gd.MakeRect2I(3, (50 + D), 20, 8), CONCRETE);
+        dynamic Top = (Gd.Truth(Wreck) ? (dynamic)((32 + D)) : 20);
+        foreach (dynamic Y in Gd.Iter(Gd.Range(Top, (50 + D))))
         {
-            dynamic TimeLeft = (Gd.Float((Y - 20)) / 30.0f);
+            dynamic TimeLeft = (Gd.Float((Y - 20)) / (30.0f + D));
             dynamic L = Gd.Int(Gd.Lerpf(9, 6, TimeLeft));
             dynamic R = Gd.Int(Gd.Lerpf(16, 19, TimeLeft));
             Im.FillRect(Gd.MakeRect2I(L, Y, 2, 1), Gd.At(STEEL, 1));
@@ -386,11 +390,11 @@ public partial class PixelProps : Node
         }
         if (Gd.Truth(Wreck))
         {
-            Im.FillRect(Gd.MakeRect2I(9, 29, 2, 3), Gd.At(STEEL, 2));
-            Im.FillRect(Gd.MakeRect2I(15, 30, 3, 2), Gd.At(STEEL, 2));
-            this.Block(Im, Gd.MakeRect2I(16, 51, 9, 6), new GArray(Gd.MakeColor("6E7682"), Gd.MakeColor("5B6B7C"), Gd.MakeColor("3A4250")));
-            Im.FillRect(Gd.MakeRect2I(17, 53, 4, 2), Gd.MakeColor("3A3530"));
-            foreach (dynamic P in Gd.Iter(new GArray(Gd.MakeVector2I(1, 55), Gd.MakeVector2I(4, 57), Gd.MakeVector2I(22, 49))))
+            Im.FillRect(Gd.MakeRect2I(9, (29 + D), 2, 3), Gd.At(STEEL, 2));
+            Im.FillRect(Gd.MakeRect2I(15, (30 + D), 3, 2), Gd.At(STEEL, 2));
+            this.Block(Im, Gd.MakeRect2I(16, (51 + D), 9, 6), new GArray(Gd.MakeColor("6E7682"), Gd.MakeColor("5B6B7C"), Gd.MakeColor("3A4250")));
+            Im.FillRect(Gd.MakeRect2I(17, (53 + D), 4, 2), Gd.MakeColor("3A3530"));
+            foreach (dynamic P in Gd.Iter(new GArray(Gd.MakeVector2I(1, (55 + D)), Gd.MakeVector2I(4, (57 + D)), Gd.MakeVector2I(22, (49 + D)))))
             {
                 Im.FillRect(Gd.MakeRect2I(P.X, P.Y, 2, 2), Gd.At(CONCRETE, 2));
             }

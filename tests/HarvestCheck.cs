@@ -27,7 +27,10 @@ public partial class HarvestCheck : Node
         var VisibleResources = new HashSet<(Vector2, string)>();
         foreach (GDict N in (GArray)S.Nodes) VisibleResources.Add(((Vector2)N.Get("pos"), Gd.Str(N.Get("sprite", ""))));
         Check(W.HarvestSites.All(Site => VisibleResources.Contains((Site.Pos, Site.Sprite))), "every natural scenery resource is an actual gatherable node");
-        Check(((GArray)W.Deco).All(D => Harvestables.TypeOf(Gd.Str(((GArray)D)[1])) < 0 && !Gd.Str(((GArray)D)[1]).StartsWith("dead_")), "no decorative trees, rocks, herbs or dead trees remain in world scenery");
+        var LmProps = new HashSet<(Vector2, string)>(W.LmProps);
+        Check(((GArray)W.Deco).All(D => (Harvestables.TypeOf(Gd.Str(((GArray)D)[1])) < 0 || LmProps.Contains(((Vector2)((GArray)D)[0], Gd.Str(((GArray)D)[1])))) && !Gd.Str(((GArray)D)[1]).StartsWith("dead_")), "no decorative trees, rocks, herbs or dead trees remain in world scenery, apart from the landmarks' own props");
+        Check(!W.HarvestSites.Any(Site => LmProps.Contains((Site.Pos, Site.Sprite))), "a landmark's own props cannot be gathered");
+        Check(((GArray)W.Deco).Count(D => LmProps.Contains(((Vector2)((GArray)D)[0], Gd.Str(((GArray)D)[1])))) == W.LmProps.Count, "every landmark prop stands in the scenery");
         foreach (var Site in W.HarvestSites)
             for (int Stage = 0; Stage <= 5; Stage++)
             {

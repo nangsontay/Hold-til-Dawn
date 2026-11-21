@@ -33,14 +33,6 @@ public partial class Main : Node2D
         if (!Choices.Contains(CraftSel)) CraftSel = Choices[0];
     }
 
-    static readonly Dictionary<string, string> RES_FROM = new()
-    {
-        ["wood"] = "trees",
-        ["stone"] = "rocks",
-        ["herb"] = "herb bushes",
-        ["titanium"] = "blue crystal ore",
-    };
-    static readonly string[] TIER_TITLES = { "BASIC", "STONE TIER  -  after night 1", "TITANIUM TIER  -  after the first boss" };
     const float CARD_H = 92.0f;
     const float CARD_GAP = 8.0f;
     const float BOX = 52.0f;
@@ -133,7 +125,7 @@ public partial class Main : Node2D
         return Kind.ToUpper();
     }
 
-    // a few short lines on what it does
+    // one short line of numbers
     List<string> CraftDesc(string Id)
     {
         var Out = new List<string>();
@@ -143,43 +135,27 @@ public partial class Main : Node2D
         {
             dynamic S = GameSim.WEAPON_STATS[Id];
             bool Ranged = Gd.Truth(Gd.At(S, 3));
-            Out.Add((Id == "stone_spear") ? "A long thrust that keeps them at reach." : ((Id == "titanium_blade") ? "A wide, heavy slash. Best melee weapon." : ((Id == "bow") ? "Shoots toward the cursor. Holds its arrows (up to 30)." : "Shoots toward the cursor; needs no arrows.")));
-            Out.Add(("Damage " + Num(Gd.At(S, 0)) + "   -   " + Num(Gd.At(S, 1)) + (Ranged ? " shot" : " hit") + ((Gd.Float(Gd.At(S, 1)) == 1.0f) ? "" : "s") + "/s"));
-            Out.Add(((Ranged ? "Range " : "Reach ") + Num(Gd.At(S, 2)) + " tiles"));
+            Out.Add(Num(Gd.At(S, 0)) + " damage, " + Num(Gd.At(S, 1)) + "/s, " + (Ranged ? "range " : "reach ") + Num(Gd.At(S, 2)));
             return Out;
         }
-        int Tier = 0;
         for (int K = 1; K < Gd.Size(GameSim.ARMOUR_ITEMS); K++)
         {
             if (Gd.Str(Gd.At(GameSim.ARMOUR_ITEMS, K)) == Id)
             {
-                Tier = K;
+                Out.Add(Gd.Format("-%d%% damage taken", Gd.Int(Mathf.Round((Gd.Float(Gd.At(GameSim.ARMOUR, K)) * 100.0f)))));
+                return Out;
             }
-        }
-        if (Tier > 0)
-        {
-            Out.Add(Gd.Format("Takes %d%% off every hit you take.", Gd.Int(Mathf.Round((Gd.Float(Gd.At(GameSim.ARMOUR, Tier)) * 100.0f)))));
-            Out.Add("Worn by itself when it is your best.");
-            return Out;
         }
         switch (Id)
         {
-            case "arrow":
-                Out.Add("Go straight into your bow (up to 30),");
-                Out.Add("so they need no slot. 5 per craft.");
-                break;
             case "bandage":
-                Out.Add("Q: heals 30 HP after a short wait");
-                Out.Add("(Healer 45). Attacking stops it.");
+                Out.Add("Q: +30 HP");
                 break;
             case "revive":
-                Out.Add("Brings a dead teammate back with 50% HP");
-                Out.Add("at the door nearest to where they fell.");
-                Out.Add("Used the moment it is made.");
+                Out.Add("Hold E on a dead teammate");
                 break;
             case "base":
-                Out.Add("+100 HP for the generator (max 1000).");
-                Out.Add("By day only.");
+                Out.Add("+100 generator HP, by day");
                 break;
         }
         return Out;
@@ -198,18 +174,6 @@ public partial class Main : Node2D
         if (Gd.Truth(Gd.At(R, 5)) && (Gd.At(Me, 1) != 2))
         {
             return "Only an Engineer can do this";
-        }
-        if (Id == "revive")
-        {
-            bool Dead = false;
-            foreach (dynamic Pid in Gd.Iter(Snap.Ps))
-            {
-                Dead = (Dead || (Gd.At(Gd.At(Snap.Ps, Pid), 5) == 2));
-            }
-            if (!Dead)
-            {
-                return "No dead teammate to revive";
-            }
         }
         if (Id == "base")
         {
@@ -264,9 +228,6 @@ public partial class Main : Node2D
         C.DrawRect(P, (GOLD * new Color(1, 1, 1, 0.7f)), false, 1.5f);
         C.DrawLine(new Vector2((P.Position.X + 16), (P.Position.Y + HEAD_H - 8)), new Vector2((P.End.X - 16), (P.Position.Y + HEAD_H - 8)), new Color(1, 1, 1, 0.1f), 1.0f);
         this.Text(C, (P.Position + new Vector2(20, 28)), "WORKBENCH", 18, GOLD, 0, -1.0f, true);
-        bool At = this.AtBenchLocal(Me);
-        this.Text(C, (P.Position + new Vector2(150, 27)), (At ? "You are at the workbench" : "Walk to the workbench (north wall, west of door B) to craft"), 11, (At ? new Color("7FD38A") : new Color(1, 0.6f, 0.55f)));
-        this.Text(C, new Vector2((P.End.X - 420), (P.Position.Y + 27)), "Choose tier / recipe  -  1-8 craft  -  C close", 10, new Color(1, 1, 1, 0.5f), 2, 400.0f);
         // --- recipe cards, by tier
         float Lw = this.CraftLeftW(P);
         for (int T = 0; T < 3; T++)
@@ -277,10 +238,6 @@ public partial class Main : Node2D
             C.DrawRect(Tab, CraftTier == T ? GOLD : new Color(1, 1, 1, 0.2f), false, 1f);
             this.Text(C, new Vector2(Tab.Position.X, Tab.Position.Y + 18), (T == 0 ? "BASIC" : T == 1 ? "STONE" : "TITANIUM") + (Open ? "" : " [locked]"), 11, Open ? GOLD : Colors.Gray, 1, Tab.Size.X, true);
         }
-        string UnlockHint = CraftTier == 0 ? "Available from day 1" : CraftTier == 1 ? "Unlock: survive night 1" : "Unlock: defeat the first boss";
-        this.Text(C, new Vector2(P.Position.X + 20, P.Position.Y + 350), UnlockHint, 11, GOLD);
-        this.Text(C, new Vector2(P.Position.X + 20, P.Position.Y + 374), "Use items: move to hotbar (Tab), select 1-4, then click.", 11, Colors.White);
-        this.Text(C, new Vector2(P.Position.X + 20, P.Position.Y + 393), "Gathering kit: passive while carried. Q: bandage.", 11, Colors.Gray);
         int Busy = Gd.Int(Gd.At(Me, 26));
         for (int I = 0; I < Gd.Size(GameSim.RECIPES); I++)
         {
@@ -411,26 +368,6 @@ public partial class Main : Node2D
         {
             this.Text(C, new Vector2((X + BOX), (Y + (BOX / 2) + 8)), "+", 22, Colors.White, 1, 22.0f, true);
             this.CraftBox(C, new Rect2((X + BOX + 22), Y, BOX, BOX), "arrow", "x5", GOLD);
-        }
-        // the steps
-        float Sy = (Y + BOX + 40);
-        var Steps = new List<string>();
-        var Gather = new List<string>();
-        foreach (dynamic Res in Gd.Iter(Cost))
-        {
-            string Name = Gd.Str(Res);
-            string From = RES_FROM.GetValueOrDefault(Name, "");
-            Gather.Add(Gd.Str(Gd.At(Cost, Res)) + " " + Name);
-        }
-        Steps.Add(("Gather " + string.Join(" + ", Gather) + "."));
-        Steps.Add("Carry them: crafting uses your bag, not the chest.");
-        Steps.Add(("At the workbench: Craft or key " + KeyOf(I) + "."));
-        Steps.Add(("Wait " + Num(this.CraftSeconds(R)) + " s. Moving or damage cancels."));
-        for (int K = 0; K < Steps.Count; K++)
-        {
-            this.Text(C, new Vector2(D.Position.X, Sy), Gd.Format("%d.", (K + 1)), 11, GOLD, 0, -1.0f, true);
-            this.Text(C, new Vector2((D.Position.X + 16), Sy), Steps[K], 11, new Color(1, 1, 1, 0.85f));
-            Sy += 18;
         }
         // the button, or why not
         Rect2 B = this.CraftButton(V);

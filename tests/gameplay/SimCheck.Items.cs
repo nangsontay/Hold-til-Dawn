@@ -10,7 +10,7 @@ public partial class SimCheck : Node
 {
     private void CheckItems()
     {
-        // Starting kits and the 12-slot inventory (BAL-18, BAL-42, MEC-09)
+        // Starting kits and the 8-slot inventory (BAL-18, BAL-42, MEC-09)
         dynamic S = new GameSim();
         S.AddPlayer(1, "Eng", 2);
         S.AddPlayer(2, "Scout", 0);
@@ -19,13 +19,13 @@ public partial class SimCheck : Node
         dynamic Eng = Gd.At(S.Players, 1);
         dynamic Sc = Gd.At(S.Players, 2);
         dynamic He = Gd.At(S.Players, 3);
-        this.Check(((Gd.Size(Eng.Inv) == 12) && (Gd.At(Gd.At(Eng.Inv, 0), 0) == "hammer") && (Gd.Size(Gd.Filter(Eng.Inv, (Func<dynamic, dynamic>)((X) => (X != null)))) == 1)), "Engineer starts with only the hammer in 12 slots");
+        this.Check(((Gd.Size(Eng.Inv) == 8) && (Gd.At(Gd.At(Eng.Inv, 0), 0) == "hammer") && (Gd.Size(Gd.Filter(Eng.Inv, (Func<dynamic, dynamic>)((X) => (X != null)))) == 1)), "Engineer starts with only the hammer in 8 slots");
         this.Check(((Gd.At(Gd.At(Sc.Inv, 0), 0) == "starter_bow") && Gd.Truth(Gd.All(He.Inv, (Func<dynamic, dynamic>)((X) => (X == null)))) && (He.Flasks == 3)), "Scout starts with a starter bow; the Healer with empty hands and 3 flasks");
         this.Check(((He.Weapon == "fists") && (Gd.At(GameSim.WEAPON_STATS["fists"], 0) == 15.0f)), "an empty hand fights bare-handed with the basic weapon's numbers (BAL-08)");
         S.SetCount(Eng, "wood", 45);
-        this.Check(((S.Count(Eng, "wood") == 45) && (Gd.At(Gd.At(Eng.Inv, 2), 1) == 20) && (S.Room(Eng, "wood") == 15 + (8 * 20))), "stacks hold 20 units");
+        this.Check(((S.Count(Eng, "wood") == 45) && (Gd.At(Gd.At(Eng.Inv, 2), 1) == 20) && (S.Room(Eng, "wood") == 15 + (4 * 20))), "stacks hold 20 units");
         S.SetCount(Eng, "stone", 200);
-        this.Check(((S.Count(Eng, "stone") == 160) && (S.Room(Eng, "herb") == 0)), "a full inventory takes no more");
+        this.Check(((S.Count(Eng, "stone") == 80) && (S.Room(Eng, "herb") == 0)), "a full inventory takes no more");
         dynamic Herb = Gd.At(Gd.Filter(S.Nodes, (Func<dynamic, dynamic>)((N) => (N.Type == 2))), 0);
         Eng.Pos = Herb.Pos;
         Eng.Inter = true;
@@ -183,18 +183,26 @@ public partial class SimCheck : Node
         Gd.At(S.BuiltWalls, 0).Hp = 5.0f;
         this.Run(S, 2.5f);
         this.Check((Gd.Size(S.BuiltWalls) == 1), "a wall at 0 HP is destroyed");
-        // Revival kit: back at the door nearest to where they fell (MEC-07)
+        // Revival kit: crafted into the bag, carried to the dead teammate and used there (hold E)
         S = this.NewMatch();
         dynamic Dead = Gd.At(S.Players, 2);
         Dead.State = 2;
         Dead.Pos = (Gd.At(GameSim.DOOR_POS, 2) + Gd.MakeVector2((10 * 32), 0));
+        Vector2 Fell = (Vector2)Dead.Pos;
         dynamic Crafter = Gd.At(S.Players, 1);
         Crafter.Pos = (GameSim.WORKBENCH_POS + Gd.MakeVector2(0, 24));
         S.SetCount(Crafter, "herb", 4);
         S.SetCount(Crafter, "titanium", 4);
         S.Action(1, "craft", 2);
         this.Run(S, 3.1f);
-        this.Check(((Dead.State == 0) && (Dead.Hp == (0.5f * Dead.Maxhp)) && (Dead.Pos.DistanceTo(Gd.At(GameSim.DOOR_POS, 2)) < (2 * 32))), "a Revival kit brings a teammate back at the nearest door with 50% HP");
+        this.Check(((Dead.State == 2) && (S.Count(Crafter, "revive") == 1)), "a crafted Revival kit goes into the bag and revives nobody by itself");
+        Crafter.Pos = (Fell + Gd.MakeVector2(24, 0));
+        Crafter.Inter = true;
+        this.Run(S, 1.0f);
+        this.Check((Dead.State == 2), "using the kit takes a few seconds");
+        this.Run(S, 2.2f);
+        Crafter.Inter = false;
+        this.Check(((Dead.State == 0) && (Dead.Hp == (0.5f * Dead.Maxhp)) && (((Vector2)Dead.Pos).DistanceTo(Fell) < 2.0f) && (S.Count(Crafter, "revive") == 0)), "the kit used on the body brings them back where they fell with 50% HP");
         // Result screen (section 2.5)
         S.BaseHp = 0.0f;
         S.LastDoor = 1;

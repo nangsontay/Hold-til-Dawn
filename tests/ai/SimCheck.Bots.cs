@@ -30,7 +30,14 @@ public partial class SimCheck : Node
         this.Run(S, 8);
         int Dn = Gd.Int(Gd.At(S.Active, 0));
         dynamic AtPost = Gd.Filter(Gd.Values(S.Players), (Func<dynamic, dynamic>)((P) => (Gd.Truth(P.Bot) && !(Gd.Truth(GameSim.InsideBase(P.Pos))) && (P.Pos.DistanceTo(Gd.At(GameSim.DOOR_POS, Dn)) < (6 * 32)))));
-        this.Check((Gd.Size(AtPost) == 2), "at night the bots hold the attacked door");
+        this.Check(((Gd.Size(AtPost) == 1) && (Gd.At(AtPost, 0).Role == 1)), "at night the Healer bot holds the attacked door");
+        // the Scout bot runs for tonight's supplies while its door is quiet, then comes back to it
+        dynamic ScoutBot = Gd.At(Gd.Filter(Gd.Values(S.Players), (Func<dynamic, dynamic>)((P) => (Gd.Truth(P.Bot) && (P.Role == 0)))), 0);
+        this.Check((((Vector2)ScoutBot.Pos).DistanceTo(Gd.At(GameSim.DOOR_POS, Dn)) > (6 * 32)) && (S.SuppliesGot() < 3), "the Scout bot goes for the supplies");
+        foreach (GArray Sup in S.Supplies) Sup[3] = true;
+        this.Run(S, 40);
+        AtPost = Gd.Filter(Gd.Values(S.Players), (Func<dynamic, dynamic>)((P) => (Gd.Truth(P.Bot) && !(Gd.Truth(GameSim.InsideBase(P.Pos))) && (P.Pos.DistanceTo(Gd.At(GameSim.DOOR_POS, Dn)) < (6 * 32)))));
+        this.Check((Gd.Size(AtPost) == 2), "with the supplies in, both bots hold the attacked door");
         dynamic Hb = Gd.At(Gd.Filter(Gd.Values(S.Players), (Func<dynamic, dynamic>)((P) => (Gd.Truth(P.Bot) && (P.Role == 1)))), 0);
         dynamic Sb = Gd.At(Gd.Filter(Gd.Values(S.Players), (Func<dynamic, dynamic>)((P) => (Gd.Truth(P.Bot) && (P.Role == 0)))), 0);
         Gd.Clear(S.Enemies);

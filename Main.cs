@@ -97,6 +97,10 @@ public partial class Main : Node2D
     public dynamic FontTitle = null;
     public dynamic Prop = new GDict {  };
     public dynamic TowerLights = new GArray();
+    // 0 by day, 1 at night (ramps up through dusk); the towers' floodlights follow it
+    float NightLevel;
+    // how many art pixels taller the tower is than the original sprite (tools/PixelProps.cs TOWER_EXTRA)
+    public const int TOWER_EXTRA = PixelProps.TOWER_EXTRA;
     public dynamic ShotPath = "";
     public dynamic ShotAt = 4.0f;
     public dynamic ShotPos = null;
@@ -126,7 +130,7 @@ public partial class Main : Node2D
     public dynamic RoleCards = new GArray();
     public dynamic BotButtons = new GArray();
     public dynamic Portraits = new GDict {  };
-    public static readonly dynamic ROLE_INFO = new GArray(new GArray("FAST & FEARLESS", "Move faster. Strike faster.\nScout the island and lead the fight."), new GArray("KEEP THEM STANDING", "Healing flasks and faster revives.\nBring your crew home alive."), new GArray("BUILD THE LAST DEFENCE", "Build towers. Repair the base.\nKeep the beacon burning."));
+    public static readonly dynamic ROLE_INFO = new GArray(new GArray("FAST & FEARLESS", "Moves and strikes faster."), new GArray("KEEP THEM STANDING", "Heals and revives faster."), new GArray("BUILD THE LAST DEFENCE", "Builds towers and repairs."));
 
     public override void _Ready()
     {
@@ -183,7 +187,7 @@ public partial class Main : Node2D
         }
     }
 
-    // Screenshot and playtest helpers: --kit (some materials and a bow), --arsenal (every weapon), --walls, --goto=x,y (tiles) or --goto=wood|stone|herb|titanium, --gathered=0..5, --panel=bag|craft|build|pause|map,
+    // Screenshot and playtest helpers: --kit (some materials and a bow), --arsenal (every weapon), --walls, --towers, --goto=x,y (tiles) or --goto=wood|stone|herb|titanium|sup:N, --gathered=0..5, --panel=bag|craft|build|pause|map,
     // --boss=0..6 (night 2 with that boss 9 tiles in front of door A, you beside it).
     public void DevArgs(dynamic Args)
     {
@@ -224,6 +228,18 @@ public partial class Main : Node2D
                 Gd.Append(Sim.BuiltWalls, new GDict { { "id", 9002 }, { "kind", "stone" }, { "pos", GameSim.SnapToTile((D + Gd.MakeVector2((-2 * T), (4 * T)))) }, { "vert", false }, { "hp", 300.0f }, { "maxhp", 400.0f } });
                 Sim.Teleport(Me, (D + Gd.MakeVector2((2 * T), 0)));
             }
+            else if (Gd.Equal(A, "--towers"))
+            {
+                // a tower beside each landing pad (the third one badly damaged), you beside the first
+                Sim.FreeTower = false;
+                for (int I = 0; I < GameSim.MAX_TOWERS; I++)
+                {
+                    Sim.PlaceTower(I, Sim.FreeTowerSpot(I));
+                }
+                Gd.At(Sim.Towers, 2).Hp = 60.0f;
+                Sim.World.Rebuild(Sim.Nodes, Sim.Towers, Sim.BuiltWalls);
+                Sim.Teleport(Me, (Gd.At(Sim.Towers, 0).Pos + Gd.MakeVector2((-2 * T), (-1.0f * T))));
+            }
             else if (Gd.Truth(Gd.BeginsWith(A, "--gathered=")))
             {
                 // every node left with N units (0..5), to look at the broken stages
@@ -245,6 +261,15 @@ public partial class Main : Node2D
                     }
                 }
                 Sim.Teleport(Me, (Best + new Vector2(0, (1.5f * T))));
+            }
+            else if (Gd.Truth(Gd.BeginsWith(A, "--goto=sup:")))
+            {
+                // --goto=sup:N: two tiles south of tonight's supply N (after --night)
+                int N = Gd.ToInt(Gd.Substr(A, 11));
+                if (N >= 0 && N < Sim.Supplies.Count)
+                {
+                    Sim.Teleport(Me, IslandMap.PullInland((Vector2)((GArray)Sim.Supplies[N])[1] + new Vector2(0, (2.0f * T)), T));
+                }
             }
             else if (Gd.Truth(Gd.BeginsWith(A, "--goto=lm:")))
             {
@@ -641,6 +666,9 @@ public partial class Main : Node2D
         // the large map covers the middle of the screen: the radio line waits until it closes
         // the large map and the workbench tab hide the radio line
         Banner.Text = ((Gd.Truth(MapBig) || Gd.Truth(CraftOpen)) ? "" : Gd.Get(Snap, "msg", ""));
+        // the night bar pushes the boss bar down (src/ai/view/Main.EnemyView.cs); the banner moves down with it
+        bool BossShown = ((Ph == "night") && Gd.Truth(Gd.Any(Gd.Get(Snap, "en", new GArray()), (Func<dynamic, dynamic>)((E) => (Gd.At(E, 1) == GameSim.BOSS)))));
+        Banner.OffsetTop = (BossShown ? (86 + NIGHT_BAR_H) : ((Ph == "night") ? (60 + NIGHT_BAR_H) : 86));
         if ((Ph == "lobby"))
         {
             this.LobbyUi();
@@ -734,6 +762,7 @@ public partial class Main : Node2D
         {
             Night = (1.0f - (Snap.TimeLeft / GameSim.DUSK));
         }
+        NightLevel = (float)Night;
         Tint.Color = DAY_TINT.Lerp(NIGHT_TINT, Night);
         this.TickBaseLamps((float)Night);
         MyLight.Enabled = (Night > 0);
@@ -745,11 +774,13 @@ public partial class Main : Node2D
         foreach (dynamic Tw in Gd.Iter(Gd.Get(Snap, "tw", new GArray())))
         {
             dynamic L = Gd.At(TowerLights, Gd.At(Tw, 0));
-            // the light goes out the moment the tower falls
-            L.Enabled = ((Night > 0) && (Gd.At(Tw, 2) > 0));
+            // a standing tower floodlights the ground around it (TOWER_LIGHT, 6 tiles) from dusk to dawn; the light
+            // goes out the moment the tower falls and flickers while it is badly damaged
+            L.Enabled = ((Night > 0.02f) && (Gd.At(Tw, 2) > 0));
             L.Position = Gd.At(Tw, 1);
-            L.Energy = (0.55f * ((Gd.At(Tw, 2) < (0.3f * GameSim.TOWER_HP)) ? (dynamic)((float)GD.RandRange(0.45f, 1.0f)) : 1.0f));
+            L.Energy = ((0.85f * Night) * ((Gd.At(Tw, 2) < (0.3f * GameSim.TOWER_HP)) ? (dynamic)((float)GD.RandRange(0.45f, 1.0f)) : 1.0f));
         }
+        this.TickSupplyLights((float)Night);
         MyLight.Position = LocalPos;
         if ((Me != null))
         {
@@ -793,7 +824,7 @@ public partial class Main : Node2D
         bool Leader = Gd.Truth((MyId == Snap.Leader));
         StartBtn.Text = (Gd.Truth(Leader) ? (dynamic)("START EXPEDITION  >") : "WAITING FOR LEADER");
         StartBtn.Disabled = (!(Gd.Truth(Leader)) || !(Gd.Truth(Eng)));
-        LobbyHint.Text = (Gd.Truth(Eng) ? (dynamic)("Crew ready. Hold the light together.") : "An Engineer is required to start.");
+        LobbyHint.Text = (Gd.Truth(Eng) ? (dynamic)("Ready") : "Needs an Engineer");
         LobbyHint.Modulate = (Gd.Truth(Eng) ? (dynamic)(Gd.MakeColor("89A498")) : Gd.MakeColor("F2B544"));
         if (!(Gd.Truth(Gd.Has(Snap.Ps, MyId))))
         {
@@ -881,6 +912,7 @@ public partial class Main : Node2D
         this.DrawBaseFloor();
         this.DrawTelegraphs();
         DrawTacticalAreas();
+        DrawSupplies();
         // from outside, the inside of the base is fogged over (src/world/view/Main.BaseFog.cs)
         this.TickBaseFog();
         this.DrawBaseFog();
@@ -903,11 +935,9 @@ public partial class Main : Node2D
         foreach (dynamic Id in Gd.Iter(Snap.Ps))
         {
             dynamic P = Gd.At(Snap.Ps, Id);
-            if ((Gd.At(P, 5) != 2))
-            {
-                Vector2 Pos = (Vector2)(((Id == MyId) ? (dynamic)(LocalPos) : Gd.Get(ShownP, Id, Gd.At(P, 2))));
-                Gd.Append(Items, new GArray(Pos.Y, 3, Id, P, Pos));
-            }
+            // the dead lie where they fell until someone brings a Revival kit
+            Vector2 Pos = (Vector2)(((Id == MyId) ? (dynamic)(LocalPos) : Gd.Get(ShownP, Id, Gd.At(P, 2))));
+            Gd.Append(Items, new GArray(Pos.Y, 3, Id, P, Pos));
         }
         foreach (dynamic D in Gd.Iter(Deco))
         {
@@ -959,15 +989,10 @@ public partial class Main : Node2D
         {
             Gd.Append(Items, new GArray(Gd.At(Tw, 1).Y, 9, Tw));
         }
-        // MEC-11: green preview where the Engineer would place a tower (drawn just behind them)
-        dynamic MeB = Gd.Get(Snap.Ps, MyId);
-        if (((MeB != null) && (Gd.At(MeB, 1) == 2) && (Gd.At(MeB, 5) == 0) && !(Gd.Truth(Gd.At(MeB, 19)))))
+        // MEC-11: green preview where T would place the free tower (drawn just behind the Engineer)
+        if (this.FreeTowerHere())
         {
-            dynamic Slot = GameSim.TowerSlot(LocalPos);
-            if (((Slot >= 0) && !(Gd.Truth(Gd.Any(Gd.Get(Snap, "tw", new GArray()), (Func<dynamic, dynamic>)((Tw) => (Gd.At(Tw, 0) == Slot)))))))
-            {
-                Gd.Append(Items, new GArray((LocalPos.Y - 0.5f), 6, "tower", LocalPos, Gd.MakeColor(0.6f, 1.6f, 0.7f, 0.45f)));
-            }
+            Gd.Append(Items, new GArray((LocalPos.Y - 0.5f), 6, "tower", LocalPos, Gd.MakeColor(0.6f, 1.6f, 0.7f, 0.45f)));
         }
         foreach (dynamic I in Gd.Iter(3))
         {
@@ -1046,6 +1071,10 @@ public partial class Main : Node2D
             {
                 this.DrawChest((Vector2)Gd.At(It, 3));
             }
+            else if ((Kind == 6) && (Gd.Str(Gd.At(It, 2)) == "lighthouse"))
+            {
+                this.DrawLighthouse((Vector2)Gd.At(It, 3), (Color)Gd.At(It, 4));
+            }
             else if ((Kind == 6))
             {
                 this.DrawProp(Gd.At(It, 2), Gd.At(It, 3), ((Gd.Size(It) > 4) ? (dynamic)(Gd.At(It, 4)) : Colors.White));
@@ -1117,7 +1146,7 @@ public partial class Main : Node2D
         {
             dynamic P = Gd.At(Snap.Ps, Id);
             dynamic Pf = ((Id == MyId) ? (dynamic)(LocalPos) : Gd.Get(ShownP, Id, Gd.At(P, 2)));
-            if (((Gd.At(P, 5) != 2) && !this.HiddenInBase((Vector2)Pf)))
+            if (!this.HiddenInBase((Vector2)Pf))
             {
                 this.PlayerUi(Id, P, Pf, Font);
             }
@@ -1152,6 +1181,15 @@ public partial class Main : Node2D
             this.Char(Id, Skin, Foot, null, 1.0f, Gd.MakeColor(0.85f, 0.8f, 0.85f), false, "idle", "down", this.DownTime(Id, true));
             return;
         }
+        if ((Gd.At(P, 5) == 2))
+        {
+            // dead: lies still, greyed, with a cross over the body
+            this.Char(Id, Skin, Foot, null, 1.0f, Gd.MakeColor(0.5f, 0.48f, 0.55f), false, "idle", "down", this.DownTime(Id, true) + 10.0f);
+            Vector2 X = (Vector2)Foot - new Vector2(0, 22);
+            DrawLine(X + new Vector2(-4, -4), X + new Vector2(4, 4), (Color)NEON_RED, 2);
+            DrawLine(X + new Vector2(4, -4), X + new Vector2(-4, 4), (Color)NEON_RED, 2);
+            return;
+        }
         this.DownTime(Id, false);
         if (Gd.Truth(Gd.At(P, 11)))
         {
@@ -1176,7 +1214,7 @@ public partial class Main : Node2D
         string Gather = Activity == "gather" && Attack == null ? GatherAnimation((Vector2)Gd.At(P, 23)) : null;
         this.Char(Id, Skin, Foot, Aim, 1.0f, Colors.White, (Gd.Truth(Fighting) || (Activity != "idle")), Activity, Attack?.Name ?? Gather, (Attack?.T ?? 0.0f), Gather != null);
         this.DrawActivity(Foot, Aim, Activity);
-        DrawTacticalWeapon(P, (Vector2)Foot, Aim);
+        DrawTacticalWeapon(Id, P, (Vector2)Foot, Aim);
     }
 
     // compass octant (0 = right, counting clockwise on screen) to the sheet row
@@ -1291,15 +1329,15 @@ public partial class Main : Node2D
             Gd.Native(this, "draw_arc", Pos, (R + 8), ((-Mathf.Pi) / 2), (((-Mathf.Pi) / 2) + (Mathf.Tau * Prog)), 24, Gd.MakeColor(0.6f, 2.0f, 0.8f), 3);
         }
         // just above the head
-        dynamic Top = (Foot - Gd.MakeVector2(0, (((Gd.At(P, 5) == 1) ? (dynamic)(10.0f) : CHAR_H) + 2)));
-        if ((Id != MyId))
+        dynamic Top = (Foot - Gd.MakeVector2(0, (((Gd.At(P, 5) != 0) ? (dynamic)(10.0f) : CHAR_H) + 2)));
+        if (((Id != MyId) && (Gd.At(P, 5) != 2)))
         {
             this.Bar(Top, T, (Gd.At(P, 3) / Gd.At(P, 4)), Gd.MakeColor("3DBE5A"));
         }
-        string Label = (Gd.At(P, 0) + ((Gd.At(P, 5) == 1) ? (dynamic)(Gd.Format("  DOWN %d", Gd.At(P, 6))) : ""));
+        string Label = (Gd.At(P, 0) + ((Gd.At(P, 5) == 1) ? (dynamic)(Gd.Format("  DOWN %d", Gd.At(P, 6))) : ((Gd.At(P, 5) == 2) ? "  DEAD" : "")));
         dynamic Lp = (Top + Gd.MakeVector2(((-2) * T), (-6)));
         Gd.Native(this, "draw_string_outline", Font, Lp, Label, 1, (4 * T), 7, 2, INK);
-        Gd.Native(this, "draw_string", Font, Lp, Label, 1, (4 * T), 7, ((Gd.At(P, 5) == 1) ? (dynamic)(NEON_RED) : Colors.White));
+        Gd.Native(this, "draw_string", Font, Lp, Label, 1, (4 * T), 7, ((Gd.At(P, 5) != 0) ? (dynamic)(NEON_RED) : Colors.White));
     }
 
     public dynamic Bump(dynamic Pos, dynamic R)
@@ -1516,6 +1554,23 @@ public partial class Main : Node2D
         this.ConcretePillar((Rect2)R, (float)Hgt);
     }
 
+    // The Engineer still has the free tower and T would place it here. Only shown near the base, so the ghost
+    // does not follow them all over the island.
+    public bool FreeTowerHere()
+    {
+        dynamic MeB = Gd.Get(Snap.Ps, MyId);
+        if (((MeB == null) || (Gd.At(MeB, 1) != 2) || (Gd.At(MeB, 5) != 0) || Gd.Truth(Gd.At(MeB, 19)) || !Gd.Truth(Gd.Get(Snap, "free_tower", false))))
+        {
+            return false;
+        }
+        bool NearDoor = false;
+        foreach (dynamic I in Gd.Iter(3))
+        {
+            NearDoor = (NearDoor || (LocalPos.DistanceTo((Vector2)Gd.At(GameSim.DOOR_POS, I)) < (14.0f * T)));
+        }
+        return (NearDoor && (GameSim.TowerSpotProblem(LocalPos, null) == ""));
+    }
+
     public void DrawTower(dynamic Tw)
     {
         // Defence tower (AGT-12): [door, pos, hp, wrecked, has target, target pos].
@@ -1528,15 +1583,23 @@ public partial class Main : Node2D
             Mod = Gd.MakeColor(0.65f, 0.65f, 0.75f);
         }
         this.DrawProp((Gd.Truth(Up) ? (dynamic)("tower") : "tower_wreck"), Pos, Mod);
+        // the floodlight burns at night: a hot glow on the lamp head (the glow pass blooms it)
+        if ((Gd.Truth(Up) && (NightLevel > 0.02f)))
+        {
+            Vector2 Lamp = (Pos + (new Vector2(0, (-47 - TOWER_EXTRA)) * (float)TOWER_SCALE));
+            float Flick = ((Hp < (0.3f * GameSim.TOWER_HP)) ? (float)GD.RandRange(0.4f, 1.0f) : 1.0f);
+            DrawCircle(Lamp, (7.0f * (float)TOWER_SCALE), new Color(1.0f, 0.62f, 0.25f, ((0.22f * NightLevel) * Flick)));
+            DrawRect(new Rect2((Lamp - (new Vector2(3, 2) * (float)TOWER_SCALE)), (new Vector2(6, 4) * (float)TOWER_SCALE)), new Color(2.2f, 1.7f, 0.9f, (NightLevel * Flick)));
+        }
         if ((Gd.Truth(Up) && Gd.Truth(Gd.At(Tw, 4)) && (Gd.Fmod(Clock, 0.25f) < 0.1f)))
         {
             Vector2 Tgt = (Vector2)((Gd.At(Tw, 5) - Gd.MakeVector2(0, 12)));
-            Gd.Native(this, "draw_line", (Pos + (Gd.MakeVector2(11, (-46)) * TOWER_SCALE)), Tgt, Gd.MakeColor(2.4f, 1.8f, 0.7f), 1.5f);
+            Gd.Native(this, "draw_line", (Pos + (Gd.MakeVector2(11, (-46 - TOWER_EXTRA)) * TOWER_SCALE)), Tgt, Gd.MakeColor(2.4f, 1.8f, 0.7f), 1.5f);
             Gd.Native(this, "draw_circle", Tgt, 3, Gd.MakeColor(2.4f, 1.8f, 0.7f));
         }
         if ((Hp < GameSim.TOWER_HP))
         {
-            this.Bar((Pos - Gd.MakeVector2(0, ((Gd.Truth(Up) ? (dynamic)(64) : 26) * TOWER_SCALE))), ((T * 1.2f) * TOWER_SCALE), (Hp / GameSim.TOWER_HP), (Gd.Truth(Up) ? (dynamic)(Gd.MakeColor("F2B544")) : NEON_RED));
+            this.Bar((Pos - Gd.MakeVector2(0, ((Gd.Truth(Up) ? (dynamic)(64 + TOWER_EXTRA) : 26) * TOWER_SCALE))), ((T * 1.2f) * TOWER_SCALE), (Hp / GameSim.TOWER_HP), (Gd.Truth(Up) ? (dynamic)(Gd.MakeColor("F2B544")) : NEON_RED));
         }
     }
 
@@ -1586,6 +1649,11 @@ public partial class Main : Node2D
         dynamic Me = Gd.Get(Snap.Ps, MyId);
         dynamic Ct = Gd.Native(this, "get_viewport").GetCanvasTransform();
         dynamic Pulse = (0.5f + (0.5f * Gd.Sin((Gd.Static(typeof(Time), "get_ticks_msec") / 150.0f))));
+        // the arrow home, under every panel (src/world/view/Main.BaseArrow.cs)
+        if ((Ph != "result"))
+        {
+            this.DrawBaseArrow((CanvasItem)Gd.Unwrap(C), (Transform2D)Gd.Unwrap(Ct));
+        }
         foreach (dynamic P in Gd.Iter(Popups))
         {
             // nothing pops up from inside the base while you are outside (src/world/view/Main.BaseFog.cs)
@@ -1616,42 +1684,56 @@ public partial class Main : Node2D
         this.Text(C, Gd.MakeVector2(0, 24), Gd.Format("%s   %s", new GArray(PhaseLine, Tl)), 16, Colors.White, 2, (Vs.X - 12), true);
         if ((Ph == "day"))
         {
-            dynamic VoteWait = Gd.Int(Gd.Maxf(0.0f, (GameSim.DAY_MIN - (GameSim.DAY_MAX - Snap.TimeLeft))));  // FML-14: votes count after 180 s
-            string VoteHint = ((VoteWait > 0) ? Gd.Format("skip vote %d/%d  (V, counts in %d:%02d)", new GArray(Snap.Votes, Snap.Need, (VoteWait / 60), (VoteWait % 60))) : Gd.Format("skip vote %d/%d  (V)", new GArray(Snap.Votes, Snap.Need)));
+            string VoteHint = Gd.Format("skip %d/%d (V)", new GArray(Snap.Votes, Snap.Need));
             this.Text(C, Gd.MakeVector2(0, 40), VoteHint, 11, Gd.MakeColor(1, 1, 1, 0.6f), 2, (Vs.X - 12));
         }
         if ((Snap.Ext >= 0))
         {
-            this.Text(C, Gd.MakeVector2(0, 40), Gd.Format("EXTENSION %ds - hold a pad 10 s  %s", new GArray(Snap.Ext, Gd.Str(Gd.Map(Snap.Pads, (Func<dynamic, dynamic>)((V) => Gd.Snappedf(V, 0.1f)))))), 12, NEON_RED, 2, (Vs.X - 12));
+            this.Text(C, Gd.MakeVector2(0, 40), Gd.Format("EXTENSION %ds", Snap.Ext), 12, NEON_RED, 2, (Vs.X - 12));
         }
-        // top centre: generator + doors
-        dynamic Cx = (Vs.X / 2);
-        this.Panel(C, Gd.MakeRect2((Cx - 160), 6, 320, 46));
-        dynamic Gcol = Gd.MakeColor("F2B544").Lerp(Gd.MakeColor(2.5f, 0.5f, 0.4f), (GenFlash / 0.4f));
-        this.Text(C, Gd.MakeVector2((Cx - 150), 21), "GENERATOR", 11, GOLD, 0, (-1.0f), true);
-        this.Text(C, Gd.MakeVector2((Cx + 60), 21), Gd.Format("%d / 1000", Snap.Base), 11, Colors.White, 2, 90, true);
-        C.DrawRect(Gd.MakeRect2((Cx - 150), 25, 300, 7), INK);
-        C.DrawRect(Gd.MakeRect2((Cx - 150), 25, ((300 * Snap.Base) / 1000.0f), 7), Gcol);
-        foreach (dynamic I in Gd.Iter(3))
+        // under it at night: tonight's three supplies (src/world/view/Main.Supplies.cs)
+        if ((Ph == "night") && !Gd.Truth(MapBig))
         {
-            dynamic R = Gd.MakeRect2(((Cx - 150) + (I * 102)), 36, 96, 12);
-            float Dur = Gd.Float(Gd.At(Snap.Doors, I));
-            dynamic Col = ((Dur > 250) ? (dynamic)(Gd.MakeColor("8FA3B8")) : ((Dur > 0) ? (dynamic)(Gd.MakeColor("F2B544")) : NEON_RED));
-            C.DrawRect(R, INK);
-            C.DrawRect(Gd.MakeRect2((R.Position + Gd.MakeVector2(14, 3)), Gd.MakeVector2(((68 * Dur) / 500.0f), 6)), Col);
-            // tower icon: lit = a standing tower (HUD 3)
-            dynamic Tws = Gd.Filter(Gd.Get(Snap, "tw", new GArray()), (Func<dynamic, dynamic>)((Tw) => (Gd.At(Tw, 0) == I)));
-            dynamic Tcol = ((!(Gd.Truth(Gd.IsEmpty(Tws))) && (Gd.At(Gd.At(Tws, 0), 2) > 0)) ? (dynamic)(Gd.MakeColor("F2B544")) : Gd.MakeColor(0.4f, 0.42f, 0.48f));
-            C.DrawRect(Gd.MakeRect2((R.Position + Gd.MakeVector2(87, 4)), Gd.MakeVector2(2, 7)), Tcol);
-            C.DrawRect(Gd.MakeRect2((R.Position + Gd.MakeVector2(85, 2)), Gd.MakeVector2(6, 3)), Tcol);
-            this.Text(C, (R.Position + Gd.MakeVector2(2, 11)), Gd.At(GameSim.DOOR_NAMES, I), 11, Colors.White);
-            if (Gd.Contains(Snap.Active, I))
+            this.DrawSupplyRow((CanvasItem)Gd.Unwrap(C), (float)Vs.X - 12, (Snap.Ext >= 0) ? 50f : 34f);
+        }
+        // top centre: generator + doors (under the large map, which takes the middle of the screen)
+        dynamic Cx = (Vs.X / 2);
+        if (!Gd.Truth(MapBig))
+        {
+            this.Panel(C, Gd.MakeRect2((Cx - 160), 6, 320, 46));
+            // the generator and the doors in red, so their health reads at a glance
+            dynamic Gcol = Gd.MakeColor("E0362C").Lerp(Gd.MakeColor(2.5f, 0.6f, 0.5f), (GenFlash / 0.4f));
+            this.Text(C, Gd.MakeVector2((Cx - 150), 21), "GENERATOR", 11, GOLD, 0, (-1.0f), true);
+            this.Text(C, Gd.MakeVector2((Cx + 60), 21), Gd.Format("%d / 1000", Snap.Base), 11, Colors.White, 2, 90, true);
+            C.DrawRect(Gd.MakeRect2((Cx - 150), 25, 300, 7), INK);
+            C.DrawRect(Gd.MakeRect2((Cx - 150), 25, ((300 * Snap.Base) / 1000.0f), 7), Gcol);
+            foreach (dynamic I in Gd.Iter(3))
             {
-                C.DrawRect(R.Grow(1), (NEON_RED * ((Gd.At(DoorFlash, I) > 0) ? (dynamic)((0.6f + (0.6f * Pulse))) : 0.7f)), false, 1.5f);
+                dynamic R = Gd.MakeRect2(((Cx - 150) + (I * 102)), 36, 96, 12);
+                float Dur = Gd.Float(Gd.At(Snap.Doors, I));
+                dynamic Col = Gd.MakeColor("E0362C");
+                C.DrawRect(R, INK);
+                C.DrawRect(Gd.MakeRect2((R.Position + Gd.MakeVector2(14, 3)), Gd.MakeVector2(((68 * Dur) / 500.0f), 6)), Col);
+                // tower icon: lit = a standing tower covers this door (within 12 tiles of it; HUD 3)
+                Vector2 DoorAt = (Vector2)Gd.At(GameSim.DOOR_POS, I);
+                dynamic Tws = Gd.Filter(Gd.Get(Snap, "tw", new GArray()), (Func<dynamic, dynamic>)((Tw) => ((Gd.At(Tw, 2) > 0) && (((Vector2)Gd.At(Tw, 1)).DistanceTo(DoorAt) < (12.0f * T)))));
+                dynamic Tcol = (!(Gd.Truth(Gd.IsEmpty(Tws))) ? (dynamic)(Gd.MakeColor("F2B544")) : Gd.MakeColor(0.4f, 0.42f, 0.48f));
+                C.DrawRect(Gd.MakeRect2((R.Position + Gd.MakeVector2(87, 4)), Gd.MakeVector2(2, 7)), Tcol);
+                C.DrawRect(Gd.MakeRect2((R.Position + Gd.MakeVector2(85, 2)), Gd.MakeVector2(6, 3)), Tcol);
+                this.Text(C, (R.Position + Gd.MakeVector2(2, 11)), Gd.At(GameSim.DOOR_NAMES, I), 11, Colors.White);
+                if (Gd.Contains(Snap.Active, I))
+                {
+                    C.DrawRect(R.Grow(1), (NEON_RED * ((Gd.At(DoorFlash, I) > 0) ? (dynamic)((0.6f + (0.6f * Pulse))) : 0.7f)), false, 1.5f);
+                }
             }
         }
-        // boss bar (AI view)
-        this.DrawBossBar(C, Cx);
+        // night enemies bar and boss bar (AI view)
+        // the large map takes the middle of the screen
+        if (!Gd.Truth(MapBig))
+        {
+            this.DrawNightBar((CanvasItem)Gd.Unwrap(C), (float)Cx);
+            this.DrawBossBar(C, Cx);
+        }
         // left: team list
         // under the minimap (top left, ui/gameplay/Main.Minimap.cs)
         dynamic Y = 160.0f;
@@ -1670,7 +1752,7 @@ public partial class Main : Node2D
             }
             else
             {
-                this.Text(C, Gd.MakeVector2(40, (Y + 11)), ((Gd.At(P, 5) == 1) ? (dynamic)(Gd.Format("DOWN %ds", Gd.At(P, 6))) : "DEAD - Revival kit"), 10, NEON_RED);
+                this.Text(C, Gd.MakeVector2(40, (Y + 11)), ((Gd.At(P, 5) == 1) ? (dynamic)(Gd.Format("DOWN %ds", Gd.At(P, 6))) : "DEAD"), 10, NEON_RED);
             }
             Y += 38;
         }
@@ -1685,22 +1767,12 @@ public partial class Main : Node2D
         this.Hex(C, HpC, 31, Gd.MakeColor("B3262A").Lerp(Gd.MakeColor(2.5f, 0.4f, 0.3f), (Hurt / 0.35f)));
         this.Text(C, (HpC + Gd.MakeVector2((-40), 8)), Gd.Str(Gd.Int(Gd.At(Me, 3))), 22, Colors.White, 1, 80, true);
         this.Text(C, (HpC + Gd.MakeVector2((-40), 24)), Gd.Format("/%d", Gd.At(Me, 4)), 10, Gd.MakeColor(1, 1, 1, 0.7f), 1, 80);
-        dynamic Small = new GArray(new GArray(Gd.MakeColor("3B6FB0"), Gd.Format("%d%%", Gd.Int((Gd.At(GameSim.ARMOUR, Gd.At(Me, 9)) * 100)))), new GArray(Gd.MakeColor("2E8B4A"), Gd.Str(Main.Carried(Me, "bandage"))));
-        if ((Gd.At(Me, 1) == 1))
-        {
-            Gd.Append(Small, new GArray(Gd.MakeColor("3DBE5A"), Gd.Format("+%d", Gd.At(Me, 10))));
-        }
-        foreach (dynamic I in Gd.Iter(Gd.Size(Small)))
-        {
-            dynamic Sc = Gd.MakeVector2((102 + (I * 30)), (Vs.Y - 24));
-            this.Hex(C, Sc, 14, INK);
-            this.Hex(C, Sc, 12, Gd.At(Gd.At(Small, I), 0));
-            this.Text(C, (Sc + Gd.MakeVector2((-15), 4)), Gd.At(Gd.At(Small, I), 1), 10, Colors.White, 1, 30);
-        }
-        this.Text(C, Gd.MakeVector2(92, (Vs.Y - 44)), Gd.At(GameSim.ROLES, Gd.At(Me, 1)).ToUpper(), 12, Gd.At(ROLE_COL, Gd.At(Me, 1)), 0, (-1.0f), true);
+        // beside it: the armour worn (no bag slot), then the bandages and healing flasks carried
+        this.DrawStatSlots((CanvasItem)Gd.Unwrap(C), (Vector2)Vs, Me);
+        this.Text(C, Gd.MakeVector2(92, (Vs.Y - 46)), Gd.At(GameSim.ROLES, Gd.At(Me, 1)).ToUpper(), 12, Gd.At(ROLE_COL, Gd.At(Me, 1)), 0, (-1.0f), true);
         if ((Gd.At(Me, 5) != 0))
         {
-            this.Text(C, Gd.MakeVector2(0, ((Vs.Y / 2) + 40)), ((Gd.At(Me, 5) == 1) ? (dynamic)(Gd.Format("DOWN - %ds to bleed out", Gd.At(Me, 6))) : "DEAD - waiting for a Revival kit"), 18, NEON_RED, 1, Vs.X, true);
+            this.Text(C, Gd.MakeVector2(0, ((Vs.Y / 2) + 40)), ((Gd.At(Me, 5) == 1) ? (dynamic)(Gd.Format("DOWN  %ds", Gd.At(Me, 6))) : "DEAD"), 18, NEON_RED, 1, Vs.X, true);
         }
         // top left: minimap (M shows it large); any open panel takes over from the large map
         if ((Gd.Truth(BagOpen) || Gd.Truth(CraftOpen) || Gd.Truth(BuildOpen)))
@@ -1708,8 +1780,18 @@ public partial class Main : Node2D
             MapBig = false;
         }
         this.DrawMinimap(C, Vs, Me);
-        this.DrawHotbar(C, Vs, Me);
-        this.DrawInteractionHint(C, Vs, Me, Ph);
+        // teammates and supplies, pinned to the screen edge when out of view, over the side panels
+        // (ui/gameplay/Main.TeamMarkers.cs)
+        if (!Gd.Truth(MapBig) && (Ph != "result"))
+        {
+            this.DrawTeamMarkers((CanvasItem)Gd.Unwrap(C), (Transform2D)Gd.Unwrap(Ct), (Vector2)Vs);
+        }
+        // the large map covers the hotbar and the hints
+        if (!Gd.Truth(MapBig))
+        {
+            this.DrawHotbar(C, Vs, Me);
+            this.DrawInteractionHint(C, Vs, Me, Ph);
+        }
         this.DrawBuildMenu(C, Vs, Me);
         this.DrawBag(C, Vs, Me);
         this.DrawHurtFlash(C, Vs);
@@ -1990,7 +2072,6 @@ public partial class Main : Node2D
             Crew.AddChild(Card);
             Gd.Append(Roster, new GDict { { "icon", Icon }, { "name", Pname }, { "meta", Meta }, { "badge", Badge } });
         }
-        Crew.AddChild(this.UiLabel("Solo for now: add AI teammates on the right (multiplayer comes later).", 11, Gd.MakeColor("8499AC")));
         dynamic Setup = Gd.Wrap(new VBoxContainer());
         { var Component6 = Setup.CustomMinimumSize; Component6.X = 248; Setup.CustomMinimumSize = Component6; }
         Setup.AddThemeConstantOverride("separation", 8);

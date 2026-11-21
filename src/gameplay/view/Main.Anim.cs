@@ -10,6 +10,8 @@ using HoldTilDawn;
 //   attack_blade  - titanium blade: raised, slash across, follow-through, recover
 //   attack_hammer - hammer: lifted overhead, coming down, smashed into the ground, recover
 //   attack_bow    - starter bow and bow: nock, full draw, release, recover (the arrow is its own sprite)
+//   long spear and stun maul play the spear / hammer frames with their own weapon drawn moving over them,
+//   and a thrown flask, a set trap or a drunk tonic plays the jab frames (src/gameplay/view/Main.TacticalItems.cs)
 //   down          - knocked down: hit, knees give, falling, lying still until revived
 // An attack starts when GameSim's P.Swing does (MEC-02, MEC-03) and plays once.
 public partial class Main : Node2D
@@ -70,6 +72,8 @@ public partial class Main : Node2D
         dynamic Hand = Gd.At(Gd.At(P, 7), Gd.Int(Gd.At(P, 25)));
         if (Hand != null && Gd.Str(Gd.At(Hand, 0)) == "explosive_arrow") Weapon = "explosive_arrow";
         string Name = (WEAPON_ANIM.TryGetValue(Weapon, out string N) ? N : "attack_fists");
+        // throwing a flask or setting a trap: an overhand throw (the jab frames); drinking a tonic too
+        if (Hand != null && GameSim.IsTacticalUse(Gd.Str(Gd.At(Hand, 0))) && Gd.Str(Gd.At(Hand, 0)) != "explosive_arrow") Name = "attack_fists";
         float T = ((float)Clock - Start);
         return ((T < this.AnimLength(Skin, Name)) ? (Name, T) : null);
     }

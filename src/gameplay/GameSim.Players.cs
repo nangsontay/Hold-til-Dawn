@@ -10,6 +10,8 @@ public partial class GameSim : RefCounted
 {
     // Crafting takes CRAFT_TIME at the workbench (BAL-19); base repair runs at 20 HP/s (BAL-20).
     public const float CRAFT_TIME = 3.0f;
+    // seconds of holding E over a dead teammate to use a Revival kit on them
+    public const float REVIVE_KIT_TIME = 3.0f;
 
     // In the base (by day, or as the Engineer who went in at night) and standing at the furniture.
     public bool InBaseToWork(dynamic P)
@@ -33,7 +35,7 @@ public partial class GameSim : RefCounted
         string Why = "";
         if (((P.State != 0) || !this.AtBench(P)))
         {
-            Why = "Craft at the workbench in the base, by the north wall (by day; Engineer at night)";
+            Why = "Go to the workbench";
         }
         else if ((Gd.At(R, 2) > Unlock))
         {
@@ -41,19 +43,19 @@ public partial class GameSim : RefCounted
         }
         else if ((Gd.Truth(Gd.At(R, 5)) && (P.Role != 2)))
         {
-            Why = "Only an Engineer can do that";
-        }
-        else if (((Gd.At(R, 3) == "revive") && !Gd.Truth(Gd.Any(Gd.Values(Players), (Func<dynamic, dynamic>)((Q) => (Q.State == 2))))))
-        {
-            Why = "No dead teammate to revive";
+            Why = "Engineer only";
         }
         else if (((Gd.At(R, 3) == "base") && (Phase == "night")))
         {
-            Why = "The generator can only be repaired by day";
+            Why = "By day only";
         }
         else if (((Gd.At(R, 3) == "base") && (BaseHp >= BASE_HP)))
         {
-            Why = "The generator is at full HP";
+            Why = "Generator full";
+        }
+        else if ((GameSim.KindOf(Gd.At(R, 3)) == "armour") && (Gd.Find(ARMOUR_ITEMS, Gd.At(R, 3)) <= Gd.Int(P.Armour)))
+        {
+            Why = "Already worn";
         }
         else
         {
@@ -61,7 +63,7 @@ public partial class GameSim : RefCounted
             {
                 if ((this.Count(P, Res) < Gd.At(Gd.At(R, 1), Res)))
                 {
-                    Why = Gd.Format("Not enough %s for %s", new GArray(Res, Gd.At(R, 0)));
+                    Why = Gd.Format("Need more %s", Res);
                     break;
                 }
             }
@@ -126,17 +128,6 @@ public partial class GameSim : RefCounted
         if (Gd.Equal(Gd.At(R, 3), "base"))
         {
             BaseHp = Gd.Minf(BASE_HP, (BaseHp + Gd.At(R, 4)));
-        }
-        else if (Gd.Equal(Gd.At(R, 3), "revive"))
-        {
-            // MEC-07: back at the door nearest to where they fell, with 50% HP
-            dynamic Q = Gd.At(Gd.Filter(Gd.Values(Players), (Func<dynamic, dynamic>)((Q) => (Q.State == 2))), 0);
-            Q.State = 0;
-            Q.Hp = (Q.Maxhp * 0.5f);
-            Q.Invuln = 1.0f;
-            dynamic D = this.NearestDoor(Q.Pos);
-            this.Teleport(Q, (Gd.At(DOOR_POS, D) + (Gd.At(DOOR_DIR, D) * T)));
-            this.Say(Gd.Format("%s is back (Revival kit)", Q.Name));
         }
         else
         {
@@ -214,14 +205,14 @@ public partial class GameSim : RefCounted
             P.Swing -= Dt;
             P.NoteT -= Dt;
             P.Weapon = this.WeaponOf(P);
-            P.Armour = this.ArmourTier(P);
+            this.WearArmour(P);
             if ((P.State == 1))
             {
                 P.Bleed -= Dt;
                 if ((P.Bleed <= 0))
                 {
                     P.State = 2;
-                    this.Say(Gd.Format("%s died - craft a Revival kit at the workbench", P.Name));
+                    this.Say(Gd.Format("%s died", P.Name));
                 }
             }
             if ((P.State != 0))
@@ -301,7 +292,7 @@ public partial class GameSim : RefCounted
         if (Gd.Truth(P.Inside))
         {
             this.Teleport(P, (Gd.At(DOOR_POS, Door) - ((Gd.At(DOOR_DIR, Door) * 1.2f) * T)));
-            this.Note(P, "Inside: C to craft, hold F at a door to leave");
+            this.Note(P, "Inside the base");
         }
         else
         {
@@ -325,7 +316,7 @@ public partial class GameSim : RefCounted
         dynamic St = WEAPON_STATS[W];
         if ((Gd.Truth(Gd.At(St, 4)) && !this.Take(P, "arrow", 1)))
         {
-            this.Note(P, "No arrows - craft 5 arrows from 1 wood");
+            this.Note(P, "No arrows");
             P.AtkCd = 0.5f;
             return;
         }
@@ -489,6 +480,30 @@ public partial class GameSim : RefCounted
                 return;
             }
         }
+        // a Revival kit is carried to a dead teammate's body and used there: hold E for REVIVE_KIT_TIME
+        if (this.Count(P, "revive") > 0)
+        {
+            foreach (dynamic Q in Gd.Iter(Gd.Values(Players)))
+            {
+                if (((Q.State == 2) && (Q.Id != P.Id) && (Q.Pos.DistanceTo(P.Pos) <= (1.5f * T)) && Gd.Truth(this.LineClear(P.Pos, Q.Pos))))
+                {
+                    P.Activity = "revive";
+                    P.ActivityTarget = Q.Pos;
+                    P.ReviveP += (Dt / REVIVE_KIT_TIME);
+                    if ((P.ReviveP >= 1.0f) && this.Take(P, "revive", 1))
+                    {
+                        // MEC-07: back where they fell, with 50% HP
+                        P.ReviveP = 0.0f;
+                        Q.State = 0;
+                        Q.Hp = (Q.Maxhp * 0.5f);
+                        Q.Invuln = 1.0f;
+                        P.Revives += 1;
+                        this.Say(Gd.Format("%s is back", Q.Name));
+                    }
+                    return;
+                }
+            }
+        }
         P.ReviveP = 0.0f;
         if (this.PickUp(P))
         {
@@ -550,7 +565,7 @@ public partial class GameSim : RefCounted
             {
                 if ((this.Room(P, Gd.At(RES, Nd.Type)) <= 0))
                 {
-                    this.Note(P, "Inventory full - store or drop something (Tab, G)");
+                    this.Note(P, "Bag full");
                     P.GatherAcc = 0.0f;
                     return;
                 }
@@ -601,7 +616,7 @@ public partial class GameSim : RefCounted
             P.Hp = 0.0f;
             P.State = 1;
             P.Bleed = 30.0f;
-            this.Say(Gd.Format("%s is DOWN - hold E next to them to revive", P.Name));
+            this.Say(Gd.Format("%s is down", P.Name));
         }
     }
 

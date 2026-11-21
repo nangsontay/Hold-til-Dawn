@@ -5,13 +5,13 @@
 [resource]
 script = ExtResource("1")
 EnemySpeed = 1.0
-FirstWave = 30.0
-WaveInterval = 90.0
-FinalWaveInterval = 45.0
+FirstWave = 15.0
+WaveInterval = 45.0
+FinalWaveInterval = 30.0
 SpawnMultiplier = 1.0
 RoamerMultiplier = 1.0
 DropMultiplier = 1.0
-EarlyNightFirstWave = 60.0
-EarlyNightWaveInterval = 150.0
-SpawnSpacing = 6.0
-MaxNightEnemies = 32
+EarlyNightFirstWave = 20.0
+EarlyNightWaveInterval = 60.0
+SpawnSpacing = 2.0
+MaxNightEnemies = 40

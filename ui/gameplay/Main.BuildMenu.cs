@@ -93,14 +93,14 @@ public partial class Main : Node2D
         GDict Cost = new GDict();
         if ((BuildKind == "tower"))
         {
-            int Slot = Gd.Int(GameSim.TowerSlot(Spot));
-            if ((Slot < 0))
+            string Why = GameSim.TowerSpotProblem(Spot, Geometry);
+            if ((Why != ""))
             {
-                return "Towers go 3-8 tiles in front of a door";
+                return Why;
             }
-            if (Gd.Truth(Gd.Any(Gd.Get(Snap, "tw", new GArray()), (Func<dynamic, dynamic>)((Tw) => (Gd.At(Tw, 0) == Slot)))))
+            if ((Gd.Size(Gd.Get(Snap, "tw", new GArray())) >= GameSim.MAX_TOWERS))
             {
-                return "That door already has a tower";
+                return Gd.Format("The team already has %d towers", GameSim.MAX_TOWERS);
             }
             if (Gd.Truth(Gd.Get(Snap, "free_tower", false)))
             {
@@ -163,7 +163,7 @@ public partial class Main : Node2D
         }
         Rect2 Box = Gd.MakeRect2((Vs.X - 330), 98, 320, 112);
         this.Panel(C, Box);
-        this.Text(C, (Box.Position + Gd.MakeVector2(10, 16)), "BUILD  (number to pick, R turn, LMB place, RMB cancel)", 10, GOLD, 0, (-1.0f), true);
+        this.Text(C, (Box.Position + Gd.MakeVector2(10, 16)), "BUILD", 10, GOLD, 0, (-1.0f), true);
         int Unlock = Gd.Int(Gd.Get(Snap, "unlock", 0));
         for (int I = 0; I < BUILD_OPTIONS.Count; I++)
         {

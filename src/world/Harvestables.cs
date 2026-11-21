@@ -3,7 +3,8 @@ using System;
 using System.Collections.Generic;
 using HoldTilDawn;
 
-// Every tree, loose rock and herb-like plant placed in the world is a resource, never a decorative duplicate.
+// Every tree, loose rock and herb-like plant scattered over the island is a resource, never a decorative duplicate.
+// A landmark's own props (src/world/WorldLandmarks.cs) are not: they stay as scenery (WorldGeometry.cs).
 public static class Harvestables
 {
     public static int TypeOf(string Sprite)

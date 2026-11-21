@@ -64,17 +64,25 @@ public partial class NightSpawnCheck : Node
         for (int Night = 1; Night <= 5; Night++)
         {
             var Events = Arrivals(Sim, Night, true);
+            int Quota = Sim.NightQuota, Spawned = Sim.NightSpawned;
             GD.Print($"PACING night={Night} regular_births/600s={Events.Count} first={Sim.NightFirstWaveDelay}s wave_every={Sim.NightWaveInterval}s spacing={Sim.NightSpawnSpacing}s cap={Sim.NightEnemyLimit}");
             Check(Events.Count > Previous, $"night {Night}: more enemies than the previous night");
             Previous = Events.Count;
             if (Night == 1)
             {
                 FirstNight = Events;
-                Check(Events.Count <= 15 && Events.TrueForAll(E => E.Type == GameSim.GRUNT), "first night remains sparse and only uses Grunts");
-                Check(Events[0].At == 60 && Events[1].At == 66 && Events[2].At == 72 && Events[3].At >= 210,
-                    "first night: three spaced enemies, then over two minutes of rest (three-player normal mode)");
+                Check(Events.Count <= 30 && Events.TrueForAll(E => E.Type == GameSim.GRUNT), "first night stays light and only uses Grunts");
+                // while the first enemies are still alive the next wave keeps its schedule
+                var Held = Arrivals(Sim, 1, false);
+                Check(Held[0].At == 20 && Held[1].At == 22 && Held[2].At == 24 && Held[3].At >= 78,
+                    "first night: three quick enemies, then most of a minute of rest while they live (three-player normal mode)");
+                // an empty field brings the next wave forward instead
+                Check(Events[3].At < 24 + 5 + Sim.NightSpawnSpacing + 0.3f, "first night: a cleared field brings the next wave in 5 s");
             }
             Check(Events.TrueForAll(E => Gd.Int(Gd.At(Gd.At(GameSim.ENEMY, E.Type), 4)) <= Night), "later enemy types remain locked to their night");
+            int Boss = (Night == 2 || Night == 4) ? 1 : 0;
+            Check(Quota > Boss && Events.Count == Quota - Boss && Spawned == Events.Count,
+                $"night {Night}: exactly the night's quota of {Quota - Boss} regular enemies comes{(Boss > 0 ? " (plus the boss)" : "")}");
             Arrivals(Sim, Night, false);
         }
         var Replay = Arrivals(Sim, 1, true);
@@ -95,6 +103,43 @@ public partial class NightSpawnCheck : Node
         Sim.TickWaves(); Check(Gd.Size(Sim.Enemies) == 0, "lobby discards unfinished arrivals");
         Prepare(Sim, 1); Sim.Elapsed = 60f; Sim.TickWaves(); Sim.TimeLeft = 0; Sim.Elapsed = 66f;
         Sim.TickWaves(); Check(Gd.Size(Sim.Enemies) == 1, "no final burst at the night deadline");
+
+        // The night's quota: the HUD count, and dawn once every enemy of it is dead.
+        Prepare(Sim, 1);
+        Sim.Phase = "night"; Sim.BaseHp = 1000;
+        Sim.NightSpawned = Sim.NightQuota - 1;
+        dynamic Last = Sim.Spawn(GameSim.GRUNT, 0, 30f); Last.Quota = true; Sim.NightSpawned++;
+        Sim.CheckEnd(0.1f);
+        Check(Sim.Phase == "night" && Sim.NightKilled() == Sim.NightQuota - 1, "the night goes on while one of its enemies lives");
+        Last.Hp = 0f; Sim.Enemies = Gd.Filter(Sim.Enemies, (Func<dynamic, dynamic>)((E) => (E.Hp > 0)));
+        Check(Sim.NightKilled() == Sim.NightQuota && Sim.NightAllDown(), "the bar is full once the last one dies");
+        Sim.CheckEnd(0.1f);
+        Check(Sim.Phase == "night", "the night goes on while a supply is still out there");
+        Check(Gd.Size(Sim.Supplies) == 3, "three supplies lie out each night");
+        int NearOnes = 0;
+        var Spots = new HashSet<int>();
+        foreach (GArray Sup in Sim.Supplies)
+        {
+            Vector2 At = (Vector2)Sup[1];
+            if (At.Length() < (GameSim.SUPPLY_NEAR_TILES + 6) * GameSim.T) NearOnes++;
+            Spots.Add(Gd.Int(Sup[2]));
+            Check(!Gd.Truth(GameSim.InsideBase(At)) && IslandMap.OnLand(At), "a supply lies on land outside the base");
+        }
+        Check(NearOnes == 1 && Spots.Count == 3 && !Spots.Contains(1), "one supply near the base, two far, at three different landmarks");
+        dynamic Runner = Gd.At(Sim.Players, 1);
+        foreach (GArray Sup in Sim.Supplies)
+        {
+            Runner.Pos = (Vector2)Sup[1] + new Vector2(10, 0);
+            Sim.TickSupplies();
+        }
+        Check(Sim.SuppliesGot() == 3 && Sim.SuppliesAllIn(), "walking over a supply picks it up");
+        Sim.CheckEnd(0.1f);
+        Check(Sim.Phase == "day" && Gd.Int(Sim.K) == 2, "a night whose every enemy is dead and whose supplies are in ends at once: dawn");
+        Check(Gd.Size(Sim.Supplies) == 0, "the supplies are gone by day");
+        Prepare(Sim, 2); Sim.BossSpawned = false; Sim.Phase = "night"; Sim.BaseHp = 1000;
+        Check(Sim.NightQuota >= 2, "the boss counts toward nights 2 and 4");
+        Sim.NightSpawned = Sim.NightQuota - 1; Sim.Elapsed = 100f; Sim.TickWaves(); Sim.Elapsed = 111f; Sim.TickWaves();
+        Check(Gd.Truth(Sim.BossSpawned) && Sim.NightSpawned == Sim.NightQuota, "once the regular enemies are cleared the boss comes early");
 
         // All enemies ask for a route after a collider revision. The bounded rotating update must serve all.
         Prepare(Sim, 5); Sim.NextWave = float.PositiveInfinity;

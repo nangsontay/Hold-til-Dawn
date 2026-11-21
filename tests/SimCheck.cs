@@ -93,6 +93,10 @@ public partial class SimCheck : Node
         this.Check((S.Count(Eng, "light_armour") == 0), "crafting takes 3 s (BAL-19)");
         this.Run(S, 0.2f);
         this.Check(((Eng.Armour == 1) && (S.Count(Eng, "wood") == 0)), "light armour crafted at workbench");
+        this.Check((S.Count(Eng, "light_armour") == 0) && Gd.Truth(Gd.All(Eng.Inv, (Func<dynamic, dynamic>)((X) => ((X == null) || (GameSim.KindOf(Gd.At(X, 0)) != "armour"))))), "armour is worn at once and takes no bag slot");
+        S.SetCount(Eng, "wood", 6);
+        this.Check(!S.CanCraft(Eng, 0, false), "the same armour cannot be made twice");
+        S.SetCount(Eng, "wood", 0);
         S.Action(1, "craft", 4);
         this.Run(S, 3.1f);
         this.Check((S.Count(Eng, "stone_spear") == 0), "stone spear locked before night 1");
@@ -141,7 +145,7 @@ public partial class SimCheck : Node
             Sc.Atk = true;
             this.Run(S, 0.2f);
             Sc.Atk = false;
-            this.Check(((S.K == 3) && (S.Unlock == 2)), "killing the boss ends night 2 and unlocks titanium tier");
+            this.Check(((S.K == 2) && (S.Phase == "night") && (S.Unlock == 2)), "killing the boss unlocks titanium tier; the night goes on until its enemies and supplies are done");
         }
     }
 
@@ -374,29 +378,29 @@ public partial class SimCheck : Node
         this.Check((Gd.Absf((Slow.Pos.DistanceTo(Origin) - 64.0f)) < 0.01f), "night-1 Grunt travels 2 tiles per second");
         Gd.Clear(S.Enemies);
         S.Night();
-        S.Elapsed = 59.99f;
+        S.Elapsed = 19.99f;
         S.TickWaves();
-        this.Check(((S.Wave == 0) && Gd.Truth(Gd.IsEmpty(S.Enemies))), "no first-night wave before 60 seconds");
-        S.Elapsed = 60.0f;
+        this.Check(((S.Wave == 0) && Gd.Truth(Gd.IsEmpty(S.Enemies))), "no first-night wave before 20 seconds");
+        S.Elapsed = 20.0f;
         S.TickWaves();
-        this.Check(((S.Wave == 1) && !(Gd.Truth(Gd.IsEmpty(S.Enemies)))), "first-night wave begins with one enemy at 60 seconds");
-        S.Elapsed = 209.99f;
+        this.Check(((S.Wave == 1) && !(Gd.Truth(Gd.IsEmpty(S.Enemies)))), "first-night wave begins with one enemy at 20 seconds");
+        S.Elapsed = 79.99f;
         S.TickWaves();
-        this.Check((S.Wave == 1), "first-night waves wait 150 seconds");
-        S.Elapsed = 210.0f;
+        this.Check((S.Wave == 1), "first-night waves wait 60 seconds");
+        S.Elapsed = 80.0f;
         S.TickWaves();
-        this.Check((S.Wave == 2), "second first-night wave arrives at 210 seconds");
+        this.Check((S.Wave == 2), "second first-night wave arrives at 80 seconds");
         S.K = 5;
         Gd.Clear(S.Enemies);
         S.Night();
         S.Elapsed = 30.0f;
         S.TickWaves();
-        S.Elapsed = 74.99f;
+        S.Elapsed = 59.99f;
         S.TickWaves();
-        this.Check((S.Wave == 1), "final-night waves wait 45 seconds");
-        S.Elapsed = 75.0f;
+        this.Check((S.Wave == 1), "final-night waves wait 30 seconds");
+        S.Elapsed = 60.0f;
         S.TickWaves();
-        this.Check((S.Wave == 2), "final-night second wave arrives at 75 seconds");
+        this.Check((S.Wave == 2), "final-night second wave arrives at 60 seconds");
         // Towers (AGT-12, MEC-11, MEC-28, BAL-28)
         S = this.NewMatch();
         // Isolate tower rules from randomly placed line-of-sight blockers.
@@ -406,25 +410,36 @@ public partial class SimCheck : Node
         dynamic Ts = Gd.At(S.Players, 2);
         Te.Pos = (Gd.At(GameSim.DOOR_POS, 0) + ((Gd.At(GameSim.DOOR_DIR, 0) * 1.5f) * 32));
         S.Action(1, "tower", 0);
-        this.Check(((Gd.At(S.Towers, 0) == null) && Gd.Truth(S.FreeTower)), "no tower closer than 3 tiles to a door");
-        Ts.Pos = (Gd.At(GameSim.DOOR_POS, 0) + ((Gd.At(GameSim.DOOR_DIR, 0) * 5) * 32));
+        this.Check(((Gd.At(S.Towers, 0) == null) && Gd.Truth(S.FreeTower)), "no tower right at a door");
+        Te.Pos = GameSim.PadPos(0);
+        S.Action(1, "tower", 0);
+        this.Check(((Gd.At(S.Towers, 0) == null) && Gd.Truth(S.FreeTower)), "no tower on a landing pad");
+        this.Check(((GameSim.TowerSpotProblem(Vector2.Zero, null) != "") && (GameSim.TowerSpotProblem(S.FreeTowerSpot(1), S.World) == "")), "towers go outside the base, anywhere off the pads");
+        Ts.Pos = S.FreeTowerSpot(0);
         S.Action(2, "tower", 0);
         this.Check((Gd.At(S.Towers, 0) == null), "only an Engineer builds towers");
-        Te.Pos = (Gd.At(GameSim.DOOR_POS, 0) + ((Gd.At(GameSim.DOOR_DIR, 0) * 5) * 32));
+        Te.Pos = S.FreeTowerSpot(0);
         S.Action(1, "tower", 0);
         dynamic Tw = Gd.At(S.Towers, 0);
-        this.Check(((Tw != null) && (Tw.Hp == 300.0f) && !(Gd.Truth(S.FreeTower)) && (S.Count(Te, "wood") == 0)), "the free tower is placed 3-8 tiles in front of door A at no cost");
-        Te.Pos = (Gd.At(GameSim.DOOR_POS, 2) + ((Gd.At(GameSim.DOOR_DIR, 2) * 5) * 32));
+        this.Check(((Tw != null) && (Tw.Hp == 300.0f) && !(Gd.Truth(S.FreeTower)) && (S.Count(Te, "wood") == 0)), "the free tower is placed beside door A's landing pad at no cost");
+        Te.Pos = S.FreeTowerSpot(2);
         S.SetCount(Te, "wood", 20);
         S.SetCount(Te, "titanium", 10);
         S.Action(1, "tower", 0);
-        this.Check(((Gd.At(S.Towers, 2) == null) && (S.Count(Te, "wood") == 20)), "a second tower is locked until the first boss is killed");
+        this.Check(((Gd.At(S.Towers, 1) == null) && (S.Count(Te, "wood") == 20)), "a second tower is locked until the first boss is killed");
         S.Unlock = 2;
         S.Action(1, "tower", 0);
-        this.Check(((Gd.At(S.Towers, 2) != null) && (S.Count(Te, "wood") == 10) && (S.Count(Te, "titanium") == 5)), "an unlocked tower costs 10 wood + 5 titanium");
-        Te.Pos = (Gd.At(GameSim.DOOR_POS, 2) + ((Gd.At(GameSim.DOOR_DIR, 2) * 6) * 32));
+        this.Check(((Gd.At(S.Towers, 1) != null) && (S.Count(Te, "wood") == 10) && (S.Count(Te, "titanium") == 5)), "an unlocked tower costs 10 wood + 5 titanium");
         S.Action(1, "tower", 0);
-        this.Check((S.Count(Te, "wood") == 10), "one tower per door");
+        this.Check(((Gd.At(S.Towers, 2) == null) && (S.Count(Te, "wood") == 10)), "towers do not stack on one spot");
+        Te.Pos = S.FreeTowerSpot(1);
+        S.Action(1, "tower", 0);
+        S.SetCount(Te, "wood", 20);
+        S.SetCount(Te, "titanium", 10);
+        Te.Pos = (S.FreeTowerSpot(1) + Gd.MakeVector2(0, (3 * 32)));
+        S.Action(1, "tower", 0);
+        this.Check(((Gd.At(S.Towers, 2) != null) && (S.Count(Te, "wood") == 20)), Gd.Format("the team has at most %d towers", GameSim.MAX_TOWERS));
+        S.Towers[1] = null;
         dynamic Tg = S.Spawn(GameSim.GRUNT, 0, 0.0f);
         Tg.Pos = (Tw.Pos + Gd.MakeVector2(0, (4 * 32)));
         Tg.State = 4;
@@ -494,6 +509,7 @@ public partial class SimCheck : Node
         this.Check((S.Phase == "dusk"), "the vote skips the day once 180 s have passed");
         this.Check((Gd.Absf((S.TimeLeft - 15.0f)) < 0.05f), "dusk warning lasts 15 s (BAL-05)");
         int D0 = Gd.Int(Gd.At(S.Active, 0));
-        this.Check(((Gd.At(S.Towers, D0) != null) && (Gd.At(S.Towers, D0).Pos.DistanceTo((Gd.At(GameSim.DOOR_POS, D0) + ((Gd.At(GameSim.DOOR_DIR, D0) * 5) * 32))) < 1.0f) && !(Gd.Truth(S.FreeTower))), "an unplaced free tower appears in front of night 1's door at dusk");
+        dynamic Ft = Gd.At(S.Towers, 0);
+        this.Check(((Ft != null) && (Ft.Pos.DistanceTo(GameSim.PadPos(D0)) < (12 * 32)) && (Ft.Pos.DistanceTo(GameSim.PadPos(D0)) > (GameSim.PAD_R + (GameSim.TOWER_R * 32))) && !(Gd.Truth(S.FreeTower))), "an unplaced free tower appears beside night 1's landing pad at dusk, not on it");
     }
 }

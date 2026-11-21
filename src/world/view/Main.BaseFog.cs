@@ -145,8 +145,9 @@ public partial class Main : Node2D
         {
             this.RoofGrate(new Rect2(V, new Vector2(26, 12)));
         }
-        // the lighthouse's shadow across the roof by day (the sun is low in the south-east)
-        Vector2 Foot = (Vector2)LIGHTHOUSE;
+        // the lighthouse's shadow across the roof by day (the sun is low in the south-east); it comes up through
+        // the roof, which is lifted by the wall height
+        Vector2 Foot = ((Vector2)LIGHTHOUSE - new Vector2(0, (float)WALL_H));
         if (Gd.Equal(Gd.Get(Snap, "ph", ""), "day"))
         {
             var Sh = new[] { (Foot + new Vector2(-16, 4)), (Foot + new Vector2(16, 0)), (Foot + new Vector2(-104, -98)), (Foot + new Vector2(-128, -84)) };
@@ -196,6 +197,31 @@ public partial class Main : Node2D
             Ring[24] = Pts[0];
             DrawPolyline(Ring, Col, 1.0f);
         }
+    }
+
+    // From outside only the part of the lighthouse above the roof shows: the sprite is cut where it comes
+    // up through the roof's collar (DrawBaseFog). Inside, or while the roof is fading out, it is drawn whole.
+    public void DrawLighthouse(Vector2 Pos, Color Mod)
+    {
+        dynamic P = Gd.Get(Prop, "lighthouse");
+        if ((P == null))
+        {
+            return;
+        }
+        if (BaseFog <= 0.5f)
+        {
+            this.DrawProp("lighthouse", Pos, Mod);
+            return;
+        }
+        var Tex = (Texture2D)Gd.Unwrap(Gd.At(P, 0));
+        float Sc = (float)LIGHTHOUSE_SCALE;
+        Vector2 Anchor = (Vector2)Gd.At(P, 1);
+        Vector2 Size = Tex.GetSize();
+        // texture rows above the roof line (the roof sits WALL_H above the ground)
+        float Keep = Mathf.Clamp((Anchor.Y - ((float)WALL_H / Sc)), 0.0f, Size.Y);
+        var Src = new Rect2(0, 0, Size.X, Keep);
+        var Dst = new Rect2((Pos - (Anchor * Sc)).Round(), new Vector2(Size.X, Keep) * Sc);
+        DrawTextureRectRegion(Tex, Dst, Src, Mod);
     }
 
     // whether a depth item (see Main._Draw) stands inside the base and is hidden from you

@@ -9,7 +9,7 @@ using HoldTilDawn;
 // AI decides targets and movement; damage to players goes through Hurt() in src/gameplay.
 public partial class GameSim : RefCounted
 {
-    public static readonly dynamic MAX_ENEMIES = 60;
+    public static readonly dynamic MAX_ENEMIES = 70;
     public static float SPAWN_MUL = AiSettings.Current.SpawnMultiplier;
     public static readonly dynamic SPAWN_ALL_SIDES = false;  // GDD 4.3 / BAL-34: waves spawn 25-35 tiles out in a band in front of each active door
     public static float ENEMY_SPEED_MUL = AiSettings.Current.EnemySpeed;
@@ -21,7 +21,7 @@ public partial class GameSim : RefCounted
     public const int SPITTER = 1;
     public const int WRECKER = 2;
     public const int BOSS = 3;
-    public static readonly dynamic ENEMY = new GArray(new GArray(60.0f, 10.0f, 2.0f, 10, 1), new GArray(40.0f, 8.0f, 2.0f, 15, 3), new GArray(100.0f, 10.0f, 1.6f, 20, 4));  // hp, dmg, speed tiles/s, cost, first night (BAL-29..31)
+    public static readonly dynamic ENEMY = new GArray(new GArray(40.0f, 7.0f, 2.0f, 8, 1), new GArray(28.0f, 6.0f, 2.0f, 12, 3), new GArray(70.0f, 8.0f, 1.6f, 16, 4));  // hp, dmg, speed tiles/s, cost, first night (BAL-29..31; weaker and cheaper so more of them come)
 
     // --- enemies ------------------------------------------------------------
     public void TickWaves()
@@ -38,13 +38,14 @@ public partial class GameSim : RefCounted
             NextWave = Gd.Float((object)Elapsed) + NightWaveInterval;
             this.SpawnWave();
         }
-        if ((Gd.Int((object)K) == 2 || Gd.Int((object)K) == 4) && !Gd.Truth((object)BossSpawned) && Gd.Float((object)Elapsed) >= 300f)
+        if (BossNight && !Gd.Truth((object)BossSpawned) && Gd.Float((object)Elapsed) >= BossAt)
         {
             BossSpawned = true;
             this.SpawnBoss();
             return; // keep a regular birth off the boss's creation tick
         }
         TickPendingNightSpawn();
+        PullNightForward();
     }
 
     public void SpawnWave()
@@ -86,6 +87,9 @@ public partial class GameSim : RefCounted
         // BAL-34: 60 tiles in front of its door; BAL-39: a Grunt's speed of this night
         E.Pos = IslandMap.PullInland((Vector2)(Gd.At(DOOR_POS, Door) + ((Gd.At(DOOR_DIR, Door) * 60.0f) * T)), (2 * T));
         this.SetupBoss(E, this.BossKindFor(K));
+        // the boss is the last enemy of the night's quota
+        E.Quota = true;
+        NightSpawned++;
         this.Say(Gd.Format("%s is heading for door %s!", new GArray(GameSim.BossTitle(E.Kind).ToUpper(), Gd.At(DOOR_NAMES, Door))));
     }
 
@@ -191,7 +195,7 @@ public partial class GameSim : RefCounted
                 if ((Lit != null))
                 {
                     E.State = 5;
-                    E.Tw = Lit.Door;
+                    E.Tw = Lit.Slot;
                 }
             }
             if ((E.State == 5))
@@ -320,7 +324,7 @@ public partial class GameSim : RefCounted
             if (((Gd.At(Doors, E.Door) <= 0) && !(Gd.Truth(Gd.At(Broken, E.Door)))))
             {
                 Broken[E.Door] = true;
-                this.Say(Gd.Format("Door %s broken - BREACH!", Gd.At(DOOR_NAMES, E.Door)));
+                this.Say(Gd.Format("Door %s broken!", Gd.At(DOOR_NAMES, E.Door)));
             }
         }
         // the result screen names the door where the generator took its last hit
@@ -365,7 +369,7 @@ public partial class GameSim : RefCounted
         if (((Tw.Hp <= 0) && !(Gd.Truth(Tw.Wrecked))))
         {
             Tw.Wrecked = true;
-            this.Say(Gd.Format("Tower at door %s destroyed - its light is out", Gd.At(DOOR_NAMES, Tw.Door)));
+            this.Say("Tower destroyed");
         }
     }
 

@@ -21,10 +21,10 @@ public partial class Main : Node2D
     {
         foreach (dynamic Id in Gd.Iter(GameSim.ITEMS))
         {
-            ItemTex[Id] = Gd.Load(((ITEM_ART + Id) + ".png"));
+            // the Revival kit's art is named after the kit, its item id is the recipe's ("revive")
+            ItemTex[Id] = Gd.Load(((ITEM_ART + (Gd.Equal(Id, "revive") ? "revival_kit" : Id)) + ".png"));
         }
-        // the crafts that make no item have an icon too (workbench panel), under their recipe id
-        ItemTex["revive"] = Gd.Load((ITEM_ART + "revival_kit.png"));
+        // the generator repair makes no item but has an icon too (workbench panel), under its recipe id
         ItemTex["base"] = Gd.Load((ITEM_ART + "base_repair.png"));
         foreach (dynamic N in Gd.Iter(new GArray("arrow", "spit", "orb", "explosive_arrow")))
         {
@@ -60,6 +60,49 @@ public partial class Main : Node2D
     public dynamic BagOpen = false;
     // [box, index] of the slot being dragged, or null
     public dynamic DragFrom = null;
+
+    static readonly string[] ARMOUR_SHORT = { "No armour", "Light", "Stone", "Titanium" };
+
+    // The stats beside the HP hexagon: the armour worn, as its icon and name (armour takes no bag slot), then the
+    // bandages and healing flasks in the bag with their counts, and the Healer's own flasks.
+    public void DrawStatSlots(CanvasItem C, Vector2 Vs, dynamic Me)
+    {
+        dynamic Cw = Gd.Wrap(C);
+        float X = 92, Y = Vs.Y - 38;
+        void Box(float W, bool Lit)
+        {
+            var R = new Rect2(X, Y, W, 26);
+            C.DrawRect(R, new Color(0.08f, 0.07f, 0.1f, 0.85f));
+            C.DrawRect(R, Lit ? new Color(GOLD, 0.8f) : new Color(1, 1, 1, 0.25f), false, 1);
+        }
+        int Tier = Gd.Int(Gd.At(Me, 9));
+        Box(78, Tier > 0);
+        if (Tier > 0)
+        {
+            this.DrawItemIcon(Cw, Gd.At(GameSim.ARMOUR_ITEMS, Tier), new Vector2(X + 13, Y + 13), 1.0f);
+        }
+        this.Text(Cw, new Vector2(X + (Tier > 0 ? 26 : 6), Y + 17), ARMOUR_SHORT[Tier], 10, Tier > 0 ? Colors.White : new Color(1, 1, 1, 0.45f));
+        X += 82;
+        foreach (string Id in new[] { "bandage", "healing_flask" })
+        {
+            int N = Main.Carried(Me, Id);
+            Box(36, N > 0);
+            this.DrawItemIcon(Cw, Id, new Vector2(X + 13, Y + 13), 1.0f);
+            if (N <= 0)
+            {
+                C.DrawRect(new Rect2(X + 1, Y + 1, 34, 24), new Color(0.08f, 0.07f, 0.1f, 0.6f));
+            }
+            this.Text(Cw, new Vector2(X + 18, Y + 23), Gd.Str(N), 10, N > 0 ? Colors.White : new Color(1, 1, 1, 0.45f), 2, 16);
+            X += 40;
+        }
+        if (Gd.At(Me, 1) == 1)
+        {
+            // the Healer's own flasks (not an item)
+            Box(36, Gd.At(Me, 10) > 0);
+            this.Hex(Cw, new Vector2(X + 18, Y + 13), 9, new Color("3DBE5A"));
+            this.Text(Cw, new Vector2(X, Y + 17), Gd.Format("+%d", Gd.At(Me, 10)), 10, Colors.White, 1, 36);
+        }
+    }
 
     public static int Carried(dynamic Me, string Id)
     {
@@ -157,11 +200,11 @@ public partial class Main : Node2D
         }
         dynamic Selected = Gd.At(Gd.At(Me, 7), Gd.Int(Gd.At(Me, 25)));
         if (Selected != null && GameSim.IsTacticalUse(Gd.Str(Gd.At(Selected, 0))))
-            this.Text(C, Gd.MakeVector2(0, Y0 - 8), GameSim.ItemName(Gd.At(Selected, 0)) + "  |  Click / right-click to use", 11, GOLD, 1, Vs.X);
+            this.Text(C, Gd.MakeVector2(0, Y0 - 8), GameSim.ItemName(Gd.At(Selected, 0)), 11, GOLD, 1, Vs.X);
         if (Gd.Size(Me) > 30 && Gd.Truth(Gd.At(Me, 30))) this.Text(C, Gd.MakeVector2(0, Y0 - 42), "HASTE +20%", 11, new Color("F0C76B"), 1, Vs.X);
         if (Gd.Size(Me) > 31 && Gd.Float(Gd.At(Me, 31)) > 0)
         {
-            this.Text(C, Gd.MakeVector2(0, Y0 - 30), "FIELD REPAIR... stand still", 11, GOLD, 1, Vs.X);
+            this.Text(C, Gd.MakeVector2(0, Y0 - 30), "Repairing", 11, GOLD, 1, Vs.X);
             C.DrawRect(Gd.MakeRect2(Vs.X / 2 - 60, Y0 - 22, 120, 5), INK);
             C.DrawRect(Gd.MakeRect2(Vs.X / 2 - 60, Y0 - 22, 120 * (1 - Gd.Float(Gd.At(Me, 31)) / 3f), 5), GOLD);
         }
@@ -175,7 +218,7 @@ public partial class Main : Node2D
         }
     }
 
-    // [box, index, rect] for every slot of the open bag panel: inventory (4 x 3) and, at the chest, storage (8 x 5).
+    // [box, index, rect] for every slot of the open bag panel: inventory (4 x 2) and, at the chest, storage (8 x 5).
     public GArray BagSlots(dynamic Vs, dynamic Me)
     {
         var Out = new GArray();
@@ -220,15 +263,11 @@ public partial class Main : Node2D
         Frame = Frame.GrowIndividual(Extra, 0, Extra, 0);
         this.Panel(C, Frame);
         this.Text(C, (All.Position + Gd.MakeVector2(0, (-14))), "YOUR BAG", 11, GOLD, 0, (-1.0f), true);
-        this.Text(C, Gd.MakeVector2(Frame.Position.X, (All.End.Y + 28)), "Drag: move, store, arrows into a bow   G give   Tab close", 10, Gd.MakeColor(1, 1, 1, 0.6f), 1, Frame.Size.X);
+        this.Text(C, Gd.MakeVector2(Frame.Position.X, (All.End.Y + 28)), "Tab close", 10, Gd.MakeColor(1, 1, 1, 0.6f), 1, Frame.Size.X);
         if ((Gd.Size(Slots) > GameSim.INV_SLOTS))
         {
             Rect2 First = (Rect2)(Gd.At(Gd.At(Slots, GameSim.INV_SLOTS), 2));
             this.Text(C, (First.Position + Gd.MakeVector2(0, (-14))), "BASE STORAGE (shared)", 11, GOLD, 0, (-1.0f), true);
-        }
-        else
-        {
-            this.Text(C, Gd.MakeVector2(Frame.Position.X, (All.End.Y + 14)), "Shared storage: the chest in the base", 10, Gd.MakeColor(1, 1, 1, 0.6f), 1, Frame.Size.X);
         }
         dynamic Sto = Gd.Get(Snap, "sto", new GArray());
         Vector2 Mouse = (Vector2)(Hud.GetLocalMousePosition());
