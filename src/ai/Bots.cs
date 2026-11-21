@@ -148,6 +148,7 @@ public partial class Bots : RefCounted
         {
             return;
         }
+        if (Gd.Get(P, "tower_build_t", 0f) > 0) return;
         if ((Foe != null))
         {
             float WeaponReach = Gd.Float(Gd.At(GameSim.WEAPON_STATS[Sim.WeaponOf(P)], 2));
@@ -173,6 +174,7 @@ public partial class Bots : RefCounted
         {
             return;
         }
+        if ((Sim.Phase == "day") && FetchRescueByDay(Sim, P, Dt)) return;
         if (((Sim.Phase == "day") && (Sim.TimeLeft > HOME_AT)))
         {
             Bots.Gather(Sim, P, Dt);
@@ -185,10 +187,6 @@ public partial class Bots : RefCounted
             {
                 Bots.Craft(Sim, P);
             }
-        }
-        else if (((Sim.Phase == "night") && (P.Role == 0) && Bots.FetchSupply(Sim, P, Dt)))
-        {
-            // the Scout runs for tonight's supplies while its door is quiet (src/world/GameSim.Supplies.cs)
         }
         else
         {

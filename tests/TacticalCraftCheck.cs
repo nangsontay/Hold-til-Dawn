@@ -43,7 +43,7 @@ public partial class TacticalCraftCheck : Node
         GD.Print("TACTICAL CRAFT CHECK simulation created");
         Sim.AddPlayer(1, "Engineer", 2); Sim.AddPlayer(2, "Ally", 1); Sim.Action(1, "start", 0);
         P = Gd.At(Sim.Players, 1); Ally = Gd.At(Sim.Players, 2);
-        Check(Gd.Size(GameSim.RECIPES) == 19 && !GameSim.ITEMS.Has("wood_shield"), "19 recipes, no shield");
+        Check(Gd.Size(GameSim.RECIPES) == 22 && !GameSim.ITEMS.Has("wood_shield"), "22 recipes including rescue, no shield");
         for (int I = 10; I < 19; I++)
         {
             Reset(); P.Pos = GameSim.WORKBENCH_POS + new Vector2(0, 24);

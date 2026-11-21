@@ -107,6 +107,7 @@ public partial class PixelNature : Node
         Lm("lm_can", 0, Can(3521), 0);
 
         DrawLandmarkDetails();
+        DrawExpeditionProps();
 
         using var Fa = FileAccess.Open(LmOut.PathJoin("index.json"), FileAccess.ModeFlags.Write);
         Fa.StoreString(Json.Stringify(LmIndex, "\t"));

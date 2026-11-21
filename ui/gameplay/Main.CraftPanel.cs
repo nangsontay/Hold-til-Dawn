@@ -23,12 +23,12 @@ public partial class Main : Node2D
     public Rect2 CraftTierButton(Vector2 Vs, int Tier)
     {
         Rect2 P = CraftPanelRect(Vs);
-        float W = (CraftLeftW(P) - 16) / 3;
+        float W = (CraftLeftW(P) - 16) / 4;
         return new Rect2(P.Position.X + 20 + Tier * (W + 4), P.Position.Y + HEAD_H + 4, W, 26);
     }
     public void SelectCraftTier(int Tier)
     {
-        CraftTier = Mathf.Clamp(Tier, 0, 2);
+        CraftTier = Mathf.Clamp(Tier, 0, 3);
         var Choices = CraftChoices();
         if (!Choices.Contains(CraftSel)) CraftSel = Choices[0];
     }
@@ -106,6 +106,7 @@ public partial class Main : Node2D
 
     string CraftTag(string Id)
     {
+        if (GameSim.RescueKind(Id) >= 0) return "RESCUE - TEAM EQUIPMENT";
         switch (Id)
         {
             case "revive":
@@ -129,6 +130,11 @@ public partial class Main : Node2D
     List<string> CraftDesc(string Id)
     {
         var Out = new List<string>();
+        if (GameSim.RescueKind(Id) >= 0)
+        {
+            Out.Add("Required for the rescue helicopter"); Out.Add("Craft by day. Installed for the whole team.");
+            Out.Add("Find its marked component at a landmark."); return Out;
+        }
         string[] Tactical = GameSim.TacticalDescription(Id);
         if (Tactical.Length > 0) return new List<string>(Tactical);
         if (Gd.Truth(GameSim.WEAPON_STATS.Has(Id)))
@@ -167,13 +173,19 @@ public partial class Main : Node2D
         dynamic R = Gd.At(GameSim.RECIPES, I);
         string Id = Gd.Str(Gd.At(R, 3));
         int Tier = Gd.Int(Gd.At(R, 2));
-        if (Tier > Gd.Int(Gd.Get(Snap, "unlock", 0)))
+        if (Tier != 3 && Tier > Gd.Int(Gd.Get(Snap, "unlock", 0)))
         {
             return ((Tier == 1) ? "Unlocks after night 1" : "Unlocks after the first boss");
         }
         if (Gd.Truth(Gd.At(R, 5)) && (Gd.At(Me, 1) != 2))
         {
             return "Only an Engineer can do this";
+        }
+        int Rescue = GameSim.RescueKind(Id);
+        if (Rescue >= 0)
+        {
+            if (Gd.Get(Snap, "ph", "") != "day") return "Rescue equipment: craft by day only";
+            if (Gd.Truth(Gd.At(Gd.At(Snap.Rescue, 1), Rescue))) return "Already installed for the team";
         }
         if (Id == "base")
         {
@@ -189,10 +201,10 @@ public partial class Main : Node2D
         foreach (dynamic Res in Gd.Iter(Gd.At(R, 1)))
         {
             int Need = Gd.Int(Gd.At(Gd.At(R, 1), Res));
-            int Have = Main.Carried(Me, Res);
+            int Have = CraftHaveLocal(Me, Gd.Str(Res));
             if (Have < Need)
             {
-                return Gd.Format("Need %d more %s", new GArray((Need - Have), Res));
+                return Gd.Format("Need %d more %s", new GArray((Need - Have), GameSim.ItemName(Res)));
             }
         }
         if (!this.AtBenchLocal(Me))
@@ -222,27 +234,28 @@ public partial class Main : Node2D
         Vector2 V = (Vector2)Vs;
         CraftSel = Mathf.Clamp(CraftSel, 0, (Gd.Size(GameSim.RECIPES) - 1));
         Vector2 Mouse = (Vector2)(Hud.GetLocalMousePosition());
-        // see-through like the bag panel, so the scene around the bench stays visible while crafting
+        // Opaque backing keeps world lights and scenery from competing with recipes.
         Rect2 P = this.CraftPanelRect(V);
-        C.DrawRect(P, new Color(0.06f, 0.07f, 0.1f, 0.72f));
+        C.DrawRect(P, new Color(0.06f, 0.07f, 0.1f, 1f));
         C.DrawRect(P, (GOLD * new Color(1, 1, 1, 0.7f)), false, 1.5f);
         C.DrawLine(new Vector2((P.Position.X + 16), (P.Position.Y + HEAD_H - 8)), new Vector2((P.End.X - 16), (P.Position.Y + HEAD_H - 8)), new Color(1, 1, 1, 0.1f), 1.0f);
         this.Text(C, (P.Position + new Vector2(20, 28)), "WORKBENCH", 18, GOLD, 0, -1.0f, true);
         // --- recipe cards, by tier
         float Lw = this.CraftLeftW(P);
-        for (int T = 0; T < 3; T++)
+        for (int T = 0; T < 4; T++)
         {
             Rect2 Tab = CraftTierButton(V, T);
-            bool Open = T <= Gd.Int(Gd.Get(Snap, "unlock", 0));
+            bool Open = T == 3 || T <= Gd.Int(Gd.Get(Snap, "unlock", 0));
             C.DrawRect(Tab, CraftTier == T ? new Color(0.35f, 0.29f, 0.14f, 0.95f) : new Color(0.08f, 0.09f, 0.12f, 0.9f));
             C.DrawRect(Tab, CraftTier == T ? GOLD : new Color(1, 1, 1, 0.2f), false, 1f);
-            this.Text(C, new Vector2(Tab.Position.X, Tab.Position.Y + 18), (T == 0 ? "BASIC" : T == 1 ? "STONE" : "TITANIUM") + (Open ? "" : " [locked]"), 11, Open ? GOLD : Colors.Gray, 1, Tab.Size.X, true);
+            this.Text(C, new Vector2(Tab.Position.X, Tab.Position.Y + 18), (T == 0 ? "BASIC" : T == 1 ? "STONE" : T == 2 ? "TITANIUM" : "RESCUE") + (Open ? "" : " [locked]"), 11, Open ? GOLD : Colors.Gray, 1, Tab.Size.X, true);
         }
         int Busy = Gd.Int(Gd.At(Me, 26));
         for (int I = 0; I < Gd.Size(GameSim.RECIPES); I++)
         {
             if (Gd.Int(Gd.At(Gd.At(GameSim.RECIPES, I), 2)) == CraftTier) this.DrawCraftCard(C, Me, I, this.CraftCard(V, I), Mouse, Busy);
         }
+        if (CraftTier == 3) DrawRescueChecklist(C, P);
         // what you carry and what is in the chest
         float By = (P.End.Y - 20);
         this.Text(C, new Vector2((P.Position.X + 20), (By + 4)), "Bag", 10, new Color(1, 1, 1, 0.6f));
@@ -251,7 +264,7 @@ public partial class Main : Node2D
         foreach (dynamic Res in Gd.Iter(GameSim.RES))
         {
             this.DrawItemIcon(C, Res, new Vector2((Bx + 10), By), 1.0f);
-            this.Text(C, new Vector2((Bx + 22), (By + 5)), Gd.Format("%d", Main.Carried(Me, Res)), 11, Colors.White);
+            this.Text(C, new Vector2((Bx + 22), (By + 5)), Gd.Format("%d", CraftHaveLocal(Me, Gd.Str(Res))), 11, Colors.White);
             int InChest = GameSim.CountIn(Sto, Res);
             this.Text(C, new Vector2((Bx + 44), (By + 5)), Gd.Format("(chest %d)", InChest), 9, new Color(1, 1, 1, 0.45f));
             Bx += 108;
@@ -264,7 +277,7 @@ public partial class Main : Node2D
     {
         dynamic R = Gd.At(GameSim.RECIPES, I);
         string Id = Gd.Str(Gd.At(R, 3));
-        bool Locked = (Gd.Int(Gd.At(R, 2)) > Gd.Int(Gd.Get(Snap, "unlock", 0)));
+        bool Locked = (Gd.Int(Gd.At(R, 2)) != 3) && (Gd.Int(Gd.At(R, 2)) > Gd.Int(Gd.Get(Snap, "unlock", 0)));
         string Why = this.CraftBlock(Me, I);
         bool Ready = (Why == "");
         bool Hover = Card.HasPoint(Mouse);
@@ -288,12 +301,12 @@ public partial class Main : Node2D
         // the cost as small icons, red where you carry too little
         var Cost = Gd.At(R, 1);
         int Parts = Gd.Size(Cost);
-        float Each = 38.0f;
+        float Each = Mathf.Min(38.0f, (Card.Size.X - 4) / Parts);
         float X = (Card.GetCenter().X - ((Parts * Each) / 2));
         foreach (dynamic Res in Gd.Iter(Cost))
         {
             int Need = Gd.Int(Gd.At(Cost, Res));
-            bool Enough = (Main.Carried(Me, Res) >= Need);
+            bool Enough = (CraftHaveLocal(Me, Gd.Str(Res)) >= Need);
             this.DrawItemIcon(C, Res, new Vector2((X + 10), (Card.Position.Y + 79)), 1.0f);
             this.Text(C, new Vector2((X + 20), (Card.Position.Y + 84)), Gd.Str(Need), 10, (Enough ? Colors.White : new Color(1, 0.55f, 0.5f)));
             X += Each;
@@ -346,7 +359,7 @@ public partial class Main : Node2D
             }
             First = false;
             int Need = Gd.Int(Gd.At(Cost, Res));
-            int Have = Main.Carried(Me, Res);
+            int Have = CraftHaveLocal(Me, Gd.Str(Res));
             this.CraftBox(C, new Rect2(X, Y, BOX, BOX), Res, ("x" + Need), (Have >= Need) ? new Color(1, 1, 1, 0.25f) : new Color(1, 0.5f, 0.45f, 0.7f));
             this.Text(C, new Vector2(X, (Y + BOX + 13)), Gd.Format("have %d", Have), 10, ((Have >= Need) ? new Color("7FD38A") : new Color(1, 0.6f, 0.55f)), 1, BOX);
             X += BOX;
@@ -411,7 +424,7 @@ public partial class Main : Node2D
         {
             Vector2 Vs = (Vector2)Hud.Size;
             Vector2 Mouse = (Vector2)(Hud.GetLocalMousePosition());
-            for (int T = 0; T < 3; T++)
+            for (int T = 0; T < 4; T++)
                 if (CraftTierButton(Vs, T).HasPoint(Mouse)) { SelectCraftTier(T); return true; }
             foreach (int I in CraftChoices())
             {

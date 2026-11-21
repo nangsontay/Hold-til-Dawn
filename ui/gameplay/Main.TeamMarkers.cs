@@ -86,7 +86,7 @@ public partial class Main : Node2D
             C.DrawArc(At, 12, 0, Mathf.Tau, 20, SUPPLY_COL, 2.0f);
             Vector2 Side = new Vector2(-Dir.Y, Dir.X);
             C.DrawColoredPolygon(new[] { At + Dir * (18 + Bob), At + Dir * 11 + Side * 6, At + Dir * 11 - Side * 6 }, SUPPLY_COL);
-            DrawSupplyIcon(C, Gd.Int(S[0]), At.Round(), 1.0f);
+            DrawComponentIcon(C, Gd.Int(S[0]), At.Round(), 1.0f);
         }
     }
 

@@ -9,7 +9,7 @@ public partial class GameSim
     int WaveSpawnOrdinal;
     static readonly float[] NIGHT_BUDGET = { 18, 30, 45, 60, 80 };
     static readonly float[] SPAWN_GAP = { 6, 4, 3, 2, 1.5f };
-    static readonly int[] NIGHT_ALIVE_CAP = { 12, 16, 24, 32, 40 };
+    static readonly int[] NIGHT_ALIVE_CAP = { 12, 16, 20, 24, 28 };
     int NightIndex => Math.Clamp(Gd.Int((object)K) - 1, 0, 4);
     public float NightFirstWaveDelay => Math.Max(0, NightIndex switch {
         0 => AiSettings.Current.EarlyNightFirstWave,

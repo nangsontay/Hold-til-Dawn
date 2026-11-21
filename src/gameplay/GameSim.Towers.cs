@@ -43,6 +43,7 @@ public partial class GameSim : RefCounted
         {
             return "Too close to the water";
         }
+        if (World is WorldGeometry Ground && Ground.TerrainAt(Pos, TOWER_R * T) == 1) return "Needs dry land for the dirt foundation";
         if (((World != null) && ((Vector2)World.Resolve(Pos, (TOWER_R * T)) != Pos)))
         {
             return "Something is in the way";
@@ -55,7 +56,7 @@ public partial class GameSim : RefCounted
     {
         for (int I = 0; I < MAX_TOWERS; I++)
         {
-            if ((Gd.At(Towers, I) == null))
+            if ((Gd.At(Towers, I) == null) && !ConstructionSlotTaken(I))
             {
                 return I;
             }
@@ -92,6 +93,8 @@ public partial class GameSim : RefCounted
     public void BuildTower(dynamic P, dynamic At = null)
     {
         Vector2 Spot = (Vector2)((At ?? P.Pos));
+        if (!Spot.IsFinite() || !Gd.Contains(new GArray("day", "dusk", "night"), Phase)) return;
+        if (P.CraftIdx >= 0 || P.Channel > 0 || Gd.Get(P, "repair_kit_t", 0f) > 0) { Note(P, "Finish your current action first"); return; }
         if (((P.Role != 2) || (P.State != 0) || Gd.Truth(P.Inside)))
         {
             this.Note(P, "Engineer only");
@@ -128,32 +131,13 @@ public partial class GameSim : RefCounted
             this.Note(P, Gd.Format("The team already has %d towers", MAX_TOWERS));
             return;
         }
-        if (Gd.Truth(FreeTower))
+        if (!Gd.Truth(FreeTower))
         {
-            FreeTower = false;
+            if (Unlock < 2) { Note(P, "Unlocks after the first boss"); return; }
+            foreach (string Res in (GDict)TOWER_COST)
+                if (Count(P, Res) < Gd.At(TOWER_COST, Res)) { Note(P, "A tower costs 10 wood + 5 titanium"); return; }
         }
-        else
-        {
-            if ((Unlock < 2))
-            {
-                this.Note(P, "Unlocks after the first boss");
-                return;
-            }
-            foreach (dynamic Res in Gd.Iter(TOWER_COST))
-            {
-                if ((this.Count(P, Res) < Gd.At(TOWER_COST, Res)))
-                {
-                    this.Note(P, "A tower costs 10 wood + 5 titanium");
-                    return;
-                }
-            }
-            foreach (dynamic Res in Gd.Iter(TOWER_COST))
-            {
-                this.Take(P, Res, Gd.At(TOWER_COST, Res));
-            }
-        }
-        this.PlaceTower(I, Spot);
-        this.Note(P, "Tower built");
+        if (!ReserveTower(P, I, Spot)) Note(P, "Tower foundation is already reserved");
     }
 
     public void PlaceTower(dynamic Slot, dynamic Pos)

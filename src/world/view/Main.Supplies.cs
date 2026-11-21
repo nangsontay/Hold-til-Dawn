@@ -73,7 +73,7 @@ public partial class Main : Node2D
             Vector2 Icon = At - new Vector2(0, 16 + 3 * Mathf.Sin(Now * 3.0f));
             this.Shadow(At - new Vector2(0, 2), 6);
             DrawCircle(Icon, 12, new Color(1.0f, 0.85f, 0.4f, 0.18f));
-            DrawSupplyIcon(this, Gd.Int(S[0]), Icon.Round(), 2.0f);
+            DrawComponentIcon(this, Gd.Int(S[0]), Icon.Round(), 2.0f);
         }
     }
 
@@ -120,25 +120,52 @@ public partial class Main : Node2D
         }
     }
 
+    public static void DrawComponentIcon(CanvasItem C, int Kind, Vector2 At, float Scale)
+    {
+        void Box(float X, float Y, float W, float H, string Hex) =>
+            C.DrawRect(new Rect2(At + new Vector2(X, Y) * Scale, new Vector2(W, H) * Scale), new Color(Hex));
+        if (Kind == 0)
+        {
+            foreach (int X in new[] { -5, 1 })
+            {
+                Box(X - 1, -5, 6, 11, "171D22"); Box(X, -4, 4, 9, "AAB7B6");
+                Box(X + 1, -6, 2, 2, "D8DFD5"); Box(X, 1, 4, 3, "507856");
+            }
+        }
+        else if (Kind == 1)
+        {
+            Box(-5, -3, 10, 9, "4A3527"); Box(-4, -2, 8, 7, "B8955C");
+            Box(-3, -5, 6, 4, "6A4940"); Box(-2, -3, 4, 2, "E7B24F");
+            Box(-1, 1, 2, 3, "E7B24F");
+        }
+        else
+        {
+            Box(-6, -5, 12, 10, "171D22"); Box(-5, -4, 10, 8, "386C4C");
+            Box(-2, -2, 4, 4, "222D36"); Box(-4, -3, 2, 1, "C2A45D");
+            Box(2, 1, 2, 1, "C2A45D");
+            for (int X = -4; X <= 3; X += 2) Box(X, 4, 1, 2, "C2A45D");
+        }
+    }
+
     // top right at night, under the timer: three slots, lit as each comes in. Right is the panel's right edge.
     public void DrawSupplyRow(CanvasItem C, float Right, float Y)
     {
-        var Rows = SupplyRows();
-        if (Rows.Count == 0)
-        {
-            return;
-        }
-        var Box = new Rect2(Right - 112, Y, 112, 30);
+        var Rescue = Gd.Get(Snap, "rescue", null) as GArray;
+        if (Rescue == null) return;
+        var Box = new Rect2(Right - 174, Y + 12, 174, 44);
         dynamic Cw = Gd.Wrap(C);
-        this.Panel(Cw, Box);
-        for (int I = 0; I < Rows.Count; I++)
+        C.DrawRect(Box, new Color("192027"));
+        C.DrawRect(Box, SUPPLY_COL, false, 1);
+        Text(Cw, Box.Position + new Vector2(6, 12), "RESCUE - craft all 3 by day", 10, SUPPLY_COL);
+        for (int I = 0; I < 3; I++)
         {
-            var S = (GArray)Rows[I];
-            bool Got = Gd.Truth(S[2]);
-            var Slot = new Rect2(Box.Position.X + 6 + I * 34, Y + 5, 30, 20);
-            C.DrawRect(Slot, Got ? new Color(0.25f, 0.5f, 0.3f) : new Color(0.15f, 0.16f, 0.2f));
-            C.DrawRect(Slot, Got ? new Color("3DBE5A") : new Color(1, 1, 1, 0.25f), false, 1);
-            DrawSupplyIcon(C, Gd.Int(S[0]), Slot.GetCenter().Round(), 1.0f, Got ? 1.0f : 0.35f);
+            bool Done = Gd.Truth(Gd.At(Rescue[1], I));
+            bool Found = Gd.Int(Gd.At(Rescue[0], I)) > 0;
+            var Slot = new Rect2(Box.Position + new Vector2(6 + I * 55, 18), new Vector2(51, 22));
+            C.DrawRect(Slot, Done ? new Color("285637") : new Color("30363D"));
+            DrawSupplyIcon(C, I, Slot.Position + new Vector2(11, 11), 1, Done || Found ? 1 : .4f);
+            Text(Cw, Slot.Position + new Vector2(22, 15), Done ? "OK" : Found ? "C" : "?", 10, Done ? Colors.LightGreen : SUPPLY_COL);
         }
+
     }
 }

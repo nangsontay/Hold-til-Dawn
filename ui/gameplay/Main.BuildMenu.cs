@@ -17,7 +17,7 @@ public partial class Main : Node2D
     public static readonly GArray BUILD_OPTIONS = new GArray(
         new GArray("wood", "Wood wall  200 HP", "5 wood", 0),
         new GArray("stone", "Stone wall  400 HP", "5 stone", 1),
-        new GArray("tower", "Tower  300 HP, lights 6 tiles", "10 wood + 5 titanium", 2));
+        new GArray("tower", "Tower  300 HP, dirt base + 6s build", "10 wood + 5 titanium", 2));
 
     public void CloseBuild()
     {

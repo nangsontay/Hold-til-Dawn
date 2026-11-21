@@ -3,100 +3,80 @@ using System;
 using System.Collections.Generic;
 using HoldTilDawn;
 
-// Owner: Vu Duc Viet Anh. Each night three supplies the rescue needs lie out on the island, at 3 of the 17
-// landmarks (never the base): one at a landmark near the base, two far out. Walking over one picks it up.
-// The night ends early only once the night's enemies are all down AND the three supplies are in (CheckEnd),
-// so the team has to leave the base at night.
+// Rescue components belong to the team and persist through dawn; backpacks cannot lose them.
 public partial class GameSim
 {
-    // what the rescue needs: a battery for the beacon's radio, a flare to guide the helicopter, the lab's data
-    public static readonly string[] SUPPLY_NAMES = { "Radio battery", "Signal flare", "Lab data drive" };
+    public static readonly string[] SUPPLY_NAMES = { "Battery cells", "Flare powder", "Encrypted circuit" };
+    public static readonly string[] RESCUE_IDS = { "rescue_battery", "rescue_flare", "rescue_data" };
+    public static readonly string[] COMPONENT_IDS = { "battery_cells", "flare_powder", "encrypted_circuit" };
     public const int SUPPLY_COUNT = 3;
-    // landmarks closer than this to the base count as near (Coconut Grove, Limestone Flats, Herb Meadow)
-    public const float SUPPLY_NEAR_TILES = 45f;
-    // how close you walk to pick one up
     public const float SUPPLY_PICK = 1.1f;
-    // [kind, pos, landmark id, picked up]
+    public const float SUPPLY_NEAR_TILES = 45f;
+    // [kind, accessible position, landmark id, collected]
     public readonly GArray Supplies = new();
-
-    public int SuppliesGot()
+    public readonly int[] RescueComponents = new int[3];
+    public readonly bool[] RescueCrafted = new bool[3];
+    public static int RescueKind(string Id) => Array.IndexOf(RESCUE_IDS, Id);
+    public int SuppliesGot() { int N = 0; foreach (GArray S in Supplies) if (Gd.Truth(S[3])) N++; return N; }
+    public bool SuppliesAllIn() => Array.TrueForAll(RescueCrafted, V => V);
+    public int CraftHave(dynamic P, string Id)
     {
-        int N = 0;
-        foreach (GArray S in Supplies)
-            if (Gd.Truth(S[3])) N++;
-        return N;
+        int Kind = Array.IndexOf(COMPONENT_IDS, Id);
+        return Kind >= 0 ? RescueComponents[Kind] : Gd.Int(Count(P, Id));
     }
-
-    public bool SuppliesAllIn() => Supplies.Count > 0 && SuppliesGot() >= Supplies.Count;
-
+    public void ClearSupplies()
+    {
+        Supplies.Clear(); Array.Clear(RescueComponents); Array.Clear(RescueCrafted);
+    }
     public void PlaceSupplies()
     {
-        Supplies.Clear();
-        var Near = new List<IslandMap.Landmark>();
-        var Far = new List<IslandMap.Landmark>();
-        foreach (var L in IslandMap.Landmarks)
+        ClearSupplies();
+        var Places = new List<IslandMap.Landmark>(IslandMap.Landmarks);
+        Places.RemoveAll(L => L.Id == 1);
+        var Random = (RandomNumberGenerator)Gd.Unwrap((object)Rng);
+        for (int I = Places.Count - 1; I > 0; I--)
         {
-            if (L.Id == 1) continue;
-            (L.Pos.Length() < SUPPLY_NEAR_TILES * T ? Near : Far).Add(L);
+            int J = (int)(Random.Randi() % (uint)(I + 1));
+            (Places[I], Places[J]) = (Places[J], Places[I]);
         }
-        var R = (RandomNumberGenerator)Gd.Unwrap((object)Rng);
-        void Shuffle(List<IslandMap.Landmark> A)
-        {
-            for (int I = A.Count - 1; I > 0; I--)
-            {
-                int J = (int)(R.Randi() % (uint)(I + 1));
-                (A[I], A[J]) = (A[J], A[I]);
-            }
-        }
-        Shuffle(Near);
-        Shuffle(Far);
-        var Picked = new List<IslandMap.Landmark>();
-        if (Near.Count > 0) Picked.Add(Near[0]);
-        for (int I = 0; I < Far.Count && Picked.Count < SUPPLY_COUNT; I++) Picked.Add(Far[I]);
-        // which supply lies where is random too
-        var Kinds = new List<int> { 0, 1, 2 };
-        for (int I = Kinds.Count - 1; I > 0; I--)
-        {
-            int J = (int)(R.Randi() % (uint)(I + 1));
-            (Kinds[I], Kinds[J]) = (Kinds[J], Kinds[I]);
-        }
-        for (int I = 0; I < Picked.Count; I++)
-            Supplies.Add(new GArray(Kinds[I], SupplySpot(Picked[I]), Picked[I].Id, false));
+        for (int I = 0; I < SUPPLY_COUNT; I++)
+            Supplies.Add(new GArray(I, SupplySpot(Places[I]), Places[I].Id, false));
     }
-
-    // in front of the landmark's structure, on open land
     Vector2 SupplySpot(IslandMap.Landmark L)
     {
-        Vector2 At = L.Pos;
-        if (World is WorldGeometry Wg && Wg.LmAt.TryGetValue(L.Id, out Vector2 Built)) At = Built;
-        At = IslandMap.PullInland(At + new Vector2(0, 2.5f * T), T);
-        return (Vector2)World.Resolve(At, 0.5f * T);
+        Vector2 Centre = World is WorldGeometry W && W.LmAt.TryGetValue(L.Id, out Vector2 Built) ? Built : L.Pos;
+        var Geometry = (WorldGeometry)World;
+        for (float Ring = 3; Ring <= 12; Ring += 1)
+            for (int I = 0; I < 16; I++)
+            {
+                Vector2 At = (Centre + Vector2.FromAngle(Mathf.Pi / 2 + I * Mathf.Tau / 16) * Ring * T).Round();
+                if (IslandMap.OnLand(At, T) && Geometry.TerrainAt(At) != 1
+                    && Geometry.ResolveFast(At, 0.6f * T).IsEqualApprox(At)
+                    && !Gd.Truth(InsideBase(At))) return At;
+            }
+        throw new InvalidOperationException($"No accessible rescue component at landmark {L.Id}");
     }
-
-    public void ClearSupplies() => Supplies.Clear();
-
-    // night only: a standing player who walks over a supply picks it up for the team
     public void TickSupplies()
     {
+        if ((string)Phase != "day") return;
         foreach (GArray S in Supplies)
         {
             if (Gd.Truth(S[3])) continue;
-            Vector2 At = (Vector2)S[1];
             foreach (dynamic P in Gd.Iter(Gd.Values(Players)))
             {
-                if (P.State != 0 || ((Vector2)P.Pos).DistanceTo(At) > SUPPLY_PICK * T) continue;
-                S[3] = true;
-                int Got = SuppliesGot();
-                this.Say(Gd.Format("%s found (%d/%d)", new GArray(SUPPLY_NAMES[Gd.Int(S[0])], Got, Supplies.Count)));
+                if (P.State != 0 || ((Vector2)P.Pos).DistanceSquaredTo((Vector2)S[1]) > SUPPLY_PICK * T * SUPPLY_PICK * T) continue;
+                S[3] = true; int Kind = Gd.Int(S[0]); RescueComponents[Kind]++;
+                Say(SUPPLY_NAMES[Kind] + " secured. Craft rescue equipment at the workbench by day.");
                 break;
             }
         }
     }
-
     public GArray SupplySnapshot()
     {
-        var Out = new GArray();
-        foreach (GArray S in Supplies) Out.Add(new GArray(S[0], S[1], S[3]));
-        return Out;
+        var Result = new GArray();
+        if ((string)Phase == "day") foreach (GArray S in Supplies) Result.Add(new GArray(S[0], S[1], S[3], S[2]));
+        return Result;
     }
+    public GArray RescueSnapshot() => new(new GArray(RescueComponents[0], RescueComponents[1], RescueComponents[2]),
+        new GArray(RescueCrafted[0], RescueCrafted[1], RescueCrafted[2]));
 }

@@ -13,7 +13,7 @@ public partial class GameSim : RefCounted
     {
         ResetNightSpawns();
         ResetTacticalItems();
-        ClearSupplies();
+        CancelAllConstruction();
         Phase = "day";
         TimeLeft = DAY_MAX;
         Gd.Clear(Votes);
@@ -75,7 +75,7 @@ public partial class GameSim : RefCounted
                 E.Door = this.NearestActiveDoor(E.Pos);
             }
         }
-        if ((Gd.Truth(FreeTower) && (K == 1)))
+        if ((Gd.Truth(FreeTower) && Construction.Count == 0 && (K == 1)))
         {
             FreeTower = false;
             int D = Gd.Int(Gd.At(Active, 0));
@@ -101,7 +101,7 @@ public partial class GameSim : RefCounted
         BossDownTonight = false;
         BossAt = BOSS_AT;
         this.PlanNightQuota();
-        this.PlaceSupplies();
+        CancelAllConstruction();
         Ext = (-1.0f);
         PadClear = new GArray(0.0f, 0.0f, 0.0f);
         foreach (dynamic P in Gd.Iter(Gd.Values(Players)))
@@ -131,6 +131,7 @@ public partial class GameSim : RefCounted
 
     public void End(dynamic Win, dynamic Why)
     {
+        CancelAllConstruction();
         ResetTacticalItems();
         ResetNightSpawns();
         ClearSupplies();
@@ -146,6 +147,7 @@ public partial class GameSim : RefCounted
 
     public void ToLobby()
     {
+        CancelAllConstruction();
         ResetTacticalItems();
         ResetNightSpawns();
         ClearSupplies();
@@ -182,8 +184,8 @@ public partial class GameSim : RefCounted
             BossesKilled += 1;
             Unlock = Gd.Maxi(Unlock, 2);
         }
-        // every enemy of the night is dead and the three supplies are in: dawn comes now (night 5: the helicopter)
-        if (((TimeLeft > 0) && this.NightAllDown() && this.SuppliesAllIn()))
+        // Clearing the quota advances dawn. Final-night extraction also requires the crafted rescue equipment.
+        if (((TimeLeft > 0) && this.NightAllDown()))
         {
             if ((K < 5))
             {
@@ -206,6 +208,11 @@ public partial class GameSim : RefCounted
         if ((K < 5))
         {
             this.NightCleared();
+            return;
+        }
+        if (!SuppliesAllIn())
+        {
+            End(false, "Rescue equipment incomplete: craft the radio battery, signal flare and lab data drive by day");
             return;
         }
         // night 5 extraction (FML-13)

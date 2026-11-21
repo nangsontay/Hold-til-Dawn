@@ -79,6 +79,10 @@ public partial class GameSim : RefCounted
 
     public static string ItemName(dynamic Id)
     {
+        int Component = Array.IndexOf(COMPONENT_IDS, Gd.Str(Id));
+        if (Component >= 0) return SUPPLY_NAMES[Component];
+        int Rescue = RescueKind(Gd.Str(Id));
+        if (Rescue >= 0) return new[] { "Radio battery", "Signal flare", "Lab data drive" }[Rescue];
         return (Gd.Truth(ITEMS.Has(Id)) ? (string)Gd.At(ITEMS[Id], 0) : Gd.Str(Id));
     }
 

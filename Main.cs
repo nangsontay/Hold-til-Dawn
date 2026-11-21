@@ -913,6 +913,7 @@ public partial class Main : Node2D
         this.DrawTelegraphs();
         DrawTacticalAreas();
         DrawSupplies();
+        DrawConstructionGround();
         // from outside, the inside of the base is fogged over (src/world/view/Main.BaseFog.cs)
         this.TickBaseFog();
         this.DrawBaseFog();
@@ -939,7 +940,7 @@ public partial class Main : Node2D
             Vector2 Pos = (Vector2)(((Id == MyId) ? (dynamic)(LocalPos) : Gd.Get(ShownP, Id, Gd.At(P, 2))));
             Gd.Append(Items, new GArray(Pos.Y, 3, Id, P, Pos));
         }
-        foreach (dynamic D in Gd.Iter(Deco))
+        foreach (dynamic D in DecoSceneIndex.Visible((GArray)Deco, 0, (Rect2)View, true))
         {
             if (Gd.Truth(View.HasPoint(Gd.At(D, 0))))
             {
@@ -947,7 +948,7 @@ public partial class Main : Node2D
             }
         }
         this.PrepareHarvestFeedback();
-        foreach (dynamic Nd in Gd.Iter(Snap.Nodes))
+        foreach (dynamic Nd in ResourceSceneIndex.Visible((GArray)Snap.Nodes, 1, (Rect2)View, true))
         {
             if (Gd.Truth(View.HasPoint(Gd.At(Nd, 1))))
             {
@@ -1692,7 +1693,7 @@ public partial class Main : Node2D
             this.Text(C, Gd.MakeVector2(0, 40), Gd.Format("EXTENSION %ds", Snap.Ext), 12, NEON_RED, 2, (Vs.X - 12));
         }
         // under it at night: tonight's three supplies (src/world/view/Main.Supplies.cs)
-        if ((Ph == "night") && !Gd.Truth(MapBig))
+        if ((Ph != "result") && !Gd.Truth(MapBig))
         {
             this.DrawSupplyRow((CanvasItem)Gd.Unwrap(C), (float)Vs.X - 12, (Snap.Ext >= 0) ? 50f : 34f);
         }
@@ -1802,6 +1803,7 @@ public partial class Main : Node2D
     // red screen edges after a hit
     public void DrawHurtFlash(dynamic C, dynamic Vs)
     {
+        DrawLowHealth((CanvasItem)Gd.Unwrap(C), (Vector2)Vs);
         if ((Hurt > 0))
         {
             dynamic A = ((Hurt / 0.35f) * 0.5f);

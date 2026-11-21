@@ -111,7 +111,9 @@ public partial class SimCheck : Node
         B = S.Boss();
         Gd.At(S.Players, 2).Pos = (B.Pos + Gd.MakeVector2(0, (6 * 32)));
         B.SigCd = 0.0f;
-        this.Run(S, 1.05f);
+        this.Run(S, .9f);
+        this.Check(Gd.Size(S.Proj) == 0, "Bio-Cannon respects the full one-second wind-up");
+        this.Run(S, .25f); // allow two 20Hz decision steps around the one-second boundary
         this.Check((Gd.Size(S.Proj) == 8), Gd.Format("Bio-Cannon fires a ring of 8 projectiles (%d)", Gd.Size(S.Proj)));
         // Burrower: cannot be hit underground, surfaces next to its target
         S = this.BossMatch(GameSim.BURROWER);

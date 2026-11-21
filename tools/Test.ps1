@@ -34,6 +34,8 @@ try {
     Invoke-Suite 'tests/NightSpawnCheck.tscn' 'NIGHT SPAWN ALL OK' 'night-spawn.log'
     Invoke-Suite 'tests/TacticalCraftCheck.tscn' 'TACTICAL CRAFT ALL OK' 'tactical-craft.log'
 
+    Invoke-Suite 'tests/SurvivalWorldCheck.tscn' 'SURVIVAL WORLD ALL OK' 'survival-world.log'
+
     # Multiplayer is removed for now; the network suite lives in git commit cf44b5f (tests/NetworkCheck.cs).
     Write-Output 'All C# checks passed.'
 }

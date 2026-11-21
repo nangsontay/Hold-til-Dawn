@@ -64,6 +64,8 @@ public partial class WorldGeometry
         SouthCape(R);
         HerbGarden(R);
         DressLandmarks();
+        BuildCrossings();
+        DressExploration();
     }
 
     static Vector2 Tl(float X, float Y) => new Vector2(X, Y) * TL;

@@ -114,28 +114,7 @@ public partial class NightSpawnCheck : Node
         Last.Hp = 0f; Sim.Enemies = Gd.Filter(Sim.Enemies, (Func<dynamic, dynamic>)((E) => (E.Hp > 0)));
         Check(Sim.NightKilled() == Sim.NightQuota && Sim.NightAllDown(), "the bar is full once the last one dies");
         Sim.CheckEnd(0.1f);
-        Check(Sim.Phase == "night", "the night goes on while a supply is still out there");
-        Check(Gd.Size(Sim.Supplies) == 3, "three supplies lie out each night");
-        int NearOnes = 0;
-        var Spots = new HashSet<int>();
-        foreach (GArray Sup in Sim.Supplies)
-        {
-            Vector2 At = (Vector2)Sup[1];
-            if (At.Length() < (GameSim.SUPPLY_NEAR_TILES + 6) * GameSim.T) NearOnes++;
-            Spots.Add(Gd.Int(Sup[2]));
-            Check(!Gd.Truth(GameSim.InsideBase(At)) && IslandMap.OnLand(At), "a supply lies on land outside the base");
-        }
-        Check(NearOnes == 1 && Spots.Count == 3 && !Spots.Contains(1), "one supply near the base, two far, at three different landmarks");
-        dynamic Runner = Gd.At(Sim.Players, 1);
-        foreach (GArray Sup in Sim.Supplies)
-        {
-            Runner.Pos = (Vector2)Sup[1] + new Vector2(10, 0);
-            Sim.TickSupplies();
-        }
-        Check(Sim.SuppliesGot() == 3 && Sim.SuppliesAllIn(), "walking over a supply picks it up");
-        Sim.CheckEnd(0.1f);
-        Check(Sim.Phase == "day" && Gd.Int(Sim.K) == 2, "a night whose every enemy is dead and whose supplies are in ends at once: dawn");
-        Check(Gd.Size(Sim.Supplies) == 0, "the supplies are gone by day");
+        Check(Sim.Phase == "day" && Gd.Int(Sim.K) == 2, "clearing the enemy quota ends the night without fetch quests");
         Prepare(Sim, 2); Sim.BossSpawned = false; Sim.Phase = "night"; Sim.BaseHp = 1000;
         Check(Sim.NightQuota >= 2, "the boss counts toward nights 2 and 4");
         Sim.NightSpawned = Sim.NightQuota - 1; Sim.Elapsed = 100f; Sim.TickWaves(); Sim.Elapsed = 111f; Sim.TickWaves();

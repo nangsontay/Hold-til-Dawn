@@ -105,6 +105,16 @@ public partial class GameSim : RefCounted
         return null;
     }
 
+    // Fixed-rate entry for real-time simulation; the explicit TickEnemies(dt) helper retains exact-step semantics.
+    public void TickEnemySimulation(float Dt)
+    {
+        EnemyNavigationUpdatesThisTick = 0;
+        EnemyStepAccumulator += Dt;
+        if (EnemyStepAccumulator < EnemyBodyInterval - .000001f) return;
+        float Step = EnemyStepAccumulator; EnemyStepAccumulator = 0;
+        EnemyBodySteps++;
+        TickEnemies(Step);
+    }
     public void TickEnemies(dynamic Dt)
     {
         EnemyNavigationUpdatesThisTick = 0;
@@ -113,22 +123,32 @@ public partial class GameSim : RefCounted
         finally { LimitEnemyNavigation = false; }
     }
 
+    readonly System.Collections.Generic.List<GDict> EnemyBatch = new();
     void TickEnemyBodies(dynamic Dt)
     {
         // a copy: a Broodmother's summons join the list during the loop
         float FrameDt = Gd.Float(Dt);
-        var Batch = (GArray)Gd.Duplicate(Enemies);
+        var Batch = EnemyBatch; Batch.Clear();
+        foreach (GDict Enemy in (GArray)Enemies) Batch.Add(Enemy);
         int Start = Batch.Count == 0 ? 0 : EnemyThinkCursor % Batch.Count;
         EnemyThinkCursor = Start + 1;
         for (int Index = 0; Index < Batch.Count; Index++)
         {
             Dt = FrameDt;
-            dynamic E = Gd.At(Batch, (Start + Index) % Batch.Count);
+            dynamic E = Batch[(Start + Index) % Batch.Count];
             Vector2 OldPos = (Vector2)(E.Pos);
             E.NavT = (Gd.Get(E, "nav_t", 0.0f) - Dt);
             E.Cd -= Dt;
             E.Nodmg += Dt;
             E.Swing = (Gd.Get(E, "swing", 0.0f) - Dt);
+            if (Gd.Has(E, "home") && (string)Phase == "day")
+            {
+                bool Near = false;
+                foreach (GDict P in ((GDict)Players).Values())
+                    if (Gd.Int(P.Get("state")) == 0 && ((Vector2)P.Get("pos")).DistanceSquaredTo((Vector2)E.Pos) < 45 * T * 45 * T) { Near = true; break; }
+                E.Unseen = Near ? 0f : Gd.Float(Gd.Get(E, "unseen", 0f)) + Gd.Float(Dt);
+                if (E.Unseen > 25f) { E.Hp = 0f; continue; }
+            }
             if (E.Hp <= 0 || Gd.Get(E, "stun_until", 0f) > Clock) continue;
             if (Gd.Get(E, "slow_until", 0f) > Clock) Dt = FrameDt * 0.75f;
             if (((E.Type == BOSS) && this.TickBoss(E, Dt)))

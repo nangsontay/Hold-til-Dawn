@@ -124,6 +124,7 @@ public partial class GameSim : RefCounted
         // MEC-11: the structure appears at once with full HP
         Gd.Append(BuiltWalls, new GDict { { "id", NextId }, { "kind", Kind }, { "pos", Pos }, { "vert", Vert }, { "hp", Gd.At(W, 3) }, { "maxhp", Gd.At(W, 3) } });
         NextId += 1;
+        World.Rebuild(Nodes, Towers, BuiltWalls);
         this.Note(P, ("Built a " + Gd.At(W, 0)));
     }
 

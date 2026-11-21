@@ -35,6 +35,15 @@ public partial class Main : Node2D
     // An item icon centred on a point, at a whole-number scale so the pixels stay square.
     public void DrawItemIcon(dynamic Canvas, dynamic Id, Vector2 Centre, float Scale)
     {
+        string ItemId = Gd.Str(Id);
+        int Rescue = GameSim.RescueKind(ItemId);
+        int Component = Array.IndexOf(GameSim.COMPONENT_IDS, ItemId);
+        if (Rescue >= 0 || Component >= 0)
+        {
+            if (Component >= 0) DrawComponentIcon((CanvasItem)Gd.Unwrap(Canvas), Component, Centre, Scale);
+            else DrawSupplyIcon((CanvasItem)Gd.Unwrap(Canvas), Rescue, Centre, Scale);
+            return;
+        }
         dynamic Tex = ItemTex.Get(Id);
         if ((Tex == null))
         {

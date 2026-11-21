@@ -30,7 +30,7 @@ public partial class TacticalCraftPreview : Main
             dynamic P = Gd.At(Sim.Players, 1); P.Pos = GameSim.WORKBENCH_POS + new Vector2(0, 24);
             foreach (string Id in new[] { "wood", "stone", "herb", "titanium" }) Sim.SetCount(P, Id, 30);
             MyId = 1; LocalPos = P.Pos; Snap = Gd.FromVariant(Sim.Snapshot()); CraftOpen = true;
-            for (int T = 0; T < 3; T++)
+            for (int T = 0; T < 4; T++)
             {
                 SelectCraftTier(T);
                 var Cards = CraftChoices();
@@ -42,7 +42,7 @@ public partial class TacticalCraftPreview : Main
                 }
             }
             DirAccess.MakeDirRecursiveAbsolute("res://.tmp/tactical-craft");
-            GD.Print("TACTICAL CRAFT LAYOUT OK: 19 cards in 3 tiers");
+            GD.Print("TACTICAL CRAFT LAYOUT OK: 22 cards in 4 tabs");
             if (DisplayServer.GetName() == "headless") { Finished = true; GetTree().Quit(); }
         }
         catch (Exception E) { GD.PushError(E.ToString()); Finished = true; GetTree().Quit(1); }

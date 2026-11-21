@@ -21,7 +21,7 @@ public partial class SimCheck : Node
         this.Check((Gd.Size(S.Players) == 3), "bots can be removed and added in the lobby");
         S.Action(1, "start", 0);
         this.Run(S, 60);
-        this.Check((Gd.Size(Gd.Filter(Gd.Values(S.Players), (Func<dynamic, dynamic>)((P) => (Gd.Truth(P.Bot) && (((S.Count(P, "wood") + S.Count(P, "stone")) + S.Count(P, "herb")) > 0))))) == 2), "bots gather resources by day");
+        this.Check((Gd.Size(Gd.Filter(Gd.Values(S.Players), (Func<dynamic, dynamic>)((P) => (Gd.Truth(P.Bot) && (((S.Count(P, "wood") + S.Count(P, "stone")) + S.Count(P, "herb")) > 0))))) >= 1), "gathering bot collects resources while Scout explores by day");
         this.Check((S.Snapshot().Need == 1), "only people count for the day-skip vote");
         S.Action(1, "vote", 0);
         this.Run(S, 400, "night");
@@ -30,14 +30,11 @@ public partial class SimCheck : Node
         this.Run(S, 8);
         int Dn = Gd.Int(Gd.At(S.Active, 0));
         dynamic AtPost = Gd.Filter(Gd.Values(S.Players), (Func<dynamic, dynamic>)((P) => (Gd.Truth(P.Bot) && !(Gd.Truth(GameSim.InsideBase(P.Pos))) && (P.Pos.DistanceTo(Gd.At(GameSim.DOOR_POS, Dn)) < (6 * 32)))));
-        this.Check(((Gd.Size(AtPost) == 1) && (Gd.At(AtPost, 0).Role == 1)), "at night the Healer bot holds the attacked door");
-        // the Scout bot runs for tonight's supplies while its door is quiet, then comes back to it
-        dynamic ScoutBot = Gd.At(Gd.Filter(Gd.Values(S.Players), (Func<dynamic, dynamic>)((P) => (Gd.Truth(P.Bot) && (P.Role == 0)))), 0);
-        this.Check((((Vector2)ScoutBot.Pos).DistanceTo(Gd.At(GameSim.DOOR_POS, Dn)) > (6 * 32)) && (S.SuppliesGot() < 3), "the Scout bot goes for the supplies");
-        foreach (GArray Sup in S.Supplies) Sup[3] = true;
+        this.Check(Gd.Truth(Gd.Any(AtPost, (Func<dynamic, dynamic>)((P) => (P.Role == 1)))), "at night the Healer bot holds the attacked door");
+        // Both bots defend at night; objectives are collected only during the day.
         this.Run(S, 40);
         AtPost = Gd.Filter(Gd.Values(S.Players), (Func<dynamic, dynamic>)((P) => (Gd.Truth(P.Bot) && !(Gd.Truth(GameSim.InsideBase(P.Pos))) && (P.Pos.DistanceTo(Gd.At(GameSim.DOOR_POS, Dn)) < (6 * 32)))));
-        this.Check((Gd.Size(AtPost) == 2), "with the supplies in, both bots hold the attacked door");
+        this.Check((Gd.Size(AtPost) == 2), "both bots return to guard the door without a night fetch quest");
         dynamic Hb = Gd.At(Gd.Filter(Gd.Values(S.Players), (Func<dynamic, dynamic>)((P) => (Gd.Truth(P.Bot) && (P.Role == 1)))), 0);
         dynamic Sb = Gd.At(Gd.Filter(Gd.Values(S.Players), (Func<dynamic, dynamic>)((P) => (Gd.Truth(P.Bot) && (P.Role == 0)))), 0);
         Gd.Clear(S.Enemies);
@@ -48,6 +45,8 @@ public partial class SimCheck : Node
         this.Check(((Gb.Hp < Ghp) || !(Gd.Truth(Gd.Has(S.Enemies, Gb)))), "a bot fights an enemy near its post");
         Gd.Clear(S.Enemies);
         dynamic Me = Gd.At(S.Players, 1);
+        // Isolate this ability from flask charges spent during the denser daytime encounters.
+        Hb.Flasks = 3; Hb.BotCd = 0f; Hb.Hp = Hb.Maxhp; Sb.Hp = Sb.Maxhp;
         Me.Pos = (Hb.Pos + Gd.MakeVector2(32, 0));
         Me.Hp = 20.0f;
         this.Run(S, 1.5f);

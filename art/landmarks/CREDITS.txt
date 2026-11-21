@@ -16,3 +16,7 @@ One art pixel is one world pixel; a tile is 32 pixels. index.json stores each
 sprite's [anchor_x, anchor_y, solid_radius_px]. Large composite structures use
 additional footprint circles in WorldLandmarks.cs / WorldLandmarkDetails.cs.
 Scenery machinery and supplies are decorative, not interactive inventory items.
+
+Expedition update: survey tent, research console, broken cart, quarantine sign,
+cargo stack and water pump use native pixel geometry in tools/PixelExpeditionProps.cs,
+with the project palettes and outline pipeline. No external images.

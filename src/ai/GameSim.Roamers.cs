@@ -9,11 +9,11 @@ using HoldTilDawn;
 public partial class GameSim : RefCounted
 {
     public static float ROAM_MUL = AiSettings.Current.RoamerMultiplier;
-    public static readonly dynamic ROAM_CHECK = 15.0f;
-    public static readonly dynamic ROAM_D0 = 20.0f;
-    public static readonly dynamic ROAM_D1 = 60.0f;
-    public static readonly dynamic ROAM_PMAX = 0.3f;
-    public static readonly dynamic ROAM_MAX = 8;
+    public static readonly dynamic ROAM_CHECK = 8.0f;
+    public static readonly dynamic ROAM_D0 = 10.0f;
+    public static readonly dynamic ROAM_D1 = 45.0f;
+    public static readonly dynamic ROAM_PMAX = 0.65f;
+    public static readonly dynamic ROAM_MAX = 14;
     public static readonly dynamic ROAM_SIGHT = (4.0f * T);
     public static readonly dynamic VIEW_HALF = (Gd.MakeVector2(15.0f, 8.5f) * T);
 
@@ -31,7 +31,7 @@ public partial class GameSim : RefCounted
             {
                 continue;
             }
-            if ((Rng.Randf() < (GameSim.RoamChance(P.Pos) * ROAM_MUL)))
+            if ((Rng.Randf() < (GameSim.RoamChance(P.Pos) * ROAM_MUL * (((WorldGeometry)World).SwampCentre.DistanceTo((Vector2)P.Pos) < 14 * T ? 1.4f : 1f))))
             {
                 this.SpawnRoamers(P);
             }
@@ -63,12 +63,12 @@ public partial class GameSim : RefCounted
                 return;
             }
         }
-        foreach (dynamic I in Gd.Iter(2))
+        foreach (dynamic I in Gd.Iter(Gd.Mini(2, ROAM_MAX - RoamerCount())))
         {
             int Ty = Gd.Int((((K >= 4) && (I == 1) && (Rng.Randf() < 0.5f)) ? (dynamic)(SPITTER) : GRUNT));
             // stats of night k on day k
             dynamic E = this.Spawn(Ty, this.NearestActiveDoor(At), 0.0f);
-            E.Pos = (At + Gd.MakeVector2(((I * 1.3f) * T), 0));
+            E.Pos = ((WorldGeometry)World).ResolveFast(At + new Vector2(Gd.Int(I) * 1.3f * T, 0), Gd.Float(E.R));
             E.Home = At;
             E.Wander = E.Pos;
             E.State = 4;

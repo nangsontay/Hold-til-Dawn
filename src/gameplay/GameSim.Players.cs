@@ -37,7 +37,7 @@ public partial class GameSim : RefCounted
         {
             Why = "Go to the workbench";
         }
-        else if ((Gd.At(R, 2) > Unlock))
+        else if ((RescueKind(Gd.Str(Gd.At(R, 3))) < 0) && (Gd.At(R, 2) > Unlock))
         {
             Why = Gd.Format("%s is locked", Gd.At(R, 0));
         }
@@ -53,6 +53,10 @@ public partial class GameSim : RefCounted
         {
             Why = "Generator full";
         }
+        else if (RescueKind(Gd.Str(Gd.At(R, 3))) >= 0 && ((string)Phase != "day" || RescueCrafted[RescueKind(Gd.Str(Gd.At(R, 3)))]))
+        {
+            Why = (string)Phase != "day" ? "Rescue equipment: craft by day only" : "Already installed for the team";
+        }
         else if ((GameSim.KindOf(Gd.At(R, 3)) == "armour") && (Gd.Find(ARMOUR_ITEMS, Gd.At(R, 3)) <= Gd.Int(P.Armour)))
         {
             Why = "Already worn";
@@ -61,9 +65,9 @@ public partial class GameSim : RefCounted
         {
             foreach (dynamic Res in Gd.Iter(Gd.At(R, 1)))
             {
-                if ((this.Count(P, Res) < Gd.At(Gd.At(R, 1), Res)))
+                if ((this.CraftHave(P, Gd.Str(Res)) < Gd.At(Gd.At(R, 1), Res)))
                 {
-                    Why = Gd.Format("Need more %s", Res);
+                    Why = Gd.Format("Need more %s", GameSim.ItemName(Res));
                     break;
                 }
             }
@@ -123,9 +127,17 @@ public partial class GameSim : RefCounted
         dynamic R = Gd.At(RECIPES, Idx);
         foreach (dynamic Res in Gd.Iter(Gd.At(R, 1)))
         {
-            this.Take(P, Res, Gd.At(Gd.At(R, 1), Res));
+            int Component = Array.IndexOf(COMPONENT_IDS, Gd.Str(Res));
+            if (Component >= 0) RescueComponents[Component] -= Gd.Int(Gd.At(Gd.At(R, 1), Res));
+            else this.Take(P, Res, Gd.At(Gd.At(R, 1), Res));
         }
-        if (Gd.Equal(Gd.At(R, 3), "base"))
+        int Rescue = RescueKind(Gd.Str(Gd.At(R, 3)));
+        if (Rescue >= 0)
+        {
+            RescueCrafted[Rescue] = true;
+            Say(Gd.Str(Gd.At(R, 0)) + " installed for rescue" + (SuppliesAllIn() ? ": all equipment ready!" : ""));
+        }
+        else if (Gd.Equal(Gd.At(R, 3), "base"))
         {
             BaseHp = Gd.Minf(BASE_HP, (BaseHp + Gd.At(R, 4)));
         }
@@ -161,6 +173,7 @@ public partial class GameSim : RefCounted
         P.Swing = 0.0f;
         P.Channel = 0.0f;
         P.RepairKitT = 0f;
+        P.TowerBuildT = 0f;
         P.ReviveP = 0.0f;
         P.GatherAcc = 0.0f;
         P.RepairAcc = 0.0f;
@@ -217,6 +230,7 @@ public partial class GameSim : RefCounted
             }
             if ((P.State != 0))
             {
+                TickTowerConstruction(P, 0);
                 continue;
             }
             if ((P.Channel > 0))
@@ -236,6 +250,7 @@ public partial class GameSim : RefCounted
                     }
                 }
             }
+            if (TickTowerConstruction(P, Gd.Float(Dt))) continue;
             if (TickFieldRepair(P, Gd.Float(Dt))) continue;
             this.TickEntry(P, Dt);
             this.TickCraft(P, Dt);
@@ -608,6 +623,7 @@ public partial class GameSim : RefCounted
         P.Invuln = 1.0f;
         P.Channel = 0.0f;
         P.RepairKitT = 0f;
+        P.TowerBuildT = 0f;
         P.ReviveP = 0.0f;
         P.GatherAcc = 0.0f;
         P.CraftIdx = (-1);

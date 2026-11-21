@@ -140,6 +140,8 @@ public partial class WorldGeometry
         foreach (var (F, _) in Floors)
             if (F.Grow(Margin).HasPoint(P)) return 6;
         if (!IslandMap.OnGrass(P, Margin)) return 7;
+        int Crossing = CrossingTerrain(P, Margin);
+        if (Crossing >= 0) return Crossing;
         foreach (var Pd in Ponds)
             if (P.DistanceTo(Pd.Centre) < Pd.Radius * 1.6f + Margin && IslandMap.InPolygon(Pd.Edge, P)) return 1;
         foreach (var (Path, Width) in Trails)
@@ -163,6 +165,7 @@ public partial class WorldGeometry
     // Solid circles: ponds and pools. Crags are added with the other scenery from their sprites' radius.
     void AddTerrainSolids(dynamic Into)
     {
+        AddCrossingSolids(Into);
         // three circles across each (they are wider than tall)
         foreach (var Pd in Ponds)
             foreach (float K in new[] { -0.45f, 0.0f, 0.45f })

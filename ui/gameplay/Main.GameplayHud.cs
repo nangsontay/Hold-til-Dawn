@@ -13,6 +13,8 @@ public partial class Main : Node2D
     public void DrawInteractionHint(dynamic C, dynamic Vs, dynamic Me, string Ph)
     {
         string Hint = Gd.At(Me, 16);
+        foreach (GArray Job in (GArray)Gd.Get(Snap, "construction", new GArray()))
+            if (Gd.Equal(Job[2], MyId)) Hint = $"Building tower: {Gd.Float(Job[1]) * 100:F0}% - stand still";
         if (((Hint == "") && (LocalNoteT > 0)))
         {
             Hint = LocalNote;
@@ -65,7 +67,7 @@ public partial class Main : Node2D
             }
             if (((Hint == "") && this.FreeTowerHere()))
             {
-                Hint = "T: place free tower";
+                Hint = "T: build free tower (6s)";
             }
         }
         if (((Hint == "") && Gd.Contains(new GArray("day", "dusk"), Ph) && (Gd.At(Me, 5) == 0)))
