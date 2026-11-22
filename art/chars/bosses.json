@@ -1,0 +1,144 @@
+{
+	"chars": {
+		"boss_bio_cannon": {
+			"anchor": [
+				24.0,
+				46
+			],
+			"anims": {
+				"attack": [
+					6,
+					4,
+					10.0
+				],
+				"down": [
+					10,
+					4,
+					8.0
+				]
+			},
+			"body": 48,
+			"size": 48
+		},
+		"boss_broodmother": {
+			"anchor": [
+				24.0,
+				46
+			],
+			"anims": {
+				"attack": [
+					6,
+					4,
+					10.0
+				],
+				"down": [
+					10,
+					4,
+					8.0
+				]
+			},
+			"body": 48,
+			"size": 48
+		},
+		"boss_burrower": {
+			"anchor": [
+				24.0,
+				46
+			],
+			"anims": {
+				"attack": [
+					6,
+					4,
+					10.0
+				],
+				"down": [
+					10,
+					4,
+					8.0
+				]
+			},
+			"body": 48,
+			"size": 48
+		},
+		"boss_gatebreaker": {
+			"anchor": [
+				24.0,
+				46
+			],
+			"anims": {
+				"attack": [
+					6,
+					4,
+					10.0
+				],
+				"down": [
+					10,
+					4,
+					8.0
+				]
+			},
+			"body": 48,
+			"size": 48
+		},
+		"boss_ironhide": {
+			"anchor": [
+				24.0,
+				46
+			],
+			"anims": {
+				"attack": [
+					6,
+					4,
+					10.0
+				],
+				"down": [
+					10,
+					4,
+					8.0
+				]
+			},
+			"body": 48,
+			"size": 48
+		},
+		"boss_juggernaut": {
+			"anchor": [
+				24.0,
+				46
+			],
+			"anims": {
+				"attack": [
+					6,
+					4,
+					10.0
+				],
+				"down": [
+					10,
+					4,
+					8.0
+				]
+			},
+			"body": 48,
+			"size": 48
+		},
+		"boss_phantom": {
+			"anchor": [
+				24.0,
+				46
+			],
+			"anims": {
+				"attack": [
+					6,
+					4,
+					10.0
+				],
+				"down": [
+					10,
+					4,
+					8.0
+				]
+			},
+			"body": 48,
+			"size": 48
+		}
+	}
+}

@@ -1,0 +1,9 @@
+﻿[gd_resource type="Resource" script_class="DisplaySettings" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://config/display/DisplaySettings.cs" id="1"]
+
+[resource]
+script = ExtResource("1")
+CameraDeadZone = Vector2(30, 18)
+CameraFollowRate = 8.0
+MaxFps = 60

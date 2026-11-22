@@ -2,56 +2,243 @@
 	"chars": {
 		"engineer": {
 			"anchor": [
-				16.0,
-				29
+				24.0,
+				37.0
 			],
-			"size": 32
+			"anims": {
+				"attack_blade": [
+					14,
+					4,
+					16.0
+				],
+				"attack_bow": [
+					22,
+					4,
+					12.0
+				],
+				"attack_fists": [
+					6,
+					4,
+					18.0
+				],
+				"attack_hammer": [
+					18,
+					4,
+					12.0
+				],
+				"attack_spear": [
+					10,
+					4,
+					16.0
+				],
+				"down": [
+					26,
+					4,
+					8.0
+				],
+				"gather_herb": [
+					42,
+					6,
+					7.0
+				],
+				"gather_stone": [
+					36,
+					6,
+					7.0
+				],
+				"gather_wood": [
+					30,
+					6,
+					7.0
+				]
+			},
+			"body": 32,
+			"size": 48
 		},
 		"grunt": {
 			"anchor": [
-				16.0,
-				29
+				24.0,
+				37.0
 			],
-			"size": 32
+			"anims": {
+				"attack": [
+					6,
+					4,
+					10.0
+				],
+				"down": [
+					10,
+					4,
+					8.0
+				]
+			},
+			"body": 32,
+			"size": 48
 		},
 		"healer": {
 			"anchor": [
-				16.0,
-				29
+				24.0,
+				37.0
 			],
-			"size": 32
+			"anims": {
+				"attack_blade": [
+					14,
+					4,
+					16.0
+				],
+				"attack_bow": [
+					22,
+					4,
+					12.0
+				],
+				"attack_fists": [
+					6,
+					4,
+					18.0
+				],
+				"attack_hammer": [
+					18,
+					4,
+					12.0
+				],
+				"attack_spear": [
+					10,
+					4,
+					16.0
+				],
+				"down": [
+					26,
+					4,
+					8.0
+				],
+				"gather_herb": [
+					42,
+					6,
+					7.0
+				],
+				"gather_stone": [
+					36,
+					6,
+					7.0
+				],
+				"gather_wood": [
+					30,
+					6,
+					7.0
+				]
+			},
+			"body": 32,
+			"size": 48
 		},
 		"scout": {
 			"anchor": [
-				16.0,
-				29
+				24.0,
+				37.0
 			],
-			"size": 32
+			"anims": {
+				"attack_blade": [
+					14,
+					4,
+					16.0
+				],
+				"attack_bow": [
+					22,
+					4,
+					12.0
+				],
+				"attack_fists": [
+					6,
+					4,
+					18.0
+				],
+				"attack_hammer": [
+					18,
+					4,
+					12.0
+				],
+				"attack_spear": [
+					10,
+					4,
+					16.0
+				],
+				"down": [
+					26,
+					4,
+					8.0
+				],
+				"gather_herb": [
+					42,
+					6,
+					7.0
+				],
+				"gather_stone": [
+					36,
+					6,
+					7.0
+				],
+				"gather_wood": [
+					30,
+					6,
+					7.0
+				]
+			},
+			"body": 32,
+			"size": 48
 		},
 		"spitter": {
 			"anchor": [
-				16.0,
-				29
+				24.0,
+				37.0
 			],
-			"size": 32
+			"anims": {
+				"attack": [
+					6,
+					4,
+					10.0
+				],
+				"down": [
+					10,
+					4,
+					8.0
+				]
+			},
+			"body": 32,
+			"size": 48
 		},
 		"wrecker": {
 			"anchor": [
-				20.0,
-				38
+				28.0,
+				46.0
 			],
-			"size": 40
+			"anims": {
+				"attack": [
+					6,
+					4,
+					10.0
+				],
+				"down": [
+					10,
+					4,
+					8.0
+				]
+			},
+			"body": 40,
+			"size": 56
 		}
 	},
 	"dirs": [
 		"right",
 		"down",
 		"left",
-		"up"
+		"up",
+		"down_right",
+		"down_left",
+		"up_left",
+		"up_right"
 	],
 	"fps": {
 		"idle": 2.0,
-		"run": 8.0
+		"run": 10.0
 	},
 	"frames": {
 		"idle": [
