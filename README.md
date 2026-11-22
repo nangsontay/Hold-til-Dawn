@@ -13,6 +13,7 @@ Esc leaves the room. During a match, a departure pauses play and transfers leade
 Install Godot 4.7.2 and Node 26.13.0. From the repository root, import the project, install the locked dependencies and build the service.
 
 ```sh
+python3 tools/fetch-colyseus-sdk.py
 godot --headless --path . --import
 npm ci --prefix multiplayer-server
 npm run build --prefix multiplayer-server
@@ -69,7 +70,7 @@ Keep TCP 80 and the nginx challenge path available for HTTP-01. Reconfigure the 
 - **Anonymous room and seat hoarding is an accepted risk (user decision).** The lobby has no per-IP limits — neither nginx (`limit_conn`/`limit_req`) nor the directory applies them; only per-socket caps exist (10 messages/second, 256 clients). A few scripted sessions can occupy all three rooms or hold seats indefinitely. No code change is planned for the three-room test; add per-IP limits only if abuse occurs.
 - **Departure policy (user decision).** Lost upstream traffic freezes the affected match within 1 s (after 900 ms of input silence), but the departure is final only once ENet confirms the loss through its own disconnect/timeout. If the player's traffic returns first, the crew resumes with the same seats and no vote. The client retains its 4,800 ms liveness watchdog inside the 5-second budget.
 - **Native-SDK WSS has only been proven locally**, through a temporary CA configured in the project's `network/tls/certificate_bundle_override` (repeatable check: `python3 tests/match-worker-wss.py /path/to/Godot`, run after importing the project and building the service; the CA must be set before the GDExtension loads). It has not run against public certificates or exported clients.
-- The vendored `addons/colyseus/plugin.cfg` reports version `0.18.0` while `addons/colyseus/version.json` pins the SDK at `0.18.10`; both are upstream layout, preserved as-is. Per-binary SHA-256 digests for the five pinned SDK binaries are recorded in `addons/colyseus/SHA256SUMS` and verified during packaging.
+- The vendored `addons/colyseus/plugin.cfg` reports version `0.18.0` while `addons/colyseus/version.json` pins the SDK at `0.18.10`; both are upstream layout, preserved as-is. The five SDK binaries are fetched by `tools/fetch-colyseus-sdk.py`, not committed; their SHA-256 digests are recorded in `addons/colyseus/SHA256SUMS` and verified by the script and during packaging.
 
 ## Controls
 WASD move, mouse aim, LMB attack, E (hold) gather / repair door (Engineer) / revive, Q bandage, C workbench (inside the base by day, then number keys), RMB healing flask (Healer), F (hold 2 s, Engineer at night) enter or leave the base through a closed door, V skip-day vote, T (Engineer, 3-8 tiles in front of a door) build a tower, mouse wheel zoom (2, 3 or 4 screen pixels per art pixel), Esc leave.
