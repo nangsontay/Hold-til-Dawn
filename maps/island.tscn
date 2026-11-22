@@ -1,6 +1,6 @@
 [gd_scene load_steps=3 format=3]
 
-[ext_resource type="Script" path="res://maps/MapProp.cs" id="1"]
+[ext_resource type="Script" path="res://maps/map_prop.gd" id="1"]
 [ext_resource type="Texture2D" path="res://art/nature/rock_1.png" id="2"]
 
 [node name="IslandLayout" type="Node2D"]
@@ -11,4 +11,4 @@ texture = ExtResource("2")
 centered = false
 offset = Vector2(-25, -29)
 script = ExtResource("1")
-SolidRadius = 18.0
+solid_radius = 18.0
