@@ -13,6 +13,7 @@ Esc leaves the room. During a match, a departure pauses play and transfers leade
 Install Godot 4.7.2 and Node 26.13.0. From the repository root, import the project, install the locked dependencies and build the service.
 
 ```sh
+git submodule update --init
 python3 tools/fetch-colyseus-sdk.py
 godot --headless --path . --import
 npm ci --prefix multiplayer-server
@@ -31,6 +32,8 @@ Launch a client with `godot --path . -- --lobby-url=ws://127.0.0.1:2567`. The ar
 
 Run `python3 tests/release-verification.py` for clean and impaired UDP load. It starts a real directory, three workers and fifteen headless Godot client peers, then releases the processes and ports. Use `--mode clean` or `--mode lossy` to run one network. `GODOT_BIN` overrides the Godot executable. Pair it with `npm test --prefix multiplayer-server`, `python3 tests/hosted-client-integration.py`, `python3 tests/match-worker-integration.py "$(command -v godot)"`, and the simulation and geometry checks below.
 
+See the [deployment guide](docs/deployment-guide.md) for Docker and systemd deployment.
+
 ## Operate the hosted service
 
 ### Build a matched release
@@ -46,7 +49,7 @@ With three arguments the script builds the service and worker PCK for local insp
 ### Provision the Singapore VM
 
 1. Use a Linux x86-64 VM with 4 vCPU and 4 GB RAM. Create the system account and group `htd`, then create `/var/lib/hold-til-dawn/workers` owned by `htd:htd` with mode 0700. Copy the release into `/opt/hold-til-dawn-releases/<release-id>` and initially point `/opt/hold-til-dawn` at it with an absolute symlink. Keep the releases owned by root.
-2. Install the directory, worker, DDNS service and DDNS timer from the release's [deployment templates](multiplayer-server/deploy/) in `/etc/systemd/system/`. Install `50-hold-til-dawn.rules` in `/etc/polkit-1/rules.d/`. Copy the release's `multiplayer.conf.example` to `/etc/hold-til-dawn/multiplayer.conf` and verify both public endpoints use the same hostname. Generate the worker key on the host with `openssl rand -hex 32` redirected to the configured file using a 077 umask. Set ownership to `htd:htd` and mode 0600. Keep it and the worker state directory across restarts and releases.
+2. Install the directory, worker, DDNS service and DDNS timer from the release's [deployment templates](https://github.com/nangsontay/hold-til-dawn-server/tree/main/deploy) in `/etc/systemd/system/`. Install `50-hold-til-dawn.rules` in `/etc/polkit-1/rules.d/`. Copy the release's `multiplayer.conf.example` to `/etc/hold-til-dawn/multiplayer.conf` and verify both public endpoints use the same hostname. Generate the worker key on the host with `openssl rand -hex 32` redirected to the configured file using a 077 umask. Set ownership to `htd:htd` and mode 0600. Keep it and the worker state directory across restarts and releases.
 3. Delegate the public name to a DNS provider supporting RFC 2136 updates. Provision a TSIG key with permission to update only that hostname's A record. Install `nsupdate` (usually `bind9-dnsutils`), `curl` and Python 3. Copy the release's `ddns.conf.example` to `/etc/hold-til-dawn/ddns.conf`. Set the zone, authoritative update server, and TSIG key file. Keep that file root-owned with mode 0600. Use a VM public IPv4 that matches the HTTPS IP discovery response. Remove a stale AAAA record unless you provision IPv6 separately. Run `systemctl daemon-reload`, `systemctl enable --now hold-til-dawn-dns.timer` and `systemctl start hold-til-dawn-dns.service`. Verify the authoritative answer with `dig @<authoritative-server> <game-hostname> A +short`.
 4. Allow inbound TCP 443 and UDP 7778–7780. For HTTP-01 certificate issuance and renewal allow TCP 80. Keep the service HTTP listener TCP 2567, the worker management listener TCP 2569 and the development UDP 7777 private. Before enabling the TLS vhost, obtain the first certificate with `certbot certonly --standalone -d <game-hostname>` while TCP 80 is free. Then install the release's `nginx.conf.example` in the nginx HTTP configuration and create `/var/www/letsencrypt`. Validate with `nginx -t`. The proxy must forward `/health`, `POST /matchmake/joinOrCreate/directory`, and WebSocket upgrades at `/<processId>/<roomId>`.
 5. Enable nginx and `hold-til-dawn-multiplayer.service`. Check `curl -fsS http://127.0.0.1:2567/health` on the VM and `curl -fsS https://<game-hostname>/health` from another network. A healthy service returns HTTP 200 including when full or draining. HTTP 503 means the directory is reconciling worker ownership or stopping.
