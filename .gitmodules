@@ -1,0 +1,3 @@
+[submodule "multiplayer-server"]
+	path = multiplayer-server
+	url = https://github.com/nangsontay/hold-til-dawn-server.git
