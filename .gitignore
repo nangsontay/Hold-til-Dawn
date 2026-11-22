@@ -2,10 +2,6 @@
 .godot/
 /android/
 .gstack/
-bin/
-obj/
-.vs/
-*.csproj.user
 
 # downloaded asset packs (raw, some licences forbid redistribution)
 .tmp/
