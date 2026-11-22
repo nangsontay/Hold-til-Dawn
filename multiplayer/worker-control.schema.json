@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Hold 'til Dawn match worker control v1",
   "description": "The directory listens on IPv4 loopback. Each worker connects and retains ENet and simulation ownership across TCP sessions.",
-  "$comment": "The schema validates a decoded JSON envelope. x-protocol specifies framing and payload contracts.",
+  "$comment": "The schema validates a decoded JSON envelope. x-protocol specifies framing and payload contracts: managerCommands keys are every frame the manager may send and workerEvents keys are every frame a worker may send; each entry references its payload contract in $defs.",
   "type": "array",
   "minItems": 9,
   "maxItems": 9,
@@ -21,8 +21,38 @@
     "token": {"type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}$"},
     "hex32": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
     "ticketId": {"type": "string", "pattern": "^[0-9a-f]{32}$"},
+    "empty": {"type": "object", "maxProperties": 0},
+    "hello": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pid", "nonce", "reportSequence"],
+      "properties": {
+        "pid": {"type": "integer", "minimum": 1},
+        "nonce": {"$ref": "#/$defs/hex32"},
+        "reportSequence": {"type": "integer", "minimum": 0}
+      }
+    },
+    "challenge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["workerNonce", "managerNonce"],
+      "properties": {
+        "workerNonce": {"$ref": "#/$defs/hex32"},
+        "managerNonce": {"$ref": "#/$defs/hex32"}
+      }
+    },
+    "register": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pid", "reportSequence"],
+      "properties": {
+        "pid": {"type": "integer", "minimum": 1},
+        "reportSequence": {"type": "integer", "minimum": 0}
+      }
+    },
     "reserve": {
       "type": "object",
+      "additionalProperties": false,
       "required": ["requestId", "identity", "name", "role", "creator", "expiresAt"],
       "properties": {
         "requestId": {"$ref": "#/$defs/token"},
@@ -33,8 +63,19 @@
         "expiresAt": {"type": "integer", "minimum": 1, "maximum": 9007199254740991}
       }
     },
+    "cancel": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The manager sends {requestId}. The worker resolves a requestId through its request ledger and also accepts a direct {ticketId}.",
+      "required": ["requestId"],
+      "properties": {
+        "requestId": {"$ref": "#/$defs/token"},
+        "ticketId": {"$ref": "#/$defs/ticketId"}
+      }
+    },
     "state": {
       "type": "object",
+      "additionalProperties": false,
       "required": ["name", "state", "mode", "humans", "pending", "bots", "capacity", "available", "creatorAdmitted", "leader", "pid", "protocol", "content"],
       "properties": {
         "name": {"type": "string", "maxLength": 16},
@@ -49,14 +90,90 @@
         "leader": {"type": "integer", "minimum": 0},
         "pid": {"type": "integer", "minimum": 1},
         "protocol": {"const": 1},
-        "content": {"const": "island-1"},
-        "sequence": {"type": "integer", "minimum": 1}
+        "content": {"const": "island-1"}
       }
+    },
+    "heartbeat": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The state projection plus the heartbeat bookkeeping fields.",
+      "required": ["name", "state", "mode", "humans", "pending", "bots", "capacity", "available", "creatorAdmitted", "leader", "pid", "protocol", "content", "sequence", "maxFrameMs"],
+      "properties": {
+        "name": {"type": "string", "maxLength": 16},
+        "state": {"enum": ["waiting", "playing", "timeout", "result"]},
+        "mode": {"enum": [0, 1, 2]},
+        "humans": {"type": "integer", "minimum": 0, "maximum": 5},
+        "pending": {"type": "integer", "minimum": 0, "maximum": 5},
+        "bots": {"type": "integer", "minimum": 0, "maximum": 5},
+        "capacity": {"const": 5},
+        "available": {"type": "integer", "minimum": 0, "maximum": 5},
+        "creatorAdmitted": {"type": "boolean"},
+        "leader": {"type": "integer", "minimum": 0},
+        "pid": {"type": "integer", "minimum": 1},
+        "protocol": {"const": 1},
+        "content": {"const": "island-1"},
+        "sequence": {"type": "integer", "minimum": 1},
+        "maxFrameMs": {"type": "integer", "minimum": 0}
+      }
+    },
+    "reservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requestId", "code"],
+      "properties": {
+        "requestId": {"type": "string", "pattern": "^$|^[A-Za-z0-9_-]{1,64}$", "description": "Echoed from the reserve request. Empty only when the request requestId was not a valid token, which pairs with code invalid_request."},
+        "code": {"enum": ["reserved", "invalid_request", "expired", "recovering", "request_conflict", "room_started", "creator_pending", "creator_exists", "full", "identity_in_use", "busy", "unavailable", "cancelled", "admitted", "insertion_failed"]},
+        "ticketId": {"$ref": "#/$defs/ticketId"},
+        "secret": {"$ref": "#/$defs/hex32"},
+        "expiresAt": {"type": "integer", "minimum": 1},
+        "ttlMs": {"type": "integer", "minimum": 1, "maximum": 30000}
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {"code": {"const": "reserved"}},
+            "required": ["code"]
+          },
+          "then": {"required": ["ticketId", "secret", "expiresAt", "ttlMs"]}
+        }
+      ]
+    },
+    "reservationCancelled": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requestId", "reason"],
+      "properties": {
+        "requestId": {"$ref": "#/$defs/token"},
+        "reason": {"const": "room_started"}
+      }
+    },
+    "cancellation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ticketId", "code"],
+      "properties": {
+        "ticketId": {"type": "string", "pattern": "^([0-9a-f]{32})?$"},
+        "code": {"enum": ["cancelled", "unknown_ticket"]},
+        "requestId": {"$ref": "#/$defs/token"}
+      }
+    },
+    "closing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code"],
+      "properties": {"code": {"const": "closed"}}
+    },
+    "workerError": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code"],
+      "properties": {"code": {"const": "unknown_command"}}
     }
   },
   "x-protocol": {
     "launch": {
-      "args": ["--headless", "--", "--match-worker"],
+      "args": ["--headless", "--", "--match-worker", "--htd-slot=<udpPort>-<generation>"],
+      "slotMarker": "The manager appends --htd-slot=<udpPort>-<generation> as the worker's final command-line argument, and an optional --path <project directory> may precede -- when the worker is launched outside the server directory. Both the local process scan and the systemd /proc/<pid>/cmdline check identify the owning process by matching this exact final argument, so the marker must stay last. The worker dispatches on --match-worker only and ignores the marker value.",
       "environment": {
         "MATCH_ROOM_ID": "Opaque room token.",
         "MATCH_GENERATION": "Opaque unique generation token assigned before spawn.",
@@ -75,23 +192,76 @@
       "Manager challenge (counter 1, host recovery key) with {workerNonce, managerNonce}. Echo hello.nonce; managerNonce is 32 fresh random bytes in lowercase hex. Verify against the expected room, generation, UDP port and process lease before replying.",
       "Both derive the session key as HMAC-SHA-256 with the raw host recovery key over UTF-8 lines hold-til-dawn/session, 1, roomId, generation, udpPort, pid, reportSequence, workerNonce, managerNonce with no final LF. Use raw digest bytes as the new key. pid and reportSequence use decimal.",
       "Worker register (counter 2, session key) with {pid, reportSequence}. Manager registered (counter 2, session key) with {}. Both must verify the derived key before processing later records.",
-      "Worker ready with a state projection, then heartbeat with state and sequence. Retain the last observed sequence for the generation when reconciling duplicate or stale publishers. Restarted managers reconstruct from authenticated state and retain port leases until process ownership is reconciled.",
-      "After initial readiness the worker reconnects every 250 ms after control loss, with fresh nonces and counters. Keep the signed ping response flowing at least once per second, normally in reply to each heartbeat. Five seconds with no authenticated inbound traffic invalidates the control session. The worker survives control loss. New reservations and ENet admission are suspended until authenticated again, and outstanding tickets continue expiring."
+      "Worker ready with a state projection, then heartbeat with state, sequence and maxFrameMs. Retain the last observed sequence for the generation when reconciling duplicate or stale publishers. Restarted managers reconstruct from authenticated state and retain port leases until process ownership is reconciled.",
+      "After initial readiness the worker reconnects every 250 ms after control loss, with fresh nonces and counters. The manager answers each heartbeat with signed ping, which keeps at least one signed response per second flowing. Each side enforces its own authenticated-traffic deadline: the worker drops its control session after 5000 ms without authenticated inbound traffic, while the manager destroys a control socket idle for 2800 ms and treats a slot as offline until an authenticated state report arrives within 2800 ms of the last. The worker survives control loss. New reservations and ENet admission are suspended until authenticated again, and outstanding tickets continue expiring."
     ],
     "managerCommands": {
-      "reserve": "Payload matches #/$defs/reserve. requestId must be unique for a new operation, scoped to caller and operation by the manager. Retry the identical payload with its original expiresAt. expiresAt is Unix milliseconds, strictly in the future and at most 30000 ms from the worker clock. Ticket lifetime then uses the monotonic worker clock.",
-      "cancel": "Payload {ticketId}. A cancel releases a pending ticket only.",
-      "ping": "Payload {}. Sent at least once per second or in reply to each heartbeat.",
-      "close": "Payload {}. Graceful intentional room shutdown. Only send after authenticating the current generation."
+      "challenge": {
+        "$ref": "#/$defs/challenge",
+        "description": "Registration step 2. Sent at counter 1 with the host recovery key, after the hello's room, generation, UDP port and process lease all match expectations."
+      },
+      "registered": {
+        "$ref": "#/$defs/empty",
+        "description": "Registration step 4. Sent at counter 2 with the session key and an empty payload, confirming the derived session key."
+      },
+      "reserve": {
+        "$ref": "#/$defs/reserve",
+        "description": "requestId must be unique for a new operation, scoped to caller and operation by the manager. Retry the identical payload with its original expiresAt. expiresAt is Unix milliseconds, strictly in the future and at most 30000 ms from the worker clock. Ticket lifetime then uses the monotonic worker clock."
+      },
+      "cancel": {
+        "$ref": "#/$defs/cancel",
+        "description": "The manager sends {requestId} and the worker resolves it through its request ledger; the worker also accepts a direct {ticketId}. A cancel releases a pending ticket only."
+      },
+      "ping": {
+        "$ref": "#/$defs/empty",
+        "description": "Empty payload. Sent in reply to each heartbeat; the worker applies no state on receipt."
+      },
+      "close": {
+        "$ref": "#/$defs/empty",
+        "description": "Empty payload. Graceful intentional room shutdown. Only send after authenticating the current generation."
+      }
     },
     "workerEvents": {
-      "ready": "Payload matches #/$defs/state. Emitted once per established session.",
-      "heartbeat": "Payload matches #/$defs/state plus required sequence. Emitted as the state projection changes and at least every 1000 ms while online. available counts physical slots including held vacancies. Only expose it for joining when waiting and creatorAdmitted is true.",
-      "creator_admitted": "Payload matches #/$defs/state. A re-registering worker can report creatorAdmitted=true after the event was lost.",
-      "reservation": "Payload {requestId, code}; for reserved only adds {ticketId, secret, expiresAt}. secret is 32 random bytes encoded as lowercase hexadecimal. Handle room_started as a terminal response including for an already delivered reservation. Do not expose or log credentials except the direct Phase 3 WSS response to their intended client.",
-      "cancellation": "Payload {ticketId, code}, with code cancelled or unknown_ticket.",
-      "closing": "Payload {code: closed}. A port can be released after the worker process actually exits.",
-      "error": "Payload {code: unknown_command}."
+      "hello": {
+        "$ref": "#/$defs/hello",
+        "description": "Registration step 1. Sent at counter 1 with the host recovery key."
+      },
+      "register": {
+        "$ref": "#/$defs/register",
+        "description": "Registration step 3. Sent at counter 2 with the session key, echoing the hello pid and reportSequence."
+      },
+      "ready": {
+        "$ref": "#/$defs/state",
+        "description": "Emitted once per established session."
+      },
+      "heartbeat": {
+        "$ref": "#/$defs/heartbeat",
+        "description": "Emitted as the state projection changes and at least every 1000 ms while online. maxFrameMs is the longest observed gap between control polls. available counts physical slots including held vacancies. Only expose it for joining when waiting and creatorAdmitted is true."
+      },
+      "creator_admitted": {
+        "$ref": "#/$defs/state",
+        "description": "A re-registering worker can report creatorAdmitted=true after the event was lost."
+      },
+      "reservation": {
+        "$ref": "#/$defs/reservation",
+        "description": "Every reply carries the requestId and a reservation code; reserved adds ticketId, secret, expiresAt and ttlMs, the remaining ticket lifetime in monotonic milliseconds, which the manager requires and bounds by its ticket TTL. secret is 32 random bytes encoded as lowercase hexadecimal. Handle room_started as a terminal response including for an already delivered reservation. Do not expose or log credentials except the direct Phase 3 WSS response to their intended client."
+      },
+      "reservation_cancelled": {
+        "$ref": "#/$defs/reservationCancelled",
+        "description": "Sent when the room starts and every outstanding reservation is invalidated; reason is always room_started. The manager resolves the pending operation with room_started."
+      },
+      "cancellation": {
+        "$ref": "#/$defs/cancellation",
+        "description": "Confirms a released ticket with code cancelled, or unknown_ticket when nothing matched. ticketId is empty when the cancel named no known ticket. The manager takes no state from this reply and does not wait for it."
+      },
+      "closing": {
+        "$ref": "#/$defs/closing",
+        "description": "Payload {code: closed}. A port can be released after the worker process actually exits."
+      },
+      "error": {
+        "$ref": "#/$defs/workerError",
+        "description": "Sent for an unknown command type. The manager treats an error frame as a protocol violation and drops the socket; only the worker is expected to recover, by reconnecting."
+      }
     },
     "reservationCodes": ["reserved", "invalid_request", "expired", "recovering", "request_conflict", "room_started", "creator_pending", "creator_exists", "full", "identity_in_use", "busy", "unavailable", "cancelled", "admitted", "insertion_failed"],
     "enetAdmission": {
