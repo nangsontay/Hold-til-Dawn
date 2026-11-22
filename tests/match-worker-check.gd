@@ -19,6 +19,7 @@ func _initialize() -> void:
 	_check_demo_bots()
 	_check_match()
 	_check_timeout_paths()
+	_check_stalled_input()
 	_check_resume_interactions()
 	_check_replacement()
 	_check_five_night_transitions()
@@ -298,6 +299,51 @@ func _check_timeout_paths() -> void:
 	check(w.reserve(_request(20, false, 2, 70000), 64000, WALL + 64000).code == "room_started", "result has no admission")
 	w.update_game(10, 74000)
 	check(w.ready.is_empty() and w.state() == "waiting" and w.sim.players.size() == 2, "humans return to same lobby")
+
+
+func _check_stalled_input() -> void:
+	var w := _worker()
+	for id in [2, 3, 4]:
+		_join(w, id)
+	_ready_all(w)
+	w.action(2, "start", 0, 100)
+	w.last_input.erase(4)
+	w.receive_input(3, 1, 1000)
+	check(w.update_game(0, 1000).is_empty() and w.sim.frozen and w.snapshot(1000).room.timeout == "connection",
+		"silent peer pauses the match without disconnecting")
+	for tick in range(1050, 12051, 50):
+		w.receive_input(3, 2 + (tick - 1050) / 50, tick)
+		check(w.update_game(0, tick).is_empty(), "healthy peer stays connected throughout the pause")
+	w.receive_input(3, 223, 12099)
+	check(w.update_game(0, 12099).is_empty(), "silence below the cap preserves all peers")
+	w.receive_input(3, 224, 12100)
+	var removed := w.update_game(0, 12100)
+	check(removed == [2], "only the peer silent for the cap is disconnected")
+	check(w.timeout == "continue" and w.vacancies.has(2) and w.admitted.has(3) and w.admitted.has(4),
+		"stalled peer departure opens the continue vote and preserves healthy and untracked peers")
+	w.disconnected(2, 12101)
+	check(w.vacancies.size() == 1 and w.deadline == 42100, "duplicate disconnect does not restart the vote")
+
+	var recovered := _worker()
+	for id in [2, 3]:
+		_join(recovered, id)
+	_ready_all(recovered)
+	recovered.action(2, "start", 0, 100)
+	recovered.receive_input(3, 1, 1000)
+	recovered.update_game(0, 1000)
+	recovered.receive_input(2, 1, 2000)
+	recovered.receive_input(3, 2, 2000)
+	check(recovered.update_game(0, 2000).is_empty() and not recovered.sim.frozen and recovered.timeout.is_empty(),
+		"input returning before the cap resumes without disconnecting")
+
+	var multiple := _worker()
+	for id in [2, 3, 4]:
+		_join(multiple, id)
+	_ready_all(multiple)
+	multiple.action(2, "start", 0, 100)
+	multiple.receive_input(4, 1, 12100)
+	check(multiple.update_game(0, 12100) == [2, 3] and multiple.vacancies.size() == 2 and multiple.timeout == "continue",
+		"all simultaneously stalled peers enter the same departure vote")
 
 
 func _check_replacement() -> void:

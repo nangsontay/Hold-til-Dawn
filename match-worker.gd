@@ -10,6 +10,7 @@ const TRANSPORT_PEERS := 13
 const HANDSHAKE_MS := 5000
 const CHALLENGE_MS := 3000
 const ACTIVE_IDLE_MS := 900
+const MAX_INPUT_SILENCE_MS := 12000
 const ENET_PING_MS := 200
 const ENET_TIMEOUT_MIN_MS := 1500
 const ENET_TIMEOUT_MAX_MS := 3000
@@ -427,6 +428,11 @@ func update_game(dt: float, now: int) -> Array:
 		if silent:
 			connection_paused = true
 			sim.frozen = true
+			var stalled := admitted.keys().filter(
+				func(peer): return now - last_input.get(peer, now) >= MAX_INPUT_SILENCE_MS)
+			for peer in stalled:
+				disconnected(peer, now)
+				timed_out.append(peer)
 			return timed_out
 		if connection_paused:
 			_resume()
