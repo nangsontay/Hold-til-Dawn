@@ -43,8 +43,14 @@ func capture() -> void:
 		var id: int = landmark.id
 		if only != 0 and only != id:
 			continue
-		var at = w.lm_at.get(id, Vector2.ZERO)
-		var centre: Vector2 = Vector2.ZERO if id == 1 else at if w.lm_at.has(id) else landmark.pos
+		var _t2
+		var at
+		if id == 1:
+			_t2 = Vector2.ZERO
+		else:
+			at = w.lm_at.get(id, Vector2.ZERO)
+			_t2 = at if w.lm_at.has(id) else landmark.pos
+		var centre: Vector2 = _t2
 		if id == 8:
 			centre = w.swamp_centre
 		if id == 15 and w.ponds.size() > 0:

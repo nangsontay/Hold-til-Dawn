@@ -820,9 +820,10 @@ static func quant(v: float, top: int, x: int, y: int, dither: float = 0.45) -> i
 	return clampi(int(floorf(v * (top + 1) + d)), 0, top)
 
 static func hash_(x: int, y: int, seed_: int) -> float:
-	var h: int = x * 374761393 + y * 668265263 + seed_ * 1442695041
-	h = (h ^ h >> 13) * 1274126177
-	return ((h ^ h >> 16) & 0xFFFF) / 65535.0
+	# C# uint arithmetic: wraps at 32 bits
+	var h: int = Cs.u32(x * 374761393 + y * 668265263 + seed_ * 1442695041)
+	h = Cs.u32((h ^ (h >> 13)) * 1274126177)
+	return ((h ^ (h >> 16)) & 0xFFFF) / 65535.0
 
 # smooth value noise with a cell size in pixels
 static func value(x: int, y: int, cell: int, seed_: int) -> float:

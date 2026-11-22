@@ -411,3 +411,14 @@ static func group_by(a, key: Callable) -> Array:
 static func copy_to(src, dst: Array, at: int = 0) -> void:
 	for i in src.size():
 		dst[at + i] = src[i]
+
+
+## C# int arithmetic wraps at 32 bits (GDScript ints are 64-bit): the value as a signed 32-bit int.
+static func i32(v: int) -> int:
+	v = v & 0xFFFFFFFF
+	return v - 0x100000000 if v >= 0x80000000 else v
+
+
+## ... and as an unsigned 32-bit int (C# uint).
+static func u32(v: int) -> int:
+	return v & 0xFFFFFFFF

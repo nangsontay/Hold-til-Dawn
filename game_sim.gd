@@ -1618,8 +1618,12 @@ func inventory_box(p, box) -> Variant:
 		return p.inv
 	if box == "sto":
 		return storage if at_storage(p) else null
-	var id = box.substr(6).to_int()
-	if not box.begins_with("chest:") or not box.substr(6).is_valid_int():
+	var _c1 = not box.begins_with("chest:")
+	var id
+	if not _c1:
+		id = box.substr(6).to_int()
+		_c1 = not box.substr(6).is_valid_int()
+	if _c1:
 		return null
 	var c = chest_by_id(id)
 	return c.slots if can_access_chest(p, c) else null
@@ -3414,7 +3418,7 @@ func gen_nodes() -> void:
 	var home_count = Cs.arr(3, 0)
 	for site in geometry.harvest_sites:
 		var node = site.create_node()
-		if site.type < 3 and WorldGeometry.in_home_farm(site.pos, site.type) and home_count[site.type] < primary_count:
+		if site.type < 3 and WorldGeometry.in_home_farm_2(site.pos, site.type) and home_count[site.type] < primary_count:
 			node["ambient"] = false
 			home_count[site.type] += 1
 			nodes.append(node)

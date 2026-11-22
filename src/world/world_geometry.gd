@@ -1327,7 +1327,7 @@ func build_home_farm_landmarks() -> void:
 
 func ensure_home_farm_resources(primary_count: int = 0) -> void:
 	for type in range(3):
-		var have: int = harvest_sites.filter(func(s): return s.type == type and in_home_farm(s.pos, type)).size()
+		var have: int = harvest_sites.filter(func(s): return s.type == type and in_home_farm_2(s.pos, type)).size()
 		var want: int = maxi(home_farm_minimum[type], primary_count)
 		var slots = home_farm_slots[type]
 		if want > slots.size():
@@ -1371,15 +1371,19 @@ func thin_outside_resources() -> void:
 	var flat = []
 	var outside: int = 0
 	for d in scatter:
-		outside += 1
-		if in_home_farm(Vector2(d[0])) or outside % 4 != 0:
+		var _c1 = in_home_farm(Vector2(d[0]))
+		if not _c1:
+			outside += 1
+			_c1 = outside % 4 != 0
+		if _c1:
 			flat.append(d)
 	scatter = flat
 
 static func resource_order(p: Vector2) -> int:
-	var h: int = int(p.x) * 73856093 ^ int(p.y) * 19349663
+	# C# uint arithmetic: wraps at 32 bits
+	var h: int = Cs.u32(int(p.x) * 73856093 ^ int(p.y) * 19349663)
 	h ^= h >> 16
-	h *= 0x7feb352d
+	h = Cs.u32(h * 0x7feb352d)
 	h ^= h >> 15
 	return h
 

@@ -25,8 +25,14 @@ static func stage_sprite(sprite, stage: int) -> Variant:
 
 static func radius(node) -> float:
 	var custom = node.get("radius")
-	var _sw1 = int(node.get("type"))
-	return float(custom) if custom != null else 8 if _sw1 == 0 else 19.84 if _sw1 == 1 else 19.2 if _sw1 == 3 else 0
+	var _t2
+	var _sw1
+	if custom != null:
+		_t2 = float(custom)
+	else:
+		_sw1 = int(node.get("type"))
+		_t2 = 8 if _sw1 == 0 else 19.84 if _sw1 == 1 else 19.2 if _sw1 == 3 else 0
+	return _t2
 
 static func from_snapshot(n) -> Variant:
 	return {"type": n[0], "pos": n[1], "amount": n[2], "radius": n[4] if n.size() > 4 else null}

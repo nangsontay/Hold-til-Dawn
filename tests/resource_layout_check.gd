@@ -42,7 +42,7 @@ func _ready() -> void:
 	var minimum = [36, 32, 36]
 	for type in range(3):
 		var c: Vector2 = WorldGeometry.home_farm_centre(type)
-		var here = Array(nodes.filter(func(n): return int(n["type"]) == type and WorldGeometry.in_home_farm(Vector2(n["pos"]), type))).duplicate()
+		var here = Array(nodes.filter(func(n): return int(n["type"]) == type and WorldGeometry.in_home_farm_2(Vector2(n["pos"]), type))).duplicate()
 		var soil = Cs.first_or_default(WorldGeometry.landmark_soils, func(p): return p.id == type + 2)
 		if here.size() < minimum[type] or w.lm_at[type + 2] != c or w.soil_centre(soil) != c:
 			Cs.fail("Home farm and its soil have different centres or insufficient resources")

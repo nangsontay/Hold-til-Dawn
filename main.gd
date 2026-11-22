@@ -222,8 +222,12 @@ func dev_args(args) -> void:
 			var _v1 = (IslandMap.by_id(id).pos if IslandMap.by_id(id) != null else null)
 			var at: Vector2 = _v1 if _v1 != null else Vector2.ZERO
 			var wg = geometry
-			var built = wg.lm_at.get(id, Vector2.ZERO)
-			if geometry is WorldGeometry and wg.lm_at.has(id):
+			var _c2 = geometry is WorldGeometry
+			var built
+			if _c2:
+				built = wg.lm_at.get(id, Vector2.ZERO)
+				_c2 = wg.lm_at.has(id)
+			if _c2:
 				at = built
 			sim.teleport(me, IslandMap.pull_inland(at + Vector2(0, 2.5 * T), T))
 		elif a_.begins_with("--goto="):
@@ -749,7 +753,7 @@ func _draw() -> void:
 		elif kind == 22:
 			draw_installed_radio()
 		elif kind == 0:
-			self.sprite(it[2], it[3], it[4], it[5])
+			self.sprite_2(it[2], it[3], it[4], it[5])
 			self.draw_ore_glow(Cs.s(it[2]), Vector2(it[3]), float(it[4]))
 		elif kind == 1:
 			self.wall(it[2], it[3], it[4], it[5], it[6])
@@ -992,8 +996,12 @@ func sprite_rect(n, pos, s) -> Variant:
 
 func sprite(n, pos, s, mod_ = null) -> void:
 	var name = n
-	var at = pos
-	if n is String and pos is Vector2:
+	var _c1 = n is String
+	var at
+	if _c1:
+		at = pos
+		_c1 = pos is Vector2
+	if _c1:
 		var f = s
 		var c = mod_
 		f = s
@@ -2359,7 +2367,7 @@ func draw_base_fog() -> void:
 	var y0: float = r.position.y
 	# riveted concrete slabs in the walls' cream, each a shade apart, rust bleeding from some seams (the rim around them is the walls'
 	# concrete coping, src/world/view/Main.BaseLook.cs)
-	draw_rect(r, rf("8A8069"))
+	draw_rect(r, rf_2("8A8069"))
 	var pw: int = 32
 	var ph: int = 25
 	var y: float = y0
@@ -2379,7 +2387,7 @@ func draw_base_fog() -> void:
 			for rv in RIVETS:
 				var at: Vector2 = p.position + rv
 				if p.has_point(at):
-					draw_rect(Rect2(at, Vector2.ONE), rf("E8E0CB"))
+					draw_rect(Rect2(at, Vector2.ONE), rf_2("E8E0CB"))
 					draw_rect(Rect2(at + Vector2(0, 1), Vector2.ONE), rf_2("7A705C", 0.7))
 			# weathering: rust blooms and streaks, a few pale patches
 			if hs % 3 == 0:
@@ -2412,19 +2420,19 @@ func draw_base_fog() -> void:
 		draw_colored_polygon(sh, rf_2("000000", 0.28))
 	# where the lighthouse comes up through the roof: a rusty steel collar
 	self.roof_ellipse(foot + Vector2(4, 2), 34, 9, rf_2("000000", 0.3))
-	self.roof_ellipse(foot, 30, 8, rf("6B5444"))
-	self.roof_ellipse(foot, 30, 8, rf("2E353D"), false)
-	self.roof_ellipse(foot, 26, 6, rf("8A6A4E"), false)
+	self.roof_ellipse(foot, 30, 8, rf_2("6B5444"))
+	self.roof_ellipse(foot, 30, 8, rf_2("2E353D"), false)
+	self.roof_ellipse(foot, 26, 6, rf_2("8A6A4E"), false)
 
 # a vent grate: concrete frame, dark slats
 func roof_grate(g: Rect2) -> void:
 	draw_rect(Rect2(g.position + Vector2(2, 3), g.size), rf_2("000000", 0.3))
-	draw_rect(g.grow(2), rf("2E353D"))
-	draw_rect(g.grow(1), rf("C8BDA3"))
-	draw_rect(g, rf("23282E"))
+	draw_rect(g.grow(2), rf_2("2E353D"))
+	draw_rect(g.grow(1), rf_2("C8BDA3"))
+	draw_rect(g, rf_2("23282E"))
 	var x: float = g.position.x + 2
 	while x < g.end.x - 1:
-		draw_rect(Rect2(x, g.position.y + 1, 1, g.size.y - 2), rf("8A8069"))
+		draw_rect(Rect2(x, g.position.y + 1, 1, g.size.y - 2), rf_2("8A8069"))
 		x += 3.0
 	draw_rect(Rect2(g.position.x, g.position.y, g.size.x, 1), rf_2("000000", 0.4))
 
@@ -2524,9 +2532,10 @@ const PILASTER_EVERY: int = 96
 var base_lamps = []
 
 static func hash_(x: int, y: int) -> int:
-	var h: int = x * 374761393 + y * 668265263
-	h = (h ^ h >> 13) * 1274126177
-	return (h ^ h >> 16) & 0x7fffffff
+	# C# int arithmetic: wraps at 32 bits
+	var h: int = Cs.i32(x * 374761393 + y * 668265263)
+	h = Cs.i32((h ^ (h >> 13)) * 1274126177)
+	return (h ^ (h >> 16)) & 0x7fffffff
 
 static func mod(a_: int, m: int) -> int:
 	return (a_ % m + m) % m
@@ -3312,13 +3321,17 @@ func draw_fishing_rod(index: int) -> void:
 	draw_rect(Rect2(float_.round() - Vector2(2, 3), Vector2(4, 3)), Color("C55B42"))
 
 func draw_fishing_life(w, view: Rect2, time: float) -> void:
-	var pier = w.lm_at.get(10, Vector2.ZERO)
-	if interior_active or not w.lm_at.has(10) or not Cs.has_point(view.grow(360), pier):
+	var _c1 = interior_active
+	var pier
+	if not _c1:
+		pier = w.lm_at.get(10, Vector2.ZERO)
+		_c1 = not w.lm_at.has(10)
+	if _c1 or not Cs.has_point(view.grow(360), pier):
 		return
 	for l in range(w.fishing_litter.size()):
-		var _d1 = w.fishing_litter[l]
-		var p = _d1[0]
-		var kind = _d1[1]
+		var _d2 = w.fishing_litter[l]
+		var p = _d2[0]
+		var kind = _d2[1]
 		if not view.has_point(p):
 			continue
 		draw_rect(Rect2(p + Vector2(-5, 2), Vector2(12, 3)), Color("343F35", 0.4))
@@ -3600,7 +3613,7 @@ const LILY: Color = Color("4E8C46")
 const LILY_LIT: Color = Color("6FAE5A")
 
 static func h01(x: int, y: int) -> float:
-	return float((x * 374761393 + y * 668265263 ^ 0x5bd1e995) % 1000) / 1000.0
+	return float((Cs.u32(x * 374761393 + y * 668265263) ^ 0x5bd1e995) % 1000) / 1000.0
 
 func draw_landmark_ground(w, view: Rect2) -> void:
 	var tl: float = float(T)
@@ -3613,7 +3626,7 @@ func draw_landmark_ground(w, view: Rect2) -> void:
 		var p = _it2[0]
 		var name = _it2[1]
 		if Cs.has_point(view.grow(12 * tl), p):
-			self.sprite_2(name, p, WorldGeometry.LANDMARK_SCALE, COLD)
+			self.sprite(name, p, WorldGeometry.LANDMARK_SCALE, COLD)
 	var clk: float = float(clock)
 	draw_lookout_ground(w, view, clk)
 	draw_compound_ground(w, view)
@@ -4904,8 +4917,7 @@ func craft_button(vs: Vector2) -> Rect2:
 # 8 -> "8", 1.5 -> "1.5"
 static func num(v) -> Variant:
 	var f: float = float(v)
-	return str(int(f)) if f == floorf(f) else Cs.s(f)
-	# TODO(cs2gd): ToString format '0.#'
+	return str(int(f)) if f == floorf(f) else String.num(f, 1)
 
 static func key_of(i: int) -> Variant:
 	var n: int = 0
@@ -5833,8 +5845,12 @@ func draw_landmark_dots(ci, inside: Rect2, to, big: bool) -> void:
 	var w = geometry
 	var dr: float = 3.5 if big else 2.0
 	for l in IslandMap.landmarks:
-		var at = w.lm_at.get(l.id, Vector2.ZERO)
-		if l.id == 1 or not w.lm_at.has(l.id):
+		var _c1 = l.id == 1
+		var at
+		if not _c1:
+			at = w.lm_at.get(l.id, Vector2.ZERO)
+			_c1 = not w.lm_at.has(l.id)
+		if _c1:
 			continue
 		var p: Vector2 = to.call(at)
 		if not Cs.has_point(inside.grow(-2), p):
@@ -5851,8 +5867,12 @@ func draw_landmark_dots(ci, inside: Rect2, to, big: bool) -> void:
 		var dots = []
 		var order = []
 		for l in IslandMap.landmarks:
-			var at = w.lm_at.get(l.id, Vector2.ZERO)
-			if l.id == 1 or not w.lm_at.has(l.id):
+			var _c2 = l.id == 1
+			var at
+			if not _c2:
+				at = w.lm_at.get(l.id, Vector2.ZERO)
+				_c2 = not w.lm_at.has(l.id)
+			if _c2:
 				continue
 			var p: Vector2 = to.call(at)
 			order.append([p, l.name])
@@ -5860,9 +5880,9 @@ func draw_landmark_dots(ci, inside: Rect2, to, big: bool) -> void:
 		# the base sits in the middle: keep labels off it
 		dots.append(Rect2(to.call(Vector2.ZERO) - Vector2.ONE * 14, Vector2.ONE * 28))
 		var placed_ = []
-		for _it1 in order:
-			var p = _it1[0]
-			var name = _it1[1]
+		for _it3 in order:
+			var p = _it3[0]
+			var name = _it3[1]
 			var sz: Vector2 = f.get_string_size(name, HORIZONTAL_ALIGNMENT_LEFT, -1, size) + Vector2(4, 0)
 			var h: float = sz.y
 			# right, left, above, below, then the corners
@@ -5887,9 +5907,9 @@ func draw_landmark_dots(ci, inside: Rect2, to, big: bool) -> void:
 					break
 			placed_.append(best)
 			label_plan.append([p, best, name])
-	for _it2 in label_plan:
-		var box_ = _it2[1]
-		var name = _it2[2]
+	for _it4 in label_plan:
+		var box_ = _it4[1]
+		var name = _it4[2]
 		var base: Vector2 = Vector2(box_.position.x + 2, box_.position.y + f.get_ascent(size))
 		ci.draw_string_outline(f, base, name, HORIZONTAL_ALIGNMENT_LEFT, -1, size, 1, Color.BLACK)
 		ci.draw_string(f, base, name, HORIZONTAL_ALIGNMENT_LEFT, -1, size, Color.BLACK)
