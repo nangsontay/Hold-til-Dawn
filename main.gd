@@ -1597,7 +1597,7 @@ func _draw_hud() -> void:
 			_text(c, Vector2(0, vs.y - 74), hint, 13, GOLD, HORIZONTAL_ALIGNMENT_CENTER, vs.x)
 
 	if craft_open:
-		var cr := Rect2(vs.x - 300, 190, 290, 22 + GameSim.RECIPES.size() * 18)
+		var cr := Rect2(vs.x - 300, 190, 290, 22 + (GameSim.RECIPES.size() + 1) * 18)
 		_panel(c, cr)
 		_text(c, cr.position + Vector2(10, 16), "WORKBENCH  (number to craft, C close)", 11, GOLD, HORIZONTAL_ALIGNMENT_LEFT, -1.0, true)
 		for i in GameSim.RECIPES.size():
@@ -1608,6 +1608,14 @@ func _draw_hud() -> void:
 			var locked: bool = r[2] > snap.unlock
 			var line := "%d  %s - %s%s" % [i + 1, r[0], ", ".join(PackedStringArray(cost)), "  [Eng]" if r[5] else ""]
 			_text(c, cr.position + Vector2(10, 34 + i * 18), line + ("  LOCKED" if locked else ""), 11, Color(1, 1, 1, 0.35) if locked else Color.WHITE)
+		var st: Dictionary = sim.storage if sim else snap.get("storage", {})
+		var stored := []
+		for res in GameSim.RES:
+			var n: int = st.get(res, 0)
+			if n > 0:
+				stored.append("%d %s" % [n, res])
+		_text(c, cr.position + Vector2(10, 34 + GameSim.RECIPES.size() * 18),
+			"Storage: " + (", ".join(PackedStringArray(stored)) if not stored.is_empty() else "empty"), 11, Color.WHITE)
 
 	if hurt > 0:  # red screen-edge flash
 		var a := hurt / 0.35 * 0.5
