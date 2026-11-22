@@ -1,27 +1,23 @@
 param(
-    [string]$Godot = 'godot',
-    [string]$Dotnet = 'dotnet',
-    [switch]$SkipBuild
+    [string]$Godot = 'godot'
 )
 
 $ErrorActionPreference = 'Stop'
 $projectPath = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-$logDirectory = Join-Path $projectPath '.tmp/csharp-tests'
+$logDirectory = Join-Path $projectPath '.tmp/tests'
 New-Item -ItemType Directory -Force -Path $logDirectory | Out-Null
 Push-Location $projectPath
 try {
-    if (-not $SkipBuild) {
-        & $Dotnet build
-        if ($LASTEXITCODE -ne 0) { throw 'C# build failed.' }
-    }
-
     function Invoke-Suite([string]$Scene, [string]$Marker, [string]$LogName) {
-        # Check both the exit code and success marker: an engine script error can otherwise exit zero.
+        # Check the exit code, the success marker and script errors: a GDScript runtime error does not stop a
+        # suite (in the C# version it was an exception that failed it).
         $ErrorActionPreference = 'Continue'
         $logPath = Join-Path $logDirectory $LogName
         & $Godot --headless --path $projectPath --log-file $logPath $Scene --quit-after 1800 2>&1 | Out-Host
         $engineExit = $LASTEXITCODE
-        if ($engineExit -ne 0 -or -not (Select-String -LiteralPath $logPath -SimpleMatch $Marker -Quiet)) {
+        $marked = Select-String -LiteralPath $logPath -SimpleMatch $Marker -Quiet
+        $scriptErrors = Select-String -LiteralPath $logPath -Pattern 'SCRIPT ERROR|FAIL \(exception\)' -Quiet
+        if ($engineExit -ne 0 -or -not $marked -or $scriptErrors) {
             throw "Suite failed: $Scene. See $logPath"
         }
     }
@@ -33,10 +29,11 @@ try {
     Invoke-Suite 'tests/SimCheck.tscn' 'ALL OK' 'simulation.log'
     Invoke-Suite 'tests/NightSpawnCheck.tscn' 'NIGHT SPAWN ALL OK' 'night-spawn.log'
     Invoke-Suite 'tests/TacticalCraftCheck.tscn' 'TACTICAL CRAFT ALL OK' 'tactical-craft.log'
-
     Invoke-Suite 'tests/SurvivalWorldCheck.tscn' 'SURVIVAL WORLD ALL OK' 'survival-world.log'
+    Invoke-Suite 'tests/ExplorationChestCheck.tscn' 'EXPLORATION CHESTS ALL OK' 'exploration-chests.log'
+    Invoke-Suite 'tests/ResourceLayoutCheck.tscn' 'RESOURCE LAYOUT ALL OK' 'resource-layout.log'
 
     # Multiplayer is removed for now; the network suite lives in git commit cf44b5f (tests/NetworkCheck.cs).
-    Write-Output 'All C# checks passed.'
+    Write-Output 'All checks passed.'
 }
 finally { Pop-Location }
