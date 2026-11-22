@@ -7,7 +7,7 @@ using HoldTilDawn;
 // island around you, and M shows the whole island large. Each landmark is a dot where its structure stands
 // (WorldGeometry.LmAt), named in black on the large map, the labels kept apart from each other.
 // The ground (sea and shallows, beach, grass, safe zone, woods, hills, pond, swamp, concrete) is drawn once into a
-// pixel image; the roads, landmark dots, towers, doors, pads, teammates, you and the camera view are drawn on top
+// pixel image; landmark dots, towers, doors, pads, teammates, you and the camera view are drawn on top
 // every frame. Walking into a landmark's area shows its name at the top of the screen.
 // Enemies are not shown: the GDD only shows what players can see (section 6.1).
 public partial class Main : Node2D
@@ -63,6 +63,7 @@ public partial class Main : Node2D
         Color Floor = new Color("4F4B42"), Wall = new Color("CFC5AC");
         WorldGeometry Terrain = (WorldGeometry)Geometry;
         var ShadeBox = IslandMap.Shade.ConvertAll(S => Bounds(S, 0));
+        var GroundMask = new LandmarkGroundMask(Terrain, new Rect2(Vector2.One * -Reach, Vector2.One * (2 * Reach)), 3);
         for (int Y = 0; Y < MAP_TEX; Y++)
             for (int X = 0; X < MAP_TEX; X++)
             {
@@ -87,6 +88,14 @@ public partial class Main : Node2D
                     foreach (var Pd in Terrain.Ponds)
                         if (IslandMap.InPolygon(Pd.Edge, P)) Col = new Color("3B6A86");
                 }
+                if (D >= 0)
+                    foreach (var Soil in WorldGeometry.LandmarkSoils)
+                    {
+                        if (!Terrain.LmAt.ContainsKey(Soil.Id)) continue;
+                        float Coverage = WorldGeometry.SoilCoverage(Soil, P - Terrain.SoilCentre(Soil));
+                        if (Coverage > 0 && GroundMask.CanPaint(P, 3, AllowBeach: true, PreserveTrails: false))
+                            Col = Col.Lerp(Soil.Id == 16 ? Terrain.CaveGroundColour(P) : new Color(Soil.Hex), Coverage);
+                    }
                 // the rivers, and their bridges across them
                 if (D >= 0 && IslandMap.InRiver(P)) Col = IslandMap.OnBridge(P) ? new Color("9C7A4E") : Shallow[2];
                 else if (D >= 0 && IslandMap.InRiver(P, IslandMap.RIVER_BANK)) Col = new Color("6B6A45");
@@ -99,7 +108,13 @@ public partial class Main : Node2D
                 for (int Px = (int)((F.Position.X + Reach) / Per); Px <= (int)((F.End.X + Reach) / Per); Px++)
                     if (Px >= 0 && Py >= 0 && Px < MAP_TEX && Py < MAP_TEX) Im.SetPixel(Px, Py, Col);
         }
-        foreach (var (F, _) in Terrain.Floors) Fill(F, new Color("A9A79C"));
+        foreach (var (F, _) in Terrain.Floors)
+        {
+            Color Surface = new("A9A79C");
+            foreach (var Site in Terrain.Lookouts.Values)
+                if (Site.Deck == F) Surface = new Color(Site.Id == 12 ? "B4B69A" : "A8B9B0");
+            Fill(F, Surface);
+        }
         foreach (var D in IslandMap.Docks) Fill(D, new Color("8C7150"));
         MapTex = new CanvasTexture { DiffuseTexture = ImageTexture.CreateFromImage(Im), TextureFilter = CanvasItem.TextureFilterEnum.Nearest };
     }
@@ -139,19 +154,11 @@ public partial class Main : Node2D
         float Texel = MAP_TEX / (2 * Reach);
         var Src = new Rect2((Focus - Vector2.One * View + Vector2.One * Reach) * Texel, Vector2.One * (2 * View * Texel));
         C.DrawTextureRectRegion(MapTex, R, Src);
-        // the roads out of the three doors (clipped to the map)
         WorldGeometry W = (WorldGeometry)Geometry;
-        List<Vector2> Clip(Vector2[] Path)
-        {
-            var Out = new List<Vector2>();
-            foreach (var P in Path) Out.Add(To(P).Clamp(Inside.Position, Inside.End));
-            return Out;
-        }
-        for (int I = 0; I < 3 && I < W.Trails.Count; I++) Ci.DrawPolyline(Clip(W.Trails[I].Path).ToArray(), new Color("8C7F5B"), Big ? 3 : 2);
         if (Big)
         {
             foreach (var (Name, Pos) in IslandMap.Bays)
-                if (Inside.HasPoint(To(Pos))) this.Text(C, To(Pos) + new Vector2(-50, 4), Name.ToUpper(), 9, new Color(0.75f, 0.85f, 0.88f, 0.8f), 1, 100);
+                if (Inside.HasPoint(To(Pos))) this.Text(C, To(Pos) + new Vector2(-50, 4), Name.ToUpper(), 9, Colors.Black, 1, 100);
         }
         // camera view
         dynamic Ct = Gd.Native(this, "get_viewport").GetCanvasTransform();
@@ -162,15 +169,6 @@ public partial class Main : Node2D
         if (Cam.HasArea()) C.DrawRect(Cam, new Color(1, 1, 1, 0.35f), false, 1);
         // landmarks: a dot where each one's structure stands, named on the large map
         this.DrawLandmarkDots(Ci, Inside, To, Big);
-        foreach (GArray S in SupplyRows())
-        {
-            if (Gd.Truth(S[2])) continue;
-            Vector2 Pos = To(S[1]);
-            if (!Inside.Grow(-10).HasPoint(Pos)) continue;
-            Ci.DrawCircle(Pos, Big ? 10 : 4, new Color("192027"));
-            Ci.DrawArc(Pos, Big ? 10 : 4, 0, Mathf.Tau, 16, SUPPLY_COL, 2);
-            if (Big) DrawComponentIcon(Ci, Gd.Int(S[0]), Pos, 1);
-        }
         // towers
         foreach (dynamic Tw in Gd.Iter(Gd.Get(Snap, "tw", new GArray())))
         {
@@ -296,8 +294,8 @@ public partial class Main : Node2D
         foreach (var (_, Box, Name) in LabelPlan)
         {
             Vector2 Base = new Vector2(Box.Position.X + 2, Box.Position.Y + F.GetAscent(SIZE));
-            Ci.DrawStringOutline(F, Base, Name, HorizontalAlignment.Left, -1, SIZE, 3, MAP_HALO);
-            Ci.DrawString(F, Base, Name, HorizontalAlignment.Left, -1, SIZE, MAP_INK);
+            Ci.DrawStringOutline(F, Base, Name, HorizontalAlignment.Left, -1, SIZE, 1, Colors.Black);
+            Ci.DrawString(F, Base, Name, HorizontalAlignment.Left, -1, SIZE, Colors.Black);
         }
     }
 
@@ -305,6 +303,7 @@ public partial class Main : Node2D
     void DrawHereName(dynamic C, dynamic Vs)
     {
         var Here = IslandMap.Near((Vector2)LocalPos, 8.0f * IslandMap.SCALE * (float)T);
+        if (((WorldGeometry)Geometry).InCaveRegion((Vector2)LocalPos)) Here = IslandMap.ById(16);
         if (Here != null && Here.Id == 1) Here = null;
         float Now = (float)Clock;
         if (Here != HereNow)
@@ -316,9 +315,8 @@ public partial class Main : Node2D
         float Age = Now - HereSince;
         if (Age > 4.0f) return;
         float A = Mathf.Clamp(Age / 0.3f, 0, 1) * Mathf.Clamp((4.0f - Age) / 0.8f, 0, 1);
-        Color Lc = KindColour(HereNow.Kind);
         // under the radio line, which sits lower at night (the night bar)
         float Y = (Gd.Get(Snap, "ph", "") == "night") ? 116 + NIGHT_BAR_H : 142;
-        this.Text(C, new Vector2(0, Y), HereNow.Name.ToUpper(), 15, new Color(Lc, A), 1, Vs.X, true);
+        this.Text(C, new Vector2(0, Y), HereNow.Name.ToUpper(), 15, new Color(Colors.Black, A), 1, Vs.X, true);
     }
 }

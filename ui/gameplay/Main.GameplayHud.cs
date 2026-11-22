@@ -185,11 +185,17 @@ public partial class Main : Node2D
             CraftOpen = !(Gd.Truth(CraftOpen));
             SelectCraftTier(CraftTier);
             BagOpen = false;
+            BagExplorationChest = -1; DragFrom = null;
         }
         else if (Gd.Equal(Code, 4194306))
         {
             // the bag opens anywhere; opened at the chest it is the chest, and closes when you walk away from it
             BagOpen = !(Gd.Truth(BagOpen));
+            BagExplorationChest = -1;
+            if (Gd.Truth(BagOpen))
+                foreach (GArray Chest in SupplyRows())
+                    if (Gd.Truth(Chest[4]) && ((Vector2)LocalPos).DistanceSquaredTo((Vector2)Chest[1]) <= GameSim.CHEST_REACH*GameSim.CHEST_REACH)
+                    { Act("open_chest",Gd.Int(Chest[0])); break; }
             BagAtChest = (Gd.Truth(BagOpen) && this.AtStorageLocal(Gd.Get(Snap.Ps, MyId)));
             DragFrom = null;
             CraftOpen = false;

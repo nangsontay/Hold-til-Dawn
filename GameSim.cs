@@ -23,31 +23,26 @@ public partial class GameSim : RefCounted
     public static readonly dynamic MODES = new GArray("Easy", "Medium", "Hard");
     public static readonly dynamic MODE_MUL = new GArray(new GArray(0.75f, 0.85f, 0.8f), new GArray(1.0f, 1.0f, 1.0f), new GArray(1.25f, 1.15f, 1.2f));
     public static readonly dynamic RES = new GArray("wood", "stone", "herb", "titanium");
-    // [name, cost, unlock tier, what it makes, amount, Engineer only]; "what" is an item id, "base" (repair) or
-    // "revive" (a Revival kit, carried to a dead teammate). Recipe table in GDD section 3.2; walls and towers are built (B).
+    // Permanent equipment, healing and maintenance are craftable. Tactical buffs/traps are chest loot only.
     public static readonly dynamic RECIPES = new GArray(
+        new GArray("5 arrows", new GDict { { "wood", 1 } }, 0, "arrow", 5, false),
+        new GArray("Stone spear", new GDict { { "wood", 8 }, { "stone", 12 } }, 1, "stone_spear", 1, false),
+        new GArray("Bow", new GDict { { "wood", 6 }, { "titanium", 2 } }, 1, "bow", 1, false),
+        new GArray("Long spear", new GDict { { "wood", 10 }, { "stone", 8 } }, 1, "long_spear", 1, false),
+        new GArray("Titanium blade", new GDict { { "wood", 10 }, { "titanium", 20 } }, 2, "titanium_blade", 1, false),
+        new GArray("Stun maul", new GDict { { "wood", 8 }, { "titanium", 6 } }, 2, "stun_maul", 1, false),
+        new GArray("3 explosive arrows", new GDict { { "wood", 3 }, { "stone", 4 }, { "titanium", 2 } }, 2, "explosive_arrow", 3, false),
         new GArray("Light armour", new GDict { { "wood", 6 } }, 0, "light_armour", 1, false),
         new GArray("Bandage", new GDict { { "herb", 2 } }, 0, "bandage", 1, false),
         new GArray("Revival kit", new GDict { { "herb", 4 }, { "titanium", 4 } }, 0, "revive", 1, false),
         new GArray("Base repair +100", new GDict { { "stone", 5 } }, 0, "base", 100, true),
-        new GArray("Stone spear", new GDict { { "wood", 8 }, { "stone", 12 } }, 1, "stone_spear", 1, false),
         new GArray("Stone armour", new GDict { { "wood", 8 }, { "stone", 16 } }, 1, "stone_armour", 1, false),
-        new GArray("Bow + 5 arrows", new GDict { { "wood", 6 }, { "titanium", 2 } }, 1, "bow", 1, false),
-        new GArray("5 arrows", new GDict { { "wood", 1 } }, 1, "arrow", 5, false),
-        new GArray("Titanium blade", new GDict { { "wood", 10 }, { "titanium", 20 } }, 2, "titanium_blade", 1, false),
         new GArray("Titanium armour", new GDict { { "titanium", 24 } }, 2, "titanium_armour", 1, false),
-        new GArray("Long spear", new GDict { { "wood", 10 }, { "stone", 8 } }, 1, "long_spear", 1, false),
-        new GArray("Stun maul", new GDict { { "wood", 8 }, { "titanium", 6 } }, 2, "stun_maul", 1, false),
-        new GArray("Vine trap", new GDict { { "wood", 3 }, { "herb", 2 } }, 0, "vine_trap", 1, false),
-        new GArray("Poison flask", new GDict { { "herb", 4 }, { "stone", 2 } }, 1, "poison_flask", 1, false),
         new GArray("Healing flask", new GDict { { "herb", 6 }, { "titanium", 2 } }, 1, "healing_flask", 1, false),
-        new GArray("Haste tonic", new GDict { { "herb", 3 } }, 0, "haste_tonic", 1, false),
-        new GArray("Gathering kit", new GDict { { "wood", 6 }, { "stone", 4 } }, 0, "gathering_kit", 1, false),
-        new GArray("3 explosive arrows", new GDict { { "wood", 3 }, { "stone", 4 }, { "titanium", 2 } }, 2, "explosive_arrow", 3, false),
         new GArray("Field repair kit", new GDict { { "wood", 4 }, { "stone", 3 }, { "titanium", 1 } }, 1, "repair_kit", 1, true),
-        new GArray("Radio battery", new GDict { { "battery_cells", 1 }, { "stone", 4 }, { "wood", 4 } }, 3, "rescue_battery", 1, false),
-        new GArray("Signal flare", new GDict { { "flare_powder", 1 }, { "herb", 4 }, { "wood", 3 } }, 3, "rescue_flare", 1, false),
-        new GArray("Lab data drive", new GDict { { "encrypted_circuit", 1 }, { "stone", 4 }, { "herb", 3 } }, 3, "rescue_data", 1, false));
+        new GArray("Gathering kit", new GDict { { "wood", 6 }, { "stone", 4 } }, 0, "gathering_kit", 1, false),
+        new GArray("Crafting kit", new GDict { { "wood", 6 }, { "stone", 4 } }, 0, "crafting_kit", 1, false),
+        new GArray("Chest key", new GDict { { "wood", 2 }, { "stone", 2 } }, 0, "chest_key", 1, false));
     public dynamic World = new WorldGeometry();
     public dynamic Phase = "lobby";
     public dynamic TimeLeft = 0.0f;
@@ -112,6 +107,8 @@ public partial class GameSim : RefCounted
 
     public void RemovePlayer(dynamic Id)
     {
+        dynamic Leaving = Gd.Get(Players,Id,null);
+        if (Leaving != null) CancelChestUnlock(Leaving);
         Gd.Erase(Players, Id);
         Gd.Erase(Order, Id);
         Gd.Erase(Votes, Id);
@@ -257,6 +254,10 @@ public partial class GameSim : RefCounted
         {
             this.MoveSlot(P, Arg);
         }
+        else if (Gd.Equal(Kind, "open_chest"))
+        {
+            OpenChestPanel(P, Gd.Int(Arg));
+        }
         else if (Gd.Equal(Kind, "give"))
         {
             this.GiveOrDrop(P);
@@ -378,7 +379,6 @@ public partial class GameSim : RefCounted
         else if ((Phase == "day"))
         {
             this.TickRoamers(Dt);
-            this.TickSupplies();
         }
         this.TickTacticalItems();
         this.TickEnemySimulation(Gd.Float((object)Dt));
@@ -421,9 +421,9 @@ public partial class GameSim : RefCounted
         foreach (dynamic Id in Gd.Iter(Players))
         {
             dynamic P = Gd.At(Players, Id);
-            Ps[Id] = new GArray(P.Name, P.Role, P.Pos, P.Hp, P.Maxhp, P.State, P.Bleed, P.Inv, P.Weapon, P.Armour, P.Flasks, (P.Swing > 0), P.Aim, P.Channel, P.ReviveP, P.Tp, ((P.NoteT > 0) ? (dynamic)(P.Note) : ""), P.Kills, P.Dmg, P.Inside, P.Entry, P.GatherAcc, P.Activity, P.ActivityTarget, P.InputSequence, P.Sel, P.CraftIdx, ((P.CraftIdx >= 0) ? (dynamic)((P.CraftT / this.CraftDuration(P.CraftIdx))) : 0.0f), P.Revives, P.Taken, (Gd.Get(P, "haste_until", 0f) > Clock), Gd.Get(P, "repair_kit_t", 0f));
+            Ps[Id] = new GArray(P.Name, P.Role, P.Pos, P.Hp, P.Maxhp, P.State, P.Bleed, P.Inv, P.Weapon, P.Armour, P.Flasks, (P.Swing > 0), P.Aim, P.Channel, P.ReviveP, P.Tp, ((P.NoteT > 0) ? (dynamic)(P.Note) : ""), P.Kills, P.Dmg, P.Inside, P.Entry, P.GatherAcc, P.Activity, P.ActivityTarget, P.InputSequence, P.Sel, P.CraftIdx, ((P.CraftIdx >= 0) ? (dynamic)((P.CraftT / PlayerCraftDuration(P, Gd.Int(P.CraftIdx)))) : 0.0f), P.Revives, P.Taken, (Gd.Get(P, "haste_until", 0f) > Clock), Gd.Get(P, "repair_kit_t", 0f), P.OpenChest, P.UnlockChest, Gd.Float(P.UnlockT) / CHEST_UNLOCK_TIME, P.ChestUseSeq);
         }
-        return new GDict { { "ph", Phase }, { "t", TimeLeft }, { "k", K }, { "base", BaseHp }, { "doors", Doors }, { "active", Active }, { "ps", Ps }, { "en", Gd.Map(Enemies, (Func<dynamic, dynamic>)((E) => new GArray(E.Id, E.Type, E.Pos, E.Hp, E.Maxhp, E.R, Gd.Get(E, "kind", (-1)), this.BossLook(E), Gd.Get(E, "face", 0.0f), (Gd.Get(E, "swing", 0.0f) > 0), (Gd.Get(E, "stun_until", 0f) > Clock), (Gd.Get(E, "slow_until", 0f) > Clock)))) }, { "proj", Gd.Map(Proj, (Func<dynamic, dynamic>)((B) => new GArray(B.Pos, Gd.Get(B, "kind", "spit")))) }, { "tele", Gd.Map(Tele, (Func<dynamic, dynamic>)((Tl) => new GArray(Tl.Pos, Tl.R, (Tl.TimeLeft / Tl.Dur), Tl.Kind, Tl.End, Tl.Ang, Tl.Spread))) }, { "nodes", SnapshotNodes() }, { "drops", Gd.Map(Drops, (Func<dynamic, dynamic>)((D) => new GArray(D.Pos, D.Item, D.N, D.Ttl))) }, { "msg", (((MsgT > 0) || (Phase == "result")) ? (dynamic)(Msg) : "") }, { "unlock", Unlock }, { "votes", Gd.Size(Votes) }, { "need", Gd.Ceili((0.6f * this.Humans())) }, { "leader", this.Leader() }, { "mode", Mode }, { "ext", Ext }, { "pads", PadClear }, { "broken", Broken }, { "dpause", Gd.Map(DoorPause, (Func<dynamic, dynamic>)((V) => (V > 0))) }, { "inside_en", this.EnemyInside() }, { "tw", Gd.Map(Gd.Filter(Towers, (Func<dynamic, dynamic>)((Tw) => (Tw != null))), (Func<dynamic, dynamic>)((Tw) => new GArray(Tw.Slot, Tw.Pos, Tw.Hp, Tw.Wrecked, (Tw.Target != null), ((Tw.Target != null) ? (dynamic)(Tw.Target) : Vector2.Zero)))) }, { "free_tower", FreeTower }, { "nq", new GArray(NightKilled(), NightQuota) }, { "sup", SupplySnapshot() }, { "rescue", RescueSnapshot() }, { "construction", ConstructionSnapshot() }, { "boss_next", (((K == 2) || (K == 4)) ? (dynamic)(this.BossKindFor(K)) : (-1)) }, { "sto", Storage }, { "walls", Gd.Map(BuiltWalls, (Func<dynamic, dynamic>)((W) => new GArray(W.Pos, W.Vert, W.Hp, W.Maxhp, W.Kind))) }, { "result", Result }, { "tactical", TacticalSnapshot() }, { "arrows", Gd.Map(Arrows, (Func<dynamic, dynamic>)((A) => new GArray(A.Pos, A.Vel.Angle(), Gd.Get(A, "explosive", false)))) } };
+        return new GDict { { "ph", Phase }, { "t", TimeLeft }, { "k", K }, { "base", BaseHp }, { "doors", Doors }, { "active", Active }, { "ps", Ps }, { "en", Gd.Map(Enemies, (Func<dynamic, dynamic>)((E) => new GArray(E.Id, E.Type, E.Pos, E.Hp, E.Maxhp, E.R, Gd.Get(E, "kind", (-1)), this.BossLook(E), Gd.Get(E, "face", 0.0f), (Gd.Get(E, "swing", 0.0f) > 0), (Gd.Get(E, "stun_until", 0f) > Clock), (Gd.Get(E, "slow_until", 0f) > Clock)))) }, { "proj", Gd.Map(Proj, (Func<dynamic, dynamic>)((B) => new GArray(B.Pos, Gd.Get(B, "kind", "spit")))) }, { "tele", Gd.Map(Tele, (Func<dynamic, dynamic>)((Tl) => new GArray(Tl.Pos, Tl.R, (Tl.TimeLeft / Tl.Dur), Tl.Kind, Tl.End, Tl.Ang, Tl.Spread))) }, { "nodes", SnapshotNodes() }, { "drops", Gd.Map(Drops, (Func<dynamic, dynamic>)((D) => new GArray(D.Pos, D.Item, D.N, D.Ttl))) }, { "msg", (((MsgT > 0) || (Phase == "result")) ? (dynamic)(Msg) : "") }, { "unlock", Unlock }, { "votes", Gd.Size(Votes) }, { "need", Gd.Ceili((0.6f * this.Humans())) }, { "leader", this.Leader() }, { "mode", Mode }, { "ext", Ext }, { "pads", PadClear }, { "broken", Broken }, { "dpause", Gd.Map(DoorPause, (Func<dynamic, dynamic>)((V) => (V > 0))) }, { "inside_en", this.EnemyInside() }, { "tw", Gd.Map(Gd.Filter(Towers, (Func<dynamic, dynamic>)((Tw) => (Tw != null))), (Func<dynamic, dynamic>)((Tw) => new GArray(Tw.Slot, Tw.Pos, Tw.Hp, Tw.Wrecked, (Tw.Target != null), ((Tw.Target != null) ? (dynamic)(Tw.Target) : Vector2.Zero)))) }, { "free_tower", FreeTower }, { "nq", new GArray(NightKilled(), NightQuota) }, { "sup", SupplySnapshot() }, { "chests", ChestContentsSnapshot() }, { "rescue", RescueSnapshot() }, { "construction", ConstructionSnapshot() }, { "boss_next", (((K == 2) || (K == 4)) ? (dynamic)(this.BossKindFor(K)) : (-1)) }, { "sto", Storage }, { "walls", Gd.Map(BuiltWalls, (Func<dynamic, dynamic>)((W) => new GArray(W.Pos, W.Vert, W.Hp, W.Maxhp, W.Kind))) }, { "result", Result }, { "tactical", TacticalSnapshot() }, { "arrows", Gd.Map(Arrows, (Func<dynamic, dynamic>)((A) => new GArray(A.Pos, A.Vel.Angle(), Gd.Get(A, "explosive", false)))) } };
     }
 
     public static readonly dynamic WALL_IN = 12.0f;

@@ -43,20 +43,26 @@ public partial class TacticalCraftCheck : Node
         GD.Print("TACTICAL CRAFT CHECK simulation created");
         Sim.AddPlayer(1, "Engineer", 2); Sim.AddPlayer(2, "Ally", 1); Sim.Action(1, "start", 0);
         P = Gd.At(Sim.Players, 1); Ally = Gd.At(Sim.Players, 2);
-        Check(Gd.Size(GameSim.RECIPES) == 22 && !GameSim.ITEMS.Has("wood_shield"), "22 recipes including rescue, no shield");
-        for (int I = 10; I < 19; I++)
+        Check(Gd.Size(GameSim.RECIPES) == 18 && !GameSim.ITEMS.Has("wood_shield"), "18 approved recipes, no shield");
+        for (int I = 0; I < Gd.Size(GameSim.RECIPES); I++)
         {
             Reset(); P.Pos = GameSim.WORKBENCH_POS + new Vector2(0, 24);
             dynamic R = Gd.At(GameSim.RECIPES, I); string Id = Gd.Str(Gd.At(R, 3));
             int Tier = Gd.Int(Gd.At(R, 2)); Sim.Unlock = Tier;
+            Sim.BaseHp = 500;
             foreach (dynamic Res in Gd.Iter(Gd.At(R, 1))) Sim.SetCount(P, Res, Gd.At(Gd.At(R, 1), Res));
             Check(Sim.CanCraft(P, I, false), Id + " affordable at correct tier");
             if (Tier > 0) { Sim.Unlock = Tier - 1; Check(!Sim.CanCraft(P, I, false), Id + " locked before tier"); Sim.Unlock = Tier; }
-            Sim.Craft(P, I); Sim.TickCraft(P, 2f); Check(Sim.Count(P, Id) == 0, Id + " requires full craft time");
-            Sim.TickCraft(P, 1.1f); Check(Sim.Count(P, Id) == Gd.Int(Gd.At(R, 4)), Id + " craft output");
+            Sim.BaseHp = 500;
+            float Duration = Sim.PlayerCraftDuration(P,I);
+            Sim.Craft(P, I); Sim.TickCraft(P, Duration-.1f);
+            Check(P.CraftIdx == I, Id + " requires full craft time");
+            Sim.TickCraft(P, .11f);
+            bool Crafted = Id == "base" ? Sim.BaseHp == 600 : GameSim.KindOf(Id) == "armour" ? P.Armour == Gd.Find(GameSim.ARMOUR_ITEMS,Id) : Sim.Count(P,Id) == Gd.Int(Gd.At(R,4));
+            Check(Crafted, Id + " craft output");
             foreach (dynamic Res in Gd.Iter(Gd.At(R, 1))) Check(Sim.Count(P, Res) == 0, Id + " spends " + Res);
-            Check(GameSim.TacticalDescription(Id).Length > 0, Id + " has usage instructions");
-            Check(ResourceLoader.Exists("res://art/items/" + Id + ".png"), Id + " has imported icon");
+            Check(Id is not ("haste_tonic" or "poison_flask" or "vine_trap"), Id + " is allowed crafting");
+            Check(Id is "chest_key" or "crafting_kit" || ResourceLoader.Exists("res://art/items/" + (Id == "base" ? "base_repair" : Id == "revive" ? "revival_kit" : Id) + ".png"), Id + " has native or imported icon");
         }
         Reset(); Give("haste_tonic", 2);
         float NormalSpeed = Sim.PlayerSpeed(P);
@@ -152,6 +158,6 @@ public partial class TacticalCraftCheck : Node
         Check(MathF.Abs(Gd.Float(P.GatherAcc) - 0.35f) < 0.001f, "dropping gathering kit restores normal rate");
         Reset(); Give("haste_tonic"); Sim.UseTacticalItem(P, "haste_tonic", Field); Sim.VineTraps.Add(new GDict()); Sim.Dawn();
         Check(Sim.VineTraps.Count == 0 && Sim.TacticalAreas.Count == 0 && Sim.PlayerSpeed(P) == Gd.Float(GameSim.SPEED), "dawn clears temporary tactical effects");
-        dynamic Snapshot = Sim.Snapshot(); Check(Gd.Has(Snapshot, "tactical") && Gd.Size(Gd.At(Snapshot.Ps, 1)) == 32, "snapshot includes tactical state and speed / repair HUD fields");
+        dynamic Snapshot = Sim.Snapshot(); Check(Gd.Has(Snapshot, "tactical") && Gd.Size(Gd.At(Snapshot.Ps, 1)) == 36, "snapshot includes tactical state and storage / unlocking HUD fields");
     }
 }

@@ -21,6 +21,7 @@ public partial class Main : Node2D
     {
         foreach (dynamic Id in Gd.Iter(GameSim.ITEMS))
         {
+            if (Gd.Equal(Id,"chest_key") || Gd.Equal(Id,"crafting_kit")) continue; // native pixel icons below
             // the Revival kit's art is named after the kit, its item id is the recipe's ("revive")
             ItemTex[Id] = Gd.Load(((ITEM_ART + (Gd.Equal(Id, "revive") ? "revival_kit" : Id)) + ".png"));
         }
@@ -36,6 +37,10 @@ public partial class Main : Node2D
     public void DrawItemIcon(dynamic Canvas, dynamic Id, Vector2 Centre, float Scale)
     {
         string ItemId = Gd.Str(Id);
+        if (ItemId is "chest_key" or "crafting_kit")
+        {
+            DrawWorkshopIcon((CanvasItem)Gd.Unwrap(Canvas),ItemId,Centre,Scale); return;
+        }
         int Rescue = GameSim.RescueKind(ItemId);
         int Component = Array.IndexOf(GameSim.COMPONENT_IDS, ItemId);
         if (Rescue >= 0 || Component >= 0)
@@ -148,6 +153,8 @@ public partial class Main : Node2D
             return;
         }
         bool InBase = this.InBaseLocal(Me);
+        if (Gd.Truth(BagOpen) && BagExplorationChest >= 0 && !AtExplorationChestLocal(Me,BagExplorationChest))
+        { BagOpen = false; BagExplorationChest = -1; DragFrom = null; }
         if (Gd.Truth(CraftOpen) && !(InBase && (((Vector2)LocalPos).DistanceTo(GameSim.WORKBENCH_POS) <= (GameSim.BENCH_REACH + PANEL_SLACK))))
         {
             CraftOpen = false;
@@ -231,9 +238,11 @@ public partial class Main : Node2D
     public GArray BagSlots(dynamic Vs, dynamic Me)
     {
         var Out = new GArray();
-        bool Sto = this.AtStorageLocal(Me);
+        bool Expedition = BagExplorationChest >= 0 && AtExplorationChestLocal(Me,BagExplorationChest);
+        bool Sto = Expedition || this.AtStorageLocal(Me);
+        int Columns = Expedition ? 4 : 8, Count = Expedition ? GameSim.EXPLORATION_CHEST_SLOTS : GameSim.STORAGE_SLOTS;
         float InvW = ((4 * SLOT) + (3 * SLOT_GAP));
-        float StoW = (Sto ? ((8 * SLOT) + (7 * SLOT_GAP)) : 0.0f);
+        float StoW = (Sto ? ((Columns * SLOT) + ((Columns-1) * SLOT_GAP)) : 0.0f);
         float Gap = (Sto ? 28.0f : 0.0f);
         float X0 = ((Vs.X - ((InvW + Gap) + StoW)) / 2);
         float Y0 = ((Vs.Y / 2) - 110);
@@ -246,9 +255,10 @@ public partial class Main : Node2D
         if (Sto)
         {
             float Sx = ((X0 + InvW) + Gap);
-            for (int I = 0; I < GameSim.STORAGE_SLOTS; I++)
+            for (int I = 0; I < Count; I++)
             {
-                Out.Add(new GArray("sto", I, Gd.MakeRect2((Sx + ((I % 8) * (SLOT + SLOT_GAP))), (Y0 + ((I / 8) * (SLOT + SLOT_GAP))), SLOT, SLOT)));
+                Out.Add(new GArray(Expedition ? "chest:" + BagExplorationChest : "sto", I,
+                    Gd.MakeRect2((Sx + ((I % Columns) * (SLOT + SLOT_GAP))), (Y0 + ((I / Columns) * (SLOT + SLOT_GAP))), SLOT, SLOT)));
             }
         }
         return Out;
@@ -270,15 +280,15 @@ public partial class Main : Node2D
         Rect2 Frame = All.Grow(14).GrowSide(Side.Top, 16).GrowSide(Side.Bottom, 30);
         float Extra = Math.Max(0.0f, ((330.0f - Frame.Size.X) / 2));
         Frame = Frame.GrowIndividual(Extra, 0, Extra, 0);
-        this.Panel(C, Frame);
+        C.DrawRect(Frame,new Color("10151C")); C.DrawRect(Frame,GOLD,false,1.5f);
         this.Text(C, (All.Position + Gd.MakeVector2(0, (-14))), "YOUR BAG", 11, GOLD, 0, (-1.0f), true);
-        this.Text(C, Gd.MakeVector2(Frame.Position.X, (All.End.Y + 28)), "Tab close", 10, Gd.MakeColor(1, 1, 1, 0.6f), 1, Frame.Size.X);
+        this.Text(C, Gd.MakeVector2(Frame.Position.X, (All.End.Y + 28)), "Drag items to take / store   |   Tab close", 10, Gd.MakeColor(1, 1, 1, 0.6f), 1, Frame.Size.X);
         if ((Gd.Size(Slots) > GameSim.INV_SLOTS))
         {
             Rect2 First = (Rect2)(Gd.At(Gd.At(Slots, GameSim.INV_SLOTS), 2));
-            this.Text(C, (First.Position + Gd.MakeVector2(0, (-14))), "BASE STORAGE (shared)", 11, GOLD, 0, (-1.0f), true);
+            this.Text(C, (First.Position + Gd.MakeVector2(0, (-14))), BagExplorationChest >= 0 ? "ISLAND CHEST (8 slots)" : "BASE STORAGE (shared)", 11, GOLD, 0, (-1.0f), true);
         }
-        dynamic Sto = Gd.Get(Snap, "sto", new GArray());
+        dynamic Sto = BagExplorationChest >= 0 ? ExplorationChestSlots() : Gd.Get(Snap, "sto", new GArray());
         Vector2 Mouse = (Vector2)(Hud.GetLocalMousePosition());
         foreach (dynamic S in Slots)
         {
@@ -287,6 +297,8 @@ public partial class Main : Node2D
             dynamic Item = (IsInv ? Gd.At(Gd.At(Me, 7), I) : ((I < Gd.Size(Sto)) ? Gd.At(Sto, I) : null));
             bool Dragged = ((DragFrom != null) && Gd.Equal(Gd.At(DragFrom, 0), Gd.At(S, 0)) && (Gd.At(DragFrom, 1) == I));
             this.DrawSlot(C, Gd.At(S, 2), (Dragged ? null : Item), (IsInv && (I == Gd.Int(Gd.At(Me, 25)))), ((IsInv && (I < GameSim.HOTBAR)) ? Gd.Str((I + 1)) : ""));
+            if (Item != null && ((Rect2)Gd.At(S,2)).HasPoint(Mouse) && DragFrom == null)
+                Text(C,new Vector2(Frame.Position.X,All.End.Y+14),GameSim.ItemName(Gd.At(Item,0)),11,Colors.White,1,Frame.Size.X);
         }
         if ((DragFrom != null))
         {

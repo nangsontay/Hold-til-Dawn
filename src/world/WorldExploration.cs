@@ -25,6 +25,7 @@ public partial class WorldGeometry
         // Every named site gets a distinct supporting scene; these props never become resource nodes.
         for (int Id = 2; Id <= 18; Id++)
         {
+            if (Id is 2 or 3 or 4 or 5 or 6 or 7 or 9 or 11 or 12 or 13 or 16 or 17 or 18) continue; // dedicated site dressing
             string[] Props = Id switch {
                 5 or 7 => new[] { "lm_cart_0", "lm_warning_0", "lm_cargo_stack_0" },
                 6 or 9 or 13 => new[] { "lm_console_0", "lm_cargo_stack_0", "lm_warning_0" },
@@ -35,7 +36,7 @@ public partial class WorldGeometry
                 for (int Try = 0; Try < 12; Try++)
                 {
                     float A = I * 2.1f + Try * .52f;
-                    Vector2 P = LmAt.GetValueOrDefault(Id, At(Id)) + Vector2.FromAngle(A) * (4.8f + Try * .3f) * TL;
+                    Vector2 P = LmAt.GetValueOrDefault(Id, At(Id)) + Vector2.FromAngle(A) * (4.8f + Try * .3f) * TL * LANDMARK_SCALE;
                     if (DressAt(P, Props[I], I == 0 ? 12 : 0)) break;
                 }
         }
@@ -57,12 +58,19 @@ public partial class WorldGeometry
     {
         var R = new Random(317);
         var Occupied = new List<Vector2>();
-        foreach (GArray D in (GArray)Deco) Occupied.Add((Vector2)D[0]);
+        int Natural = 0;
+        foreach (GArray D in (GArray)Deco)
+        {
+            Occupied.Add((Vector2)D[0]);
+            if (Harvestables.TypeOf(Gd.Str(D[1])) >= 0) Natural++;
+        }
         // One small cluster per grid cell, with clear corridors between them. Fixed seed keeps world parity.
         Rect2 B = IslandMap.Box;
-        for (float Y = B.Position.Y + 3 * TL; Y < B.End.Y; Y += 6 * TL)
-            for (float X = B.Position.X + 3 * TL; X < B.End.X; X += 6 * TL)
-                for (int K = 0; K < 2; K++)
+        // A second bounded pass replaces resources displaced by the larger landmark clearings.
+        for (int Pass = 0; Pass < 2; Pass++)
+        for (float Y = B.Position.Y + 3 * TL; Y < B.End.Y && (Pass == 0 || Natural < 860); Y += 6 * TL)
+            for (float X = B.Position.X + 3 * TL; X < B.End.X && (Pass == 0 || Natural < 860); X += 6 * TL)
+                for (int K = 0; K < 2 && (Pass == 0 || Natural < 860); K++)
                 {
                     Vector2 P = new Vector2(X, Y) + new Vector2((float)R.NextDouble() * 4 - 2, (float)R.NextDouble() * 4 - 2) * TL;
                     if (WallDist(P) < 10 * TL || !IslandMap.OnGrass(P, TL) || TerrainBlocked(P, TL)
@@ -73,7 +81,7 @@ public partial class WorldGeometry
                     int Type = R.Next(10);
                     string Name = Type < 5 ? "pine_" + R.Next(6) : Type < 8 ? "rock_" + R.Next(5) : "shrub_" + R.Next(4);
                     if (!Gd.Has(Variants, Name)) continue;
-                    ((GArray)Deco).Add(new GArray(P.Round(), Name, 1f, COLD)); Occupied.Add(P);
+                    ((GArray)Deco).Add(new GArray(P.Round(), Name, 1f, COLD)); Occupied.Add(P); Natural++;
                 }
     }
 }

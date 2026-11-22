@@ -11,6 +11,7 @@ public partial class GameSim : RefCounted
     // --- phases -------------------------------------------------------------
     public void Dawn()
     {
+        CancelRadioBuild();
         ResetNightSpawns();
         ResetTacticalItems();
         CancelAllConstruction();
@@ -51,7 +52,7 @@ public partial class GameSim : RefCounted
         }
         if ((K == 5))
         {
-            S = "Day 5/5 - keep a landing pad clear tonight";
+            S = RadioBuilt ? "Day 5/5 - radio online: keep a landing pad clear tonight" : "Day 5/5 - LAST CHANCE: assemble the locator radio before tonight!";
         }
         if ((Unlock > ShownUnlock))
         {
@@ -63,6 +64,7 @@ public partial class GameSim : RefCounted
 
     public void Dusk()
     {
+        CancelRadioBuild();
         Phase = "dusk";
         TimeLeft = DUSK;
         foreach (dynamic E in Gd.Iter(Enemies))
@@ -91,6 +93,12 @@ public partial class GameSim : RefCounted
 
     public void Night()
     {
+        CancelRadioBuild();
+        if (Gd.Int(K) == 5 && !RadioBuilt)
+        {
+            End(false, "Locator radio incomplete: find all 3 parts in landmark chests and assemble it before night 5");
+            return;
+        }
         Phase = "night";
         TimeLeft = Gd.At(NIGHT_LEN, (K - 1));
         Elapsed = 0.0f;
@@ -212,7 +220,7 @@ public partial class GameSim : RefCounted
         }
         if (!SuppliesAllIn())
         {
-            End(false, "Rescue equipment incomplete: craft the radio battery, signal flare and lab data drive by day");
+            End(false, "Locator radio incomplete: find all 3 parts in landmark chests and assemble it before night 5");
             return;
         }
         // night 5 extraction (FML-13)

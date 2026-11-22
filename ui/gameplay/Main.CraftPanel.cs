@@ -23,12 +23,12 @@ public partial class Main : Node2D
     public Rect2 CraftTierButton(Vector2 Vs, int Tier)
     {
         Rect2 P = CraftPanelRect(Vs);
-        float W = (CraftLeftW(P) - 16) / 4;
+        float W = (CraftLeftW(P) - 12) / 3;
         return new Rect2(P.Position.X + 20 + Tier * (W + 4), P.Position.Y + HEAD_H + 4, W, 26);
     }
     public void SelectCraftTier(int Tier)
     {
-        CraftTier = Mathf.Clamp(Tier, 0, 3);
+        CraftTier = Mathf.Clamp(Tier, 0, 2);
         var Choices = CraftChoices();
         if (!Choices.Contains(CraftSel)) CraftSel = Choices[0];
     }
@@ -101,7 +101,9 @@ public partial class Main : Node2D
 
     float CraftSeconds(dynamic R)
     {
-        return ((Gd.At(R, 3) == "base") ? (Gd.Float(Gd.At(R, 4)) / 20.0f) : GameSim.CRAFT_TIME);
+        dynamic Me = Gd.Get(Gd.Get(Snap,"ps",new GDict()),MyId,null);
+        return ((Gd.At(R, 3) == "base") ? (Gd.Float(Gd.At(R, 4)) / 20.0f) : GameSim.CRAFT_TIME)
+            * (Me != null && Carried(Me,"crafting_kit") > 0 ? .8f : 1f);
     }
 
     string CraftTag(string Id)
@@ -133,7 +135,7 @@ public partial class Main : Node2D
         if (GameSim.RescueKind(Id) >= 0)
         {
             Out.Add("Required for the rescue helicopter"); Out.Add("Craft by day. Installed for the whole team.");
-            Out.Add("Find its marked component at a landmark."); return Out;
+            Out.Add("Find radio parts in landmark chests."); return Out;
         }
         string[] Tactical = GameSim.TacticalDescription(Id);
         if (Tactical.Length > 0) return new List<string>(Tactical);
@@ -142,6 +144,7 @@ public partial class Main : Node2D
             dynamic S = GameSim.WEAPON_STATS[Id];
             bool Ranged = Gd.Truth(Gd.At(S, 3));
             Out.Add(Num(Gd.At(S, 0)) + " damage, " + Num(Gd.At(S, 1)) + "/s, " + (Ranged ? "range " : "reach ") + Num(Gd.At(S, 2)));
+            if (Id == "bow") Out.Add("No arrows included. Craft ammunition separately.");
             return Out;
         }
         for (int K = 1; K < Gd.Size(GameSim.ARMOUR_ITEMS); K++)
@@ -173,6 +176,9 @@ public partial class Main : Node2D
         dynamic R = Gd.At(GameSim.RECIPES, I);
         string Id = Gd.Str(Gd.At(R, 3));
         int Tier = Gd.Int(Gd.At(R, 2));
+        var Radio = Gd.Get(Snap, "rescue", null) as GArray;
+        if (Radio != null && Gd.Float(Radio[2]) > 0 && Gd.Str(Gd.At(Me,22)) == "craft" && Gd.Int(Gd.At(Me,26)) < 0)
+            return "Release E to stop assembling the radio first";
         if (Tier != 3 && Tier > Gd.Int(Gd.Get(Snap, "unlock", 0)))
         {
             return ((Tier == 1) ? "Unlocks after night 1" : "Unlocks after the first boss");
@@ -181,12 +187,7 @@ public partial class Main : Node2D
         {
             return "Only an Engineer can do this";
         }
-        int Rescue = GameSim.RescueKind(Id);
-        if (Rescue >= 0)
-        {
-            if (Gd.Get(Snap, "ph", "") != "day") return "Rescue equipment: craft by day only";
-            if (Gd.Truth(Gd.At(Gd.At(Snap.Rescue, 1), Rescue))) return "Already installed for the team";
-        }
+        if (GameSim.KindOf(Id) == "armour" && Gd.Find(GameSim.ARMOUR_ITEMS,Id) <= Gd.Int(Gd.At(Me,9))) return "Already worn";
         if (Id == "base")
         {
             if (Gd.Get(Snap, "ph", "") == "night")
@@ -242,20 +243,20 @@ public partial class Main : Node2D
         this.Text(C, (P.Position + new Vector2(20, 28)), "WORKBENCH", 18, GOLD, 0, -1.0f, true);
         // --- recipe cards, by tier
         float Lw = this.CraftLeftW(P);
-        for (int T = 0; T < 4; T++)
+        for (int T = 0; T < 3; T++)
         {
             Rect2 Tab = CraftTierButton(V, T);
             bool Open = T == 3 || T <= Gd.Int(Gd.Get(Snap, "unlock", 0));
             C.DrawRect(Tab, CraftTier == T ? new Color(0.35f, 0.29f, 0.14f, 0.95f) : new Color(0.08f, 0.09f, 0.12f, 0.9f));
             C.DrawRect(Tab, CraftTier == T ? GOLD : new Color(1, 1, 1, 0.2f), false, 1f);
-            this.Text(C, new Vector2(Tab.Position.X, Tab.Position.Y + 18), (T == 0 ? "BASIC" : T == 1 ? "STONE" : T == 2 ? "TITANIUM" : "RESCUE") + (Open ? "" : " [locked]"), 11, Open ? GOLD : Colors.Gray, 1, Tab.Size.X, true);
+            this.Text(C, new Vector2(Tab.Position.X, Tab.Position.Y + 18), (T == 0 ? "BASIC" : T == 1 ? "STONE" : "TITANIUM") + (Open ? "" : " [locked]"), 11, Open ? GOLD : Colors.Gray, 1, Tab.Size.X, true);
         }
         int Busy = Gd.Int(Gd.At(Me, 26));
         for (int I = 0; I < Gd.Size(GameSim.RECIPES); I++)
         {
             if (Gd.Int(Gd.At(Gd.At(GameSim.RECIPES, I), 2)) == CraftTier) this.DrawCraftCard(C, Me, I, this.CraftCard(V, I), Mouse, Busy);
         }
-        if (CraftTier == 3) DrawRescueChecklist(C, P);
+        DrawRescueChecklist(C, P);
         // what you carry and what is in the chest
         float By = (P.End.Y - 20);
         this.Text(C, new Vector2((P.Position.X + 20), (By + 4)), "Bag", 10, new Color(1, 1, 1, 0.6f));
@@ -374,14 +375,9 @@ public partial class Main : Node2D
         this.DrawItemIcon(C, "hammer", new Vector2((Ax + (Aw / 2) - 2), (My - 16)), 1.0f);
         this.Text(C, new Vector2(Ax, (My + 20)), (Num(this.CraftSeconds(R)) + " s"), 10, new Color(1, 1, 1, 0.7f), 1, Aw);
         X = (Ax + Aw + 10);
-        // the result (the bow comes with 5 arrows)
+        // The bow is crafted empty; ammunition is a separate recipe.
         string Count = (((N > 1) && (Id != "base")) ? ("x" + N) : ((Id == "base") ? "+100" : ""));
         this.CraftBox(C, new Rect2(X, Y, BOX, BOX), Id, Count, GOLD);
-        if (Id == "bow")
-        {
-            this.Text(C, new Vector2((X + BOX), (Y + (BOX / 2) + 8)), "+", 22, Colors.White, 1, 22.0f, true);
-            this.CraftBox(C, new Rect2((X + BOX + 22), Y, BOX, BOX), "arrow", "x5", GOLD);
-        }
         // the button, or why not
         Rect2 B = this.CraftButton(V);
         string Why = this.CraftBlock(Me, I);
@@ -424,7 +420,7 @@ public partial class Main : Node2D
         {
             Vector2 Vs = (Vector2)Hud.Size;
             Vector2 Mouse = (Vector2)(Hud.GetLocalMousePosition());
-            for (int T = 0; T < 4; T++)
+            for (int T = 0; T < 3; T++)
                 if (CraftTierButton(Vs, T).HasPoint(Mouse)) { SelectCraftTier(T); return true; }
             foreach (int I in CraftChoices())
             {

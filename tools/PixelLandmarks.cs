@@ -67,9 +67,9 @@ public partial class PixelNature : Node
         // 05 Bayside Wreck
         Lm("lm_jeep", 0, Jeep(2401), 0);
         // 06 Ruined Base
-        Lm("lm_ruin_h", 0, RuinWallH(2501, 0), 0);
-        Lm("lm_ruin_h", 1, RuinWallH(2502, 1), 0);
-        Lm("lm_ruin_v", 0, RuinWallV(2511), 0);
+        Lm("lm_ruin_h", 0, BrokenDepotWall(0), 0);
+        Lm("lm_ruin_h", 1, BrokenDepotWall(1), 0);
+        Lm("lm_ruin_v", 0, DepotReturnWall(), 0);
         Lm("lm_rack", 0, Rack(2521), 0);
         Lm("lm_crate", 0, Crate(2531), 8);
         Lm("lm_mast", 0, Mast(2541), 6);
@@ -87,9 +87,9 @@ public partial class PixelNature : Node
         // 12 Coral Lookout
         Lm("lm_lookout", 0, Lookout(3001), 0);
         // 13 Container Yard
-        Lm("lm_container", 0, Container(3101, BOX_BLUE, false), 0);
-        Lm("lm_container", 1, Container(3102, BOX_ORANGE, true), 0);
-        Lm("lm_container_end", 0, ContainerEnd(3111, BOX_RED), 0);
+        Lm("lm_container", 0, FreightContainer(0, false), 0);
+        Lm("lm_container", 1, FreightContainer(1, true), 0);
+        Lm("lm_container_end", 0, OpenFreightContainer(), 0);
         Lm("lm_drum", 0, Drum(3121, BOX_BLUE), 6);
         Lm("lm_drum", 1, Drum(3122, RUSTY), 6);
         Lm("lm_pallet", 0, Pallet(3131), 0);
@@ -97,7 +97,7 @@ public partial class PixelNature : Node
         Lm("lm_ship", 0, Ship(3201), 0);
         Lm("lm_gear", 0, Gear(3211), 8);
         // 16 Southwest Cave
-        Lm("lm_bluff", 0, Bluff(3301), 0);
+        Lm("lm_bluff", 0, ErodedCave(), 0);
         // 17 South Cape Lookout (flat, on the ground layer)
         Lm("lm_platform", 0, Platform(3401), 0);
         // 18 Abandoned Herb Garden
@@ -108,6 +108,7 @@ public partial class PixelNature : Node
 
         DrawLandmarkDetails();
         DrawExpeditionProps();
+        DrawRebuiltLandmarks();
 
         using var Fa = FileAccess.Open(LmOut.PathJoin("index.json"), FileAccess.ModeFlags.Write);
         Fa.StoreString(Json.Stringify(LmIndex, "\t"));

@@ -321,59 +321,65 @@ public partial class GameSim : RefCounted
         return (Gd.At(DOOR_POS, I) + (Gd.At(DOOR_DIR, I) * PAD_DIST));
     }
 
-    // Resource nodes at the island map's sites (src/world/IslandMap.cs, GDD 4.3): wood, stone and herbs mostly round
-    // the three clusters in the safe zone (02 Coconut Grove, 03 Limestone Flats, 04 Herb Meadow), one in four at the
-    // outer stone and herb landmarks (16 Southwest Cave; 15 Rainwater Pond, 18 Abandoned Herb Garden); titanium
-    // spread over the five salvage sites past the safe zone (05, 06, 07, 13, 14). 4 + 3n of each (n players).
-    static readonly int[][] NODE_SITES = { new[] { 2 }, new[] { 3, 16 }, new[] { 4, 15, 18 }, new[] { 5, 6, 7, 13, 14 } };
+    // Primary wood, stone and herbs share the actual compact home-farm sites and their soil footprints.
+    // Titanium remains spread over five salvage landmarks, with additional fixed veins in Southwest Cave.
+    static readonly int[] TITANIUM_SITES = { 5, 6, 7, 13, 14 };
 
     public void GenNodes()
     {
         Gd.Clear(Nodes);
+        var Geometry = (WorldGeometry)World;
+        int PrimaryCount = Gd.Int((4 + 3 * N0) * NODE_MUL);
+        Geometry.EnsureHomeFarmResources(PrimaryCount);
         var Ambient = new GArray();
-        foreach (var Site in ((WorldGeometry)World).HarvestSites) Ambient.Add(Site.CreateNode());
-        World.Rebuild(Ambient, Towers);
-        for (int Type = 0; Type < 4; Type++)
+        var HomeCount = new int[3];
+        foreach (var Site in Geometry.HarvestSites)
         {
-            int Count = Gd.Int(((4 + (3 * N0)) * NODE_MUL));
-            int[] Sites = NODE_SITES[Type];
-            for (int I = 0; I < Count; I++)
+            var Node = Site.CreateNode();
+            if (Site.Type < 3 && WorldGeometry.InHomeFarm(Site.Pos, Site.Type) && HomeCount[Site.Type] < PrimaryCount)
             {
-                int Site = (Type == 3) ? Sites[(I % Sites.Length)] : (((Sites.Length == 1) || ((I % 4) != 3)) ? Sites[0] : Sites[(1 + ((I / 4) % (Sites.Length - 1)))]);
-                bool Main = ((Type < 3) && (Site == Sites[0]));
-                Vector2 Centre = IslandMap.ById(Site).Pos;
-                // the island is drawn larger than the design map but the safe zone is not: the clusters by the
-                // outpost move in until they fit inside it
-                while (Main && (Gd.Float(GameSim.WallDist(Centre)) > ((float)SAFE_D - (5.5f * T))))
-                {
-                    Centre *= 0.96f;
-                }
-                float Spread = ((Main ? 6.5f : 6.0f) * T);
-                dynamic Spot = null;
-                for (int Attempt = 0; Attempt < 300; Attempt++)
-                {
-                    Vector2 P = (Centre + ((Vector2.FromAngle((Rng.Randf() * Mathf.Tau)) * Spread) * Mathf.Sqrt(Rng.Randf())));
-                    float Wd = Gd.Float(GameSim.WallDist(P));
-                    if (!IslandMap.OnGrass(P, (1.5f * T)) || (Wd < (3 * T)) || Gd.Truth(GameSim.InDoorLane(P)) || Gd.Truth(this.NearPad(P)))
-                    {
-                        continue;
-                    }
-                    // the clusters by the outpost stay in the safe zone, titanium stays out of it
-                    if ((Main && (Wd > ((float)SAFE_D - T))) || ((Type == 3) && (Wd < ((float)SAFE_D + (3 * T)))))
-                    {
-                        continue;
-                    }
-                    if ((World.TerrainAt(P, (0.5f * T)) is 1 or 5) || (((Vector2)World.Resolve(P, T)).DistanceTo(P) > 0.01f) || Gd.Truth(Gd.Any(Nodes, (Func<dynamic, dynamic>)((N) => (N.Pos.DistanceTo(P) <= (2.5f * T))))))
-                    {
-                        continue;
-                    }
-                    Spot = P;
-                    break;
-                }
-                // a crowded site: anywhere in the right zone
-                Spot ??= this.RandZonePoint(((Type < 3) ? (dynamic)((3 * T)) : (SAFE_D + (3 * T))), ((Type < 3) ? (dynamic)((SAFE_D - T)) : ISLAND));
-                Gd.Append(Nodes, new GDict { { "type", Type }, { "pos", Spot }, { "amount", 5 } });
+                Node["ambient"] = false; HomeCount[Site.Type]++; ((GArray)Nodes).Add(Node);
             }
+            else Ambient.Add(Node);
+        }
+        var Occupied = new GArray(); Gd.AppendArray(Occupied, Nodes); Gd.AppendArray(Occupied, Ambient);
+        World.Rebuild(Occupied, Towers);
+        for (int I = 0; I < PrimaryCount; I++)
+        {
+            int Site = TITANIUM_SITES[I % TITANIUM_SITES.Length];
+            Vector2 Centre = Geometry.LmAt.GetValueOrDefault(Site, IslandMap.ById(Site).Pos);
+            float Spread = 6 * T;
+            dynamic Spot = null;
+            for (int Attempt = 0; Attempt < 300; Attempt++)
+            {
+                Vector2 P = (Centre + ((Vector2.FromAngle((Rng.Randf() * Mathf.Tau)) * Spread) * Mathf.Sqrt(Rng.Randf())));
+                if (Geometry.InExpeditionAisle(P)) continue;
+                if (Geometry.InCompoundPassage(P)) continue;
+                if (Geometry.InLookoutPassage(P)) continue;
+                if (IslandMap.InBridgeApproach(P, T)) continue;
+                if (Site is 5 or 7 && WorldGeometry.SoilCoverage(Array.Find(WorldGeometry.LandmarkSoils, S => S.Id == Site), P - Centre) < .95f) continue;
+                // The cave supplies fixed ore veins and exterior scree, with clear walkways between them.
+                if (((WorldGeometry)World).InCaveRegion(P, T) || ((WorldGeometry)World).GardenBounds.Grow(T).HasPoint(P)
+                    || ((WorldGeometry)World).WeatherRoom.Grow(T).HasPoint(P)) continue;
+                float Wd = Gd.Float(GameSim.WallDist(P));
+                if (!IslandMap.OnGrass(P, (1.5f * T)) || (Wd < (3 * T)) || Gd.Truth(GameSim.InDoorLane(P)) || Gd.Truth(this.NearPad(P)))
+                {
+                    continue;
+                }
+                if (Wd < (float)SAFE_D + 3 * T)
+                {
+                    continue;
+                }
+                if ((World.TerrainAt(P, (0.5f * T)) is 1 or 5) || (((Vector2)World.Resolve(P, T)).DistanceTo(P) > 0.01f) || Gd.Truth(Gd.Any(Nodes, (Func<dynamic, dynamic>)((N) => (N.Pos.DistanceTo(P) <= (2.5f * T))))))
+                {
+                    continue;
+                }
+                Spot = P;
+                break;
+            }
+            // a crowded site: anywhere in the right zone
+            Spot ??= this.RandZonePoint(SAFE_D + 3 * T, ISLAND);
+            Gd.Append(Nodes, new GDict { { "type", 3 }, { "pos", Spot }, { "amount", 5 } });
         }
         // The visible forest, rocks and herbs use the same gathering rules as the original resource clusters.
         Gd.AppendArray(Nodes, Ambient);

@@ -17,7 +17,7 @@ public partial class NightSpawnProfile : Node
             using var Sim = new GameSim();
             for (int I = 1; I <= 3; I++) Sim.AddPlayer(I, "Profile", I - 1);
             Sim.Rng.Seed = 42;
-            Sim.StartMatch(); Sim.Rng.Seed = 42; Sim.EnemyBodyInterval = EveryFrame ? 0f : .05f; Sim.K = Night; Sim.Active = new GArray(0, 1, 2); Sim.Night();
+            Sim.StartMatch(); Sim.Rng.Seed = 42; Sim.EnemyBodyInterval = EveryFrame ? 0f : .05f; Sim.K = Night; Sim.RadioBuilt = true; Sim.Active = new GArray(0, 1, 2); Sim.Night();
             Sim.BossSpawned = true;
             foreach (dynamic P in Gd.Iter(Gd.Values(Sim.Players))) P.Pos = new Vector2(0, 2000);
             double SpawnMs = 0, AiMs = 0, Total = 0;

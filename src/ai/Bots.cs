@@ -205,14 +205,15 @@ public partial class Bots : RefCounted
     public static bool FetchSupply(dynamic Sim, dynamic P, dynamic Dt)
     {
         Vector2 Best = Vector2.Inf;
-        foreach (GArray S in (GArray)Sim.Supplies)
+        foreach (GameSim.ExplorationChest C in Sim.ExplorationChests)
         {
-            if (Gd.Truth(S[3])) continue;
-            Vector2 At = (Vector2)S[1];
-            if (!Best.IsFinite() || ((Vector2)P.Pos).DistanceTo(At) < ((Vector2)P.Pos).DistanceTo(Best)) Best = At;
+            if (C.Opened) continue;
+            Vector2 At = C.Pos;
+            if (!Best.IsFinite() || ((Vector2)P.Pos).DistanceSquaredTo(At) < ((Vector2)P.Pos).DistanceSquaredTo(Best)) Best = At;
         }
         if (!Best.IsFinite()) return false;
-        Bots.Move(Sim, P, Best, Dt);
+        if (((Vector2)P.Pos).DistanceTo(Best) <= 38) P.Inter = true;
+        else Bots.Move(Sim, P, Best, Dt);
         return true;
     }
 
@@ -354,6 +355,11 @@ public partial class Bots : RefCounted
             {
                 continue;
             }
+            if (P.Role == 0 && !Sim.RadioBuilt && Sim.Count(P,"chest_key") == 0)
+            {
+                int Missing = Sim.Count(P,"wood") < 2 ? 0 : Sim.Count(P,"stone") < 2 ? 1 : -1;
+                if (Missing >= 0 && Nd.Type != Missing) continue;
+            }
             float S = Gd.Float((P.Pos.DistanceTo(Nd.Pos) - ((Nd.Type == Gd.At(GATHER, P.Role)) ? (dynamic)((12.0f * T)) : 0.0f)));
             if ((S < BestS))
             {
@@ -374,7 +380,7 @@ public partial class Bots : RefCounted
         P.BotCd = 0.5f;
         bool Dead = Gd.Truth(Gd.Any(Gd.Values(Sim.Players), (Func<dynamic, dynamic>)((Q) => (Q.State == 2))));
         int HasWeapon = ((Sim.Count(P, "titanium_blade") > 0) ? 2 : ((Sim.Count(P, "stone_spear") > 0) ? 1 : 0));
-        foreach (dynamic Idx in Gd.Iter(new GArray(2, 8, 9, 11, 10, 4, 5, 0, 16, 14, 13, 12, 15, 18, 1, 3)))
+        foreach (dynamic Idx in Gd.Iter(new GArray(9, 12, 4, 5, 11, 3, 1, 7, 8, 13, 14, 15, 16, 17, 2, 0)))
         {
             dynamic R = Gd.At(GameSim.RECIPES, Idx);
             string Makes = Gd.At(R, 3);
@@ -383,6 +389,8 @@ public partial class Bots : RefCounted
                 "long_spear" => (HasWeapon < 2 && Sim.Count(P, "long_spear") == 0 && Sim.Count(P, "stun_maul") == 0),
                 "stun_maul" => (P.Role == 2 && Sim.Count(P, "stun_maul") == 0),
                 "gathering_kit" => (Sim.Count(P, "gathering_kit") == 0),
+                "crafting_kit" => (Sim.Count(P, "crafting_kit") == 0),
+                "chest_key" => (P.Role == 0 && !Sim.RadioBuilt && Sim.Count(P,"chest_key") < 2),
                 "healing_flask" => (P.Role == 1 && Sim.Count(P, "healing_flask") < 2),
                 "poison_flask" => (P.Role == 0 && Sim.Count(P, "poison_flask") < 2),
                 "vine_trap" => (P.Role == 2 && Sim.Count(P, "vine_trap") < 2),
@@ -390,6 +398,8 @@ public partial class Bots : RefCounted
                 "repair_kit" => (P.Role == 2 && Sim.Count(P, "repair_kit") < 1),
                 "stone_spear" => (HasWeapon < 1 && Sim.Count(P, "long_spear") == 0),
                 "titanium_blade" => (HasWeapon < 2),
+                "bow" => (P.Role == 0 && Sim.Count(P, "bow") == 0 && Sim.Count(P, "starter_bow") == 0),
+                "arrow" => (Sim.Count(P, "bow") > 0 && Sim.Count(P, "arrow") < 10),
                 "light_armour" => (Sim.ArmourTier(P) < 1),
                 "stone_armour" => (Sim.ArmourTier(P) < 2),
                 "titanium_armour" => (Sim.ArmourTier(P) < 3),

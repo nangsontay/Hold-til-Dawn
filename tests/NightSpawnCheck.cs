@@ -21,7 +21,7 @@ public partial class NightSpawnCheck : Node
     void Prepare(GameSim Sim, int Night)
     {
         Sim.K = Night; Sim.Enemies = new GArray(); Sim.Active = new GArray(0, 1, 2);
-        Sim.Rng.Seed = 42; Sim.Night(); Sim.BossSpawned = true;
+        Sim.Rng.Seed = 42; Sim.RadioBuilt = true; Sim.Night(); Sim.BossSpawned = true;
     }
 
     List<(float At, int Type, int Door)> Arrivals(GameSim Sim, int Night, bool Kill)

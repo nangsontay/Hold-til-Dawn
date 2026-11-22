@@ -87,17 +87,17 @@ public partial class SimCheck : Node
         this.Run(S, 0.1f);
         this.Check((Eng.GatherAcc == 0.0f), "releasing E resets gather progress");
         Eng.Pos = (GameSim.WORKBENCH_POS + Gd.MakeVector2(0, 24));
-        S.SetCount(Eng, "wood", 6);
+        S.SetCount(Eng, "wood", 1);
         S.Action(1, "craft", 0);
         this.Run(S, 2.9f);
-        this.Check((S.Count(Eng, "light_armour") == 0), "crafting takes 3 s (BAL-19)");
+        this.Check((S.Count(Eng, "arrow") == 0), "crafting takes 3 s (BAL-19)");
         this.Run(S, 0.2f);
-        this.Check(((Eng.Armour == 1) && (S.Count(Eng, "wood") == 0)), "light armour crafted at workbench");
-        this.Check((S.Count(Eng, "light_armour") == 0) && Gd.Truth(Gd.All(Eng.Inv, (Func<dynamic, dynamic>)((X) => ((X == null) || (GameSim.KindOf(Gd.At(X, 0)) != "armour"))))), "armour is worn at once and takes no bag slot");
-        S.SetCount(Eng, "wood", 6);
-        this.Check(!S.CanCraft(Eng, 0, false), "the same armour cannot be made twice");
-        S.SetCount(Eng, "wood", 0);
-        S.Action(1, "craft", 4);
+        this.Check(((S.Count(Eng, "arrow") == 5) && (S.Count(Eng, "wood") == 0)), "combat ammo crafted at workbench");
+        S.AddItem(Eng, "light_armour", 1);
+        this.Check((Eng.Armour == 1) && (S.Count(Eng, "light_armour") == 0), "looted armour is worn and takes no bag slot");
+        this.Check(Gd.Truth(Gd.All(GameSim.RECIPES, (Func<dynamic,dynamic>)(R => GameSim.KindOf(Gd.At(R,3)) is "weapon" or "ammo"))), "only combat weapons and ammo are craftable");
+        S.SetCount(Eng, "wood", 8); S.SetCount(Eng, "stone", 12);
+        S.Action(1, "craft", 1);
         this.Run(S, 3.1f);
         this.Check((S.Count(Eng, "stone_spear") == 0), "stone spear locked before night 1");
         S.TimeLeft = 0;
@@ -145,7 +145,7 @@ public partial class SimCheck : Node
             Sc.Atk = true;
             this.Run(S, 0.2f);
             Sc.Atk = false;
-            this.Check(((S.K == 2) && (S.Phase == "night") && (S.Unlock == 2)), "killing the boss unlocks titanium tier; the night goes on until its enemies and supplies are done");
+            this.Check(((S.K == 2) && (S.Phase == "night") && (S.Unlock == 2)), "killing the boss unlocks titanium tier; the night goes on until its enemy quota is cleared");
         }
     }
 
@@ -168,10 +168,10 @@ public partial class SimCheck : Node
         this.Check((Gd.Truth(E1.Inside) && Gd.Truth(GameSim.InsideBase(E1.Pos))), "Engineer holds F 2 s at a closed door and gets inside");
         // walks over to the workbench by the north wall
         E1.Pos = (GameSim.WORKBENCH_POS + Gd.MakeVector2(0, 24));
-        S.SetCount(E1, "herb", 2);
-        S.Action(1, "craft", 1);
+        S.SetCount(E1, "wood", 1);
+        S.Action(1, "craft", 0);
         this.Run(S, 3.1f);
-        this.Check((S.Count(E1, "bandage") == 1), "Engineer crafts at night inside");
+        this.Check((S.Count(E1, "arrow") == 5), "Engineer crafts combat ammo at night inside");
         Sc2.Pos = (Gd.At(GameSim.DOOR_POS, 1) + (Gd.At(GameSim.DOOR_DIR, 1) * 32));
         Sc2.Ent = true;
         this.Run(S, 2.1f);
@@ -356,7 +356,7 @@ public partial class SimCheck : Node
         // the landmarks (src/world/WorldLandmarks.cs): all 17 built, the pier walkable out over the sea, and
         // titanium still at every salvage site
         WorldGeometry Wld = (WorldGeometry)S.World;
-        this.Check((Wld.LmAt.Count == 17), ("every landmark but the outpost is built (" + Wld.LmAt.Count + ")"));
+        this.Check((Wld.LmAt.Keys.Count(Id => Id != 1) == 17), "all 17 landmarks outside the outpost are built");
         Vector2 PierEnd = Wld.LmAt[10] + new Vector2(-200, 0);
         this.Check(((IslandMap.Depth(PierEnd) < 0) && IslandMap.OnLand(PierEnd, 10) && (IslandMap.Keep(Wld.LmAt[10], PierEnd, 10) == PierEnd)), "the Old Fishing Pier can be walked out over the sea");
         bool EverySite = true;
@@ -396,7 +396,7 @@ public partial class SimCheck : Node
         S.Elapsed = 80.0f;
         S.TickWaves();
         this.Check((S.Wave == 2), "second first-night wave arrives at 80 seconds");
-        S.K = 5;
+        S.K = 5; S.RadioBuilt = true; // isolate final-night spawn timing from expedition preparation
         Gd.Clear(S.Enemies);
         S.Night();
         S.Elapsed = 30.0f;

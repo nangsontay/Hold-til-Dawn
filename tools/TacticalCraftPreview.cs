@@ -7,7 +7,7 @@ public partial class TacticalCraftPreview : Main
 {
     int Stage, WarmFrames;
     bool Capturing, Finished;
-    readonly int[] Selected = { 12, 14, 17 };
+    readonly int[] Selected = { 17, 2, 6 };
     public override void _Ready()
     {
         try
@@ -30,7 +30,7 @@ public partial class TacticalCraftPreview : Main
             dynamic P = Gd.At(Sim.Players, 1); P.Pos = GameSim.WORKBENCH_POS + new Vector2(0, 24);
             foreach (string Id in new[] { "wood", "stone", "herb", "titanium" }) Sim.SetCount(P, Id, 30);
             MyId = 1; LocalPos = P.Pos; Snap = Gd.FromVariant(Sim.Snapshot()); CraftOpen = true;
-            for (int T = 0; T < 4; T++)
+            for (int T = 0; T < 3; T++)
             {
                 SelectCraftTier(T);
                 var Cards = CraftChoices();
@@ -42,7 +42,7 @@ public partial class TacticalCraftPreview : Main
                 }
             }
             DirAccess.MakeDirRecursiveAbsolute("res://.tmp/tactical-craft");
-            GD.Print("TACTICAL CRAFT LAYOUT OK: 22 cards in 4 tabs");
+            GD.Print("TACTICAL CRAFT LAYOUT OK: 18 equipment and maintenance cards in 3 tabs");
             if (DisplayServer.GetName() == "headless") { Finished = true; GetTree().Quit(); }
         }
         catch (Exception E) { GD.PushError(E.ToString()); Finished = true; GetTree().Quit(1); }
@@ -73,11 +73,11 @@ public partial class TacticalCraftPreview : Main
                 Snap.Tactical = new GArray(new GArray("poison", new Vector2(240, 270), 3f), new GArray("heal", new Vector2(480, 270), 3f),
                     new GArray("trap", new Vector2(680, 270), 100f), new GArray("blast", new Vector2(800, 270), 0.25f));
                 DrawTacticalAreas();
-                DrawString(ThemeDB.FallbackFont, new Vector2(36, 40), "TACTICAL CRAFT / shipped icons and world effects", fontSize: 20);
-                for (int I = 10; I < 19; I++)
+                DrawString(ThemeDB.FallbackFont, new Vector2(36, 40), "EXPEDITION LOOT / support gear and world effects", fontSize: 20);
+                for (int I = 0; I < GameSim.CHEST_SUPPORT.Length; I++)
                 {
-                    string Id = Gd.Str(Gd.At(Gd.At(GameSim.RECIPES, I), 3));
-                    Vector2 Pos = new(80 + (I - 10) * 100, 440);
+                    string Id = GameSim.CHEST_SUPPORT[I];
+                    Vector2 Pos = new(40 + I * 84, 440);
                     DrawItemIcon(this, Id, Pos, 3f);
                     DrawString(ThemeDB.FallbackFont, Pos + new Vector2(-42, 52), Id.Replace('_', ' '), fontSize: 10);
                 }

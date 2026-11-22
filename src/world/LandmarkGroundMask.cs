@@ -23,12 +23,15 @@ public sealed class LandmarkGroundMask
     }
 
     // Same accepted terrain types as TerrainAt(P, Margin) is 0 or 4 or 9, within the constructor's area.
-    public bool CanPaint(Vector2 P, float Margin)
+    public bool CanPaint(Vector2 P, float Margin, bool AllowBeach = false, bool PreserveTrails = true)
     {
-        if (!IslandMap.OnLand(P) || !IslandMap.OnGrass(P, Margin)) return false;
+        if (!IslandMap.OnLand(P) || IslandMap.InRiver(P, IslandMap.RIVER_BANK + Margin)) return false;
+        if (!AllowBeach && !IslandMap.OnGrass(P, Margin)) return false;
         foreach (var (Floor, _) in World.Floors) if (Floor.Grow(Margin).HasPoint(P)) return false;
         foreach (var Pond in World.Ponds)
             if (P.DistanceTo(Pond.Centre) < Pond.Radius * 1.6f + Margin && IslandMap.InPolygon(Pond.Edge, P)) return false;
+        // Hidden routes should not leave grass-coloured slashes across a landmark's soil.
+        if (!PreserveTrails) return true;
         foreach (var (A, Delta, Length2, HalfWidth) in Segments)
         {
             float T = Math.Clamp((P - A).Dot(Delta) / Length2, 0, 1);

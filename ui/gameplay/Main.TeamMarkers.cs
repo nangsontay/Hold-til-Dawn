@@ -5,7 +5,7 @@ using HoldTilDawn;
 // Owner: Mai Thien Ngon. Where your teammates and tonight's supplies are. A teammate on screen gets a marker in
 // their role colour over the head; one off screen (or out of sight inside the base) is pinned to the screen edge
 // with their name, pointing their way. A dead teammate's marker shows a cross, so you can bring a Revival kit.
-// Supplies off screen are pinned to the edge too.
+// Expedition chest markers stay on the map; their hidden radio parts have no edge pointers.
 public partial class Main : Node2D
 {
     // in HUD units (the HUD is drawn at 960 x 540 and scaled to the window)
@@ -68,26 +68,7 @@ public partial class Main : Node2D
             Vector2 Lp = At + new Vector2(-50, 25);
             this.Text(Cw, Lp, Name, 10, Fill.Lightened(0.25f), 1, 100);
         }
-        // tonight's supplies (src/world/view/Main.Supplies.cs)
-        foreach (GArray S in SupplyRows())
-        {
-            if (Gd.Truth(S[2]))
-            {
-                continue;
-            }
-            Vector2 Sp = Ct * ((Vector2)S[1] - new Vector2(0, 16));
-            if (Screen.HasPoint(Sp))
-            {
-                continue;
-            }
-            Vector2 Dir = (Sp - Mid).Normalized();
-            Vector2 At = Spread(EdgePoint(Mid, Dir, Edge), Edge);
-            C.DrawCircle(At, 12, new Color(0.08f, 0.07f, 0.1f, 0.85f));
-            C.DrawArc(At, 12, 0, Mathf.Tau, 20, SUPPLY_COL, 2.0f);
-            Vector2 Side = new Vector2(-Dir.Y, Dir.X);
-            C.DrawColoredPolygon(new[] { At + Dir * (18 + Bob), At + Dir * 11 + Side * 6, At + Dir * 11 - Side * 6 }, SUPPLY_COL);
-            DrawComponentIcon(C, Gd.Int(S[0]), At.Round(), 1.0f);
-        }
+
     }
 
     // markers already placed this frame, so two never sit on top of each other

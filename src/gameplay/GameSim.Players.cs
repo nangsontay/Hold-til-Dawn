@@ -37,7 +37,11 @@ public partial class GameSim : RefCounted
         {
             Why = "Go to the workbench";
         }
-        else if ((RescueKind(Gd.Str(Gd.At(R, 3))) < 0) && (Gd.At(R, 2) > Unlock))
+        else if (RadioBuilder == Gd.Int(P.Id))
+        {
+            Why = "Release E to stop assembling the radio first";
+        }
+        else if (Gd.At(R, 2) > Unlock)
         {
             Why = Gd.Format("%s is locked", Gd.At(R, 0));
         }
@@ -52,10 +56,6 @@ public partial class GameSim : RefCounted
         else if (((Gd.At(R, 3) == "base") && (BaseHp >= BASE_HP)))
         {
             Why = "Generator full";
-        }
-        else if (RescueKind(Gd.Str(Gd.At(R, 3))) >= 0 && ((string)Phase != "day" || RescueCrafted[RescueKind(Gd.Str(Gd.At(R, 3)))]))
-        {
-            Why = (string)Phase != "day" ? "Rescue equipment: craft by day only" : "Already installed for the team";
         }
         else if ((GameSim.KindOf(Gd.At(R, 3)) == "armour") && (Gd.Find(ARMOUR_ITEMS, Gd.At(R, 3)) <= Gd.Int(P.Armour)))
         {
@@ -85,6 +85,8 @@ public partial class GameSim : RefCounted
         return ((Gd.At(R, 3) == "base") ? (dynamic)((Gd.At(R, 4) / 20.0f)) : CRAFT_TIME);
     }
 
+    public float PlayerCraftDuration(dynamic P, int Idx) => Gd.Float(CraftDuration(Idx)) * (Count(P, "crafting_kit") > 0 ? .8f : 1f);
+
     // Starts the craft channel; the cost is paid when it completes (TickCraft).
     public void Craft(dynamic P, dynamic Idx)
     {
@@ -109,7 +111,7 @@ public partial class GameSim : RefCounted
         }
         P.Activity = "craft";
         P.CraftT += Dt;
-        if ((P.CraftT < this.CraftDuration(P.CraftIdx)))
+        if ((P.CraftT < PlayerCraftDuration(P, Gd.Int(P.CraftIdx))))
         {
             return;
         }
@@ -125,36 +127,17 @@ public partial class GameSim : RefCounted
     public void FinishCraft(dynamic P, int Idx)
     {
         dynamic R = Gd.At(RECIPES, Idx);
-        foreach (dynamic Res in Gd.Iter(Gd.At(R, 1)))
-        {
-            int Component = Array.IndexOf(COMPONENT_IDS, Gd.Str(Res));
-            if (Component >= 0) RescueComponents[Component] -= Gd.Int(Gd.At(Gd.At(R, 1), Res));
-            else this.Take(P, Res, Gd.At(Gd.At(R, 1), Res));
-        }
-        int Rescue = RescueKind(Gd.Str(Gd.At(R, 3)));
-        if (Rescue >= 0)
-        {
-            RescueCrafted[Rescue] = true;
-            Say(Gd.Str(Gd.At(R, 0)) + " installed for rescue" + (SuppliesAllIn() ? ": all equipment ready!" : ""));
-        }
-        else if (Gd.Equal(Gd.At(R, 3), "base"))
-        {
-            BaseHp = Gd.Minf(BASE_HP, (BaseHp + Gd.At(R, 4)));
-        }
-        else
-        {
-            this.AddItem(P, Gd.At(R, 3), Gd.At(R, 4));
-            if (Gd.Equal(Gd.At(R, 3), "bow"))
-            {
-                this.AddItem(P, "arrow", 5);
-            }
-        }
+        foreach (dynamic Res in Gd.Iter(Gd.At(R, 1))) this.Take(P, Res, Gd.At(Gd.At(R, 1), Res));
+        if (Gd.Equal(Gd.At(R, 3), "base")) BaseHp = Math.Min(Gd.Float(BASE_HP), Gd.Float(BaseHp) + Gd.Int(Gd.At(R, 4)));
+        else this.AddItem(P, Gd.At(R, 3), Gd.At(R, 4));
         this.Note(P, ("Crafted " + Gd.At(R, 0)));
     }
 
     // --- players ------------------------------------------------------------
     public void ResetPlayer(dynamic P)
     {
+        CancelChestUnlock(P);
+        P.OpenChest = -1; P.ChestUseSeq = 0;
         P.Hp = Gd.At(ROLE_HP, P.Role);
         P.Maxhp = P.Hp;
         P.HasteUntil = 0f; P.ItemCd = 0f; P.RepairKitT = 0f;
@@ -209,6 +192,18 @@ public partial class GameSim : RefCounted
 
     public void TickPlayers(dynamic Dt)
     {
+        TickChestAccess();
+        if (RadioBuilder.HasValue)
+        {
+            dynamic Builder = Gd.Get(Players, RadioBuilder.Value, null);
+            if (Builder == null || Builder.State != 0 || !Gd.Truth(Builder.Inter) || !AtBench(Builder)
+                || (string)Phase != "day" || ((Vector2)Builder.Pos).DistanceSquaredTo(RadioBuildPos) > 16
+                || Gd.Float(Builder.Taken) != RadioBuildDamage)
+            {
+                CancelRadioBuild();
+                if (Builder != null) Builder.Inter = false;
+            }
+        }
         foreach (dynamic P in Gd.Iter(Gd.Values(Players)))
         {
             P.Activity = "idle";
@@ -525,6 +520,7 @@ public partial class GameSim : RefCounted
             P.Inter = false;
             return;
         }
+        if (TryLootChest(P, Gd.Float(Dt)) || TryBuildRadio(P, Gd.Float(Dt))) return;
         // repairs need the Engineer's hammer (ITM-04) and wood (BAL-23)
         if (((P.Role == 2) && !(Gd.Truth(GameSim.InsideBase(P.Pos))) && (this.Count(P, "hammer") > 0)))
         {
@@ -627,6 +623,8 @@ public partial class GameSim : RefCounted
         P.ReviveP = 0.0f;
         P.GatherAcc = 0.0f;
         P.CraftIdx = (-1);
+        if (RadioBuilder == Gd.Int(P.Id)) CancelRadioBuild();
+        CancelChestUnlock(P);
         if ((P.Hp <= 0))
         {
             P.Hp = 0.0f;

@@ -35,6 +35,8 @@ public partial class GameSim : RefCounted
         { "healing_flask", new GArray("Healing flask", 5, "use") },
         { "haste_tonic", new GArray("Haste tonic", 5, "use") },
         { "gathering_kit", new GArray("Gathering kit", 1, "tool") },
+        { "crafting_kit", new GArray("Crafting kit", 1, "tool") },
+        { "chest_key", new GArray("Chest key", 10, "tool") },
         { "explosive_arrow", new GArray("Explosive arrow", 12, "ammo") },
         { "repair_kit", new GArray("Field repair kit", 3, "use") },
         { "stone_spear", new GArray("Stone spear", 1, "weapon") },
@@ -82,7 +84,7 @@ public partial class GameSim : RefCounted
         int Component = Array.IndexOf(COMPONENT_IDS, Gd.Str(Id));
         if (Component >= 0) return SUPPLY_NAMES[Component];
         int Rescue = RescueKind(Gd.Str(Id));
-        if (Rescue >= 0) return new[] { "Radio battery", "Signal flare", "Lab data drive" }[Rescue];
+        if (Rescue >= 0) return "Locator radio";
         return (Gd.Truth(ITEMS.Has(Id)) ? (string)Gd.At(ITEMS[Id], 0) : Gd.Str(Id));
     }
 
@@ -368,6 +370,15 @@ public partial class GameSim : RefCounted
         return (this.InBaseToWork(P) && GameSim.NearStorage((Vector2)P.Pos));
     }
 
+    GArray InventoryBox(dynamic P, string Box)
+    {
+        if (Box == "inv") return (GArray)P.Inv;
+        if (Box == "sto") return AtStorage(P) ? (GArray)Storage : null;
+        if (!Box.StartsWith("chest:") || !int.TryParse(Box.AsSpan(6), out int Id)) return null;
+        var C = ChestById(Id);
+        return CanAccessChest(P,C) ? C.Slots : null;
+    }
+
     // Drag and drop between the inventory ("inv") and storage ("sto"): swaps, or merges equal stacks.
     public void MoveSlot(dynamic P, dynamic Arg)
     {
@@ -375,18 +386,16 @@ public partial class GameSim : RefCounted
         {
             return;
         }
-        bool FromSto = Gd.Equal(Gd.At(Arg, 0), "sto");
-        bool ToSto = Gd.Equal(Gd.At(Arg, 2), "sto");
-        dynamic From = (FromSto ? Storage : P.Inv);
-        dynamic To = (ToSto ? Storage : P.Inv);
-        if (((FromSto || ToSto) && !this.AtStorage(P)))
+        string FromBox = Gd.Str(Gd.At(Arg,0)), ToBox = Gd.Str(Gd.At(Arg,2));
+        dynamic From = InventoryBox(P,FromBox), To = InventoryBox(P,ToBox);
+        if (From == null || To == null)
         {
-            this.Note(P, "Go to the storage chest");
+            this.Note(P, "Unlock the chest and stand close to it");
             return;
         }
         int A = Gd.Int(Gd.At(Arg, 1));
         int B = Gd.Int(Gd.At(Arg, 3));
-        if (((A < 0) || (A >= Gd.Size(From)) || (B < 0) || (B >= Gd.Size(To)) || ((FromSto == ToSto) && (A == B))))
+        if (((A < 0) || (A >= Gd.Size(From)) || (B < 0) || (B >= Gd.Size(To)) || ((FromBox == ToBox) && (A == B))))
         {
             return;
         }
@@ -396,6 +405,16 @@ public partial class GameSim : RefCounted
         {
             return;
         }
+        int Component = Array.IndexOf(COMPONENT_IDS,Gd.Str(Gd.At(Sa,0)));
+        if (Component >= 0 && FromBox.StartsWith("chest:") && ToBox == "inv")
+        {
+            var Chest = ChestById(int.Parse(FromBox.AsSpan(6)));
+            From[A] = null; Chest.Component = -1; RescueComponents[Component] = 1;
+            Say(SUPPLY_NAMES[Component] + " secured (" + SuppliesGot() + "/3). Assemble the locator radio before night 5.");
+            return; // team part is selected explicitly but never displaces a bag item, even when full
+        }
+        // A radio part cannot be swapped into a backpack or another container by the reverse direction.
+        if (Component >= 0 || (Sb != null && Array.IndexOf(COMPONENT_IDS,Gd.Str(Gd.At(Sb,0))) >= 0)) return;
         // arrows dropped on a bow (or a bow on arrows) are loaded into it
         dynamic Bow = (GameSim.IsBow(Sb) ? Sb : (GameSim.IsBow(Sa) ? Sa : null));
         dynamic Ammo = (GameSim.IsBow(Sb) ? Sa : Sb);

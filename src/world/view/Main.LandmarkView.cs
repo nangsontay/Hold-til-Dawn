@@ -4,13 +4,12 @@ using HoldTilDawn;
 
 // Owner: Vu Duc Viet Anh. What the landmarks of src/world/WorldLandmarks.cs lay flat on the ground layer: the
 // cracked concrete of the Ruined Base and the Container Yard with grass in the joints, the Old Fishing Pier and
-// the South Cape platform (sprites from tools/PixelLandmarks.cs), the stone steps up the Northwind Slope, the
+// the South Cape platform (sprites from tools/PixelLandmarks.cs), the
 // coral reef under the Coral Lookout and the lily pads on the Rainwater Pond. Their standing parts (walls,
 // containers, the ship, the bluff...) are depth-sorted scenery like the trees.
 public partial class Main : Node2D
 {
     static readonly Color SLAB = new Color("8B8D88"), SLAB_LIT = new Color("A2A49E"), SLAB_JOINT = new Color("6C6E6A"), SLAB_EDGE = new Color("55574F");
-    static readonly Color STEP = new Color("B3AE98"), STEP_LIT = new Color("D3CEB8"), STEP_SHADE = new Color(0.1f, 0.1f, 0.06f, 0.4f);
     static readonly Color[] CORAL = { new Color("D9788A"), new Color("E09A5A"), new Color("5FB8A8"), new Color("9A7AC8"), new Color("E3C46A") };
     static readonly Color LILY = new Color("4E8C46"), LILY_LIT = new Color("6FAE5A");
 
@@ -22,32 +21,15 @@ public partial class Main : Node2D
         foreach (var (F, Drawn) in W.Floors)
             if (Drawn && F.Intersects(View)) DrawSlab(F);
         foreach (var (P, Name) in W.LmGround)
-            if (View.Grow(10 * Tl).HasPoint(P)) this.Sprite(Name, P, 1.0f, COLD);
-        foreach (var (At, Across) in W.Steps)
-        {
-            if (!View.HasPoint(At)) continue;
-            Vector2 A = (At - Across * 0.55f * Tl).Round(), B = (At + Across * 0.55f * Tl).Round();
-            DrawLine(A + new Vector2(0, 3), B + new Vector2(0, 3), STEP_SHADE, 3);
-            DrawLine(A, B, STEP, 5);
-            DrawLine(A + new Vector2(0, -2), B + new Vector2(0, -2), STEP_LIT, 1);
-        }
+            if (View.Grow(12 * Tl).HasPoint(P)) this.Sprite(Name, P, WorldGeometry.LANDMARK_SCALE, COLD);
         float Clk = (float)Clock;
-        for (int I = 0; I < W.Coral.Count; I++)
-        {
-            Vector2 P = W.Coral[I].Round();
-            if (!View.HasPoint(P)) continue;
-            Color Col = CORAL[I % CORAL.Length];
-            // seen through the water: soft, and shimmering a little
-            Col.A = 0.5f + 0.1f * MathF.Sin(Clk * 1.3f + I);
-            int Lobes = 3 + I % 3;
-            for (int K = 0; K < Lobes; K++)
-            {
-                Vector2 Q = P + Vector2.FromAngle(K * 2.4f + I) * (3 + (I * 7 + K * 3) % 6);
-                DrawCircle(Q.Round(), 3 + (I + K) % 3, Col);
-            }
-            var Lit = Col.Lightened(0.35f);
-            DrawRect(new Rect2(P + new Vector2(-1, -2), new Vector2(2, 1)), Lit);
-        }
+        DrawLookoutGround(W, View, Clk);
+        DrawCompoundGround(W, View);
+        DrawExpeditionGround(W, View);
+        DrawCaveWalls(W, View);
+        DrawGardenGround(W, View);
+        DrawWeatherGround(W, View);
+        DrawFishingLife(W, View, Clk);
     }
 
     // a concrete slab: joints every two tiles, a darker edge, cracks and grass growing through

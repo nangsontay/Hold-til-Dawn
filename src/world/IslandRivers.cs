@@ -3,7 +3,7 @@ using System;
 using System.Collections.Generic;
 
 // Owner: Vu Duc Viet Anh. The island's two rivers, one in the west and one in the east, each running from the
-// north coast to the south coast, and the two bridges across each. The water stops everyone like the sea does
+// north coast to the south coast, with bridges joining the exploration routes. The water stops everyone like the sea does
 // (IslandMap.OnLand): players, enemies, bosses and bots cross only on a bridge, and the bots' and enemies' route
 // grids mark the water solid the same way they mark the sea. Grass, trees, rocks and landmarks keep off the
 // water and its muddy banks (IslandMap.OnGrass). Each river runs straight north-south under its bridges, so the
@@ -16,14 +16,15 @@ public static partial class IslandMap
     // a bridge's deck: across the water and onto both banks, a little over three tiles wide
     public const float BRIDGE_HALF_LEN = RIVER_HALF + RIVER_BANK + 1.2f * TL;
     public const float BRIDGE_HALF_W = 1.6f * TL;
-    // a big body (a boss) may overhang the rails by the rest of its size, so it still fits over
-    const float BRIDGE_OVERHANG = 0.55f * TL;
+    public const float BRIDGE_RAIL_RADIUS = 8;
+    public const float BRIDGE_RAIL_OFFSET = BRIDGE_HALF_W - 2;
 
     // the course of each river in tiles from the outpost, north to south, from the sea to the sea
     static readonly Vector2[][] RIVER_COURSE =
     {
         // west: past the Weather Station and the Bayside Wreck, under door A's road, out by the Southwest Cave
-        new Vector2[] { new(-74, -118), new(-73, -95), new(-69, -75), new(-60, -55), new(-67, -35), new(-65, -15),
+        // The northern course separates the outpost from both western expedition sites.
+        new Vector2[] { new(-36, -118), new(-34, -95), new(-34, -75), new(-36, -55), new(-35, -35), new(-38, -15),
             new(-47, 15), new(-51, 35), new(-50, 75), new(-43, 95), new(-46, 118) },
         // east: down from the north coast west of the Ruined Base, under door C's road, out to the South Cove
         new Vector2[] { new(26, -118), new(25.5f, -95), new(25.5f, -75), new(27, -55), new(48.5f, -15),
@@ -32,8 +33,9 @@ public static partial class IslandMap
     // the bridges in tiles: [river, centre]; the river runs straight north-south through each
     static readonly (int River, Vector2 At)[] BRIDGE_SPOTS =
     {
-        (0, new(-57, 0)),      // door A's road
+        (0, new(-43, 0)),      // door A's road, east of Bayside Wreck
         (0, new(-55, 55)),     // the trail to the Southwest Cave
+        (0, new(-36, -52)),    // expedition crossing to Weather Station and Bayside Wreck
         (1, new(51, 0)),       // door C's road
         (1, new(38, -36)),     // the main route north of the Herb Meadow
     };
@@ -112,7 +114,7 @@ public static partial class IslandMap
     public static bool OnBridge(Vector2 P, float Margin = 0)
     {
         foreach (var (_, At) in Bridges)
-            if (MathF.Abs(P.X - At.X) <= BRIDGE_HALF_LEN && MathF.Abs(P.Y - At.Y) <= BRIDGE_HALF_W - Math.Clamp(Margin, 0, BRIDGE_OVERHANG)) return true;
+            if (MathF.Abs(P.X - At.X) <= BRIDGE_HALF_LEN && MathF.Abs(P.Y - At.Y) <= BRIDGE_RAIL_OFFSET - BRIDGE_RAIL_RADIUS - Math.Max(Margin, 0)) return true;
         return false;
     }
 
@@ -121,6 +123,15 @@ public static partial class IslandMap
     {
         for (int I = 0; I < Bridges.Count; I++)
             if (BridgeDeck(I).Grow(Reach).HasPoint(P)) return true;
+        return false;
+    }
+
+    // Reserve the full-width landing lane on both banks, including space for the largest enemy body.
+    public static bool InBridgeApproach(Vector2 P, float Margin = 0)
+    {
+        foreach (var (_, At) in Bridges)
+            if (MathF.Abs(P.X-At.X) <= BRIDGE_HALF_LEN+3*TL+Margin
+                && MathF.Abs(P.Y-At.Y) <= BRIDGE_HALF_W+Margin) return true;
         return false;
     }
 }

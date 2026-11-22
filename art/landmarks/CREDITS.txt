@@ -20,3 +20,8 @@ Scenery machinery and supplies are decorative, not interactive inventory items.
 Expedition update: survey tent, research console, broken cart, quarantine sign,
 cargo stack and water pump use native pixel geometry in tools/PixelExpeditionProps.cs,
 with the project palettes and outline pipeline. No external images.
+
+Expanded landmark update: tools/PixelLandmarkRebuild.cs redraws the limestone cave,
+damaged depot walls and freight containers, and adds collapsed roof sheets, two
+rubble piles, a forklift and chain-link fence. Native pixel geometry and existing
+project palettes; no external images. WorldCompounds.cs supplies matching footprints.

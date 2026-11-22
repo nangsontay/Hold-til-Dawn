@@ -39,9 +39,16 @@ public partial class HarvestCheck : Node
             }
         GD.Print($"ok   full, damaged and depleted sprites exist for all {W.HarvestSites.Count} scenery resource sites");
 
-        foreach (int Type in new[] { 0, 1, 2 })
+        int CaveOre = W.HarvestSites.Count(Site => Site.Type == 3 && W.InCaveFloor(Site.Pos));
+        int CaveStone = W.HarvestSites.Count(Site => Site.Type == 1 && W.InCaveRegion(Site.Pos) && !W.InCaveFloor(Site.Pos));
+        Check(CaveOre >= 18, $"the cave contains abundant gatherable titanium: {CaveOre} nodes");
+        Check(CaveStone >= 20, $"loose stone surrounds the cave chamber: {CaveStone} nodes");
+        var GardenHerbs = W.HarvestSites.Where(Site => Site.Type == 2 && W.GardenBounds.HasPoint(Site.Pos)).ToArray();
+        Check(GardenHerbs.Length == 36 && W.GardenBeds.All(B => GardenHerbs.Count(H => B.HasPoint(H.Pos)) == 6), "each of six garden beds retains six herbs after the 25 percent reduction");
+        foreach (int Pick in new[] { 0, 1, 2, 3, 4 })
         {
-            var Site = W.HarvestSites.First(N => N.Type == Type && N.Radius <= 20 && IslandMap.OnGrass(N.Pos, 64));
+            var Site = Pick == 4 ? GardenHerbs[0] : W.HarvestSites.First(N => N.Type == Pick && N.Radius <= 20 && IslandMap.OnGrass(N.Pos, 64));
+            int Type = Site.Type;
             var N = Site.CreateNode();
             S.Nodes = new GArray(N);
             W.StaticSolids = new GArray();

@@ -2,124 +2,78 @@ using Godot;
 using System;
 using HoldTilDawn;
 
-// Owner: Vu Duc Viet Anh. Tonight's three supplies (src/world/GameSim.Supplies.cs): each floats over a gold
-// ring with a beam of light rising from it and its own light at night, so it can be seen from far off. The
-// screen edge points to them, and the top right corner shows which are in.
+// Expedition chests have no objective beams or extra lights. Their hidden loot is server-owned.
 public partial class Main : Node2D
 {
     static readonly Color SUPPLY_COL = new Color("FFD45C");
-    PointLight2D[] SupplyLights;
-
-    // snapshot rows [kind, pos, picked up]
+    // [id, position, empty, landmark, unlocked, lock progress, lid progress]; no hidden contents.
     GArray SupplyRows() => (Gd.Get(Snap, "sup", null) as GArray) ?? new GArray();
-
-    // called with the other lights each frame
-    public void TickSupplyLights(float Night)
+    void ExplorationItems(GArray Items, Rect2 View)
     {
-        if (SupplyLights == null)
+        foreach (GArray C in SupplyRows())
         {
-            SupplyLights = new PointLight2D[GameSim.SUPPLY_COUNT];
-            for (int I = 0; I < SupplyLights.Length; I++)
-            {
-                var L = new PointLight2D
-                {
-                    Texture = (Texture2D)Gd.Unwrap(MyLight.Texture),
-                    Color = SUPPLY_COL,
-                    TextureScale = (3.0f * T * 2.0f) / 256.0f,
-                    Enabled = false,
-                    TextureFilter = CanvasItem.TextureFilterEnum.Linear,
-                    TextureRepeat = CanvasItem.TextureRepeatEnum.Disabled,
-                };
-                AddChild(L);
-                SupplyLights[I] = L;
-            }
+            Vector2 At = (Vector2)C[1];
+            if (View.Grow(60).HasPoint(At) && !HiddenOutsideInterior(At)) Items.Add(new GArray(At.Y, 21, C));
         }
-        var Rows = SupplyRows();
-        for (int I = 0; I < SupplyLights.Length; I++)
-        {
-            bool On = (I < Rows.Count) && !Gd.Truth(((GArray)Rows[I])[2]) && (Night > 0.02f);
-            SupplyLights[I].Enabled = On;
-            if (On)
-            {
-                SupplyLights[I].Position = (Vector2)((GArray)Rows[I])[1];
-                SupplyLights[I].Energy = 0.7f * Night * (0.85f + 0.15f * Mathf.Sin((float)Clock * 3.0f + I));
-            }
-        }
+        var Rescue = Gd.Get(Snap, "rescue", null) as GArray;
+        if (Rescue != null && Gd.Truth(Rescue[1]))
+            Items.Add(new GArray(GameSim.WORKBENCH_POS.Y + 1, 22));
     }
-
-    // the world pass (ground layer, under everything standing)
-    public void DrawSupplies()
+    void DrawExplorationChest(GArray C)
     {
-        float Now = (float)Clock;
-        foreach (GArray S in SupplyRows())
+        Vector2 At = (Vector2)C[1]; bool Open = Gd.Truth(C[4]), Empty = Gd.Truth(C[2]);
+        float Unlock = Gd.Float(C[5]), Lid = Open ? Mathf.SmoothStep(0,1,Gd.Float(C[6])) : 0;
+        DrawSetTransform(At);
+        DrawRect(new Rect2(-18,-3,36,9), new Color(Ep("232820"), .4f));
+        DrawRect(new Rect2(-17,-19,34,24), Ep("222D2C"));
+        DrawRect(new Rect2(-15,-17,30,20), Empty ? Ep("555B55") : Ep("6D754F"));
+        DrawRect(new Rect2(-12,-16,4,19), Ep("AFAF91")); DrawRect(new Rect2(8,-16,4,19), Ep("AFAF91"));
+        DrawRect(new Rect2(-15,-5,30,2), Ep("414D3C"));
+        if (Open)
         {
-            if (Gd.Truth(S[2]))
-            {
-                continue;
-            }
-            Vector2 At = (Vector2)S[1];
-            // a beam of light up into the sky
-            var Beam = new[] { At + new Vector2(-5, 0), At + new Vector2(5, 0), At + new Vector2(2, -150), At + new Vector2(-2, -150) };
-            var Glow = new Color(2.0f, 1.6f, 0.6f, 0.45f);
-            var Fade = new Color(2.0f, 1.6f, 0.6f, 0.0f);
-            DrawPolygon(Beam, new[] { Glow, Glow, Fade, Fade });
-            // a pulsing ring on the ground
-            float P = (Now * 0.8f) % 1.0f;
-            DrawSetTransform(At, 0, new Vector2(1.0f, 0.45f));
-            DrawArc(Vector2.Zero, 14, 0, Mathf.Tau, 24, new Color(SUPPLY_COL, 0.9f), 2.0f);
-            DrawArc(Vector2.Zero, 14 + 16 * P, 0, Mathf.Tau, 24, new Color(SUPPLY_COL, 0.7f * (1 - P)), 2.0f);
-            DrawSetTransform(Vector2.Zero);
-            // the supply itself, bobbing
-            Vector2 Icon = At - new Vector2(0, 16 + 3 * Mathf.Sin(Now * 3.0f));
-            this.Shadow(At - new Vector2(0, 2), 6);
-            DrawCircle(Icon, 12, new Color(1.0f, 0.85f, 0.4f, 0.18f));
-            DrawComponentIcon(this, Gd.Int(S[0]), Icon.Round(), 2.0f);
+            float Top = Mathf.Round(Mathf.Lerp(-24,-36,Lid));
+            DrawRect(new Rect2(-17,Top,34,Mathf.Lerp(9,19,Lid)), Ep("222D2C"));
+            DrawRect(new Rect2(-14,Top+3,28,Mathf.Lerp(3,13,Lid)), Ep("53624D"));
+            DrawRect(new Rect2(-12,Top+4,24,Mathf.Lerp(1,9,Lid)), Ep("2D3831"));
+            DrawRect(new Rect2(-14,-17,28,6), Ep("172721"));
+            if (!Empty) { DrawRect(new Rect2(-10,-16,8,4), Ep("D2BD79")); DrawRect(new Rect2(3,-16,6,3),Ep("8BA7A0")); }
+            // A broken latch and green corner remain visible after the opening animation finishes.
+            DrawRect(new Rect2(7,-5,5,3),Ep("89C793"));
+            DrawLine(new Vector2(-4,-12),new Vector2(-8,-7),Ep("D7B76E"),2);
         }
+        else
+        {
+            DrawRect(new Rect2(-18,-24,36,9), Ep("303D32"));
+            DrawRect(new Rect2(-16,-23,32,5), Ep("88916A"));
+            DrawRect(new Rect2(-3,-20,6,10), Ep("D7B76E"));
+            DrawRect(new Rect2(-1,-17,2,3), Ep("4D4936"));
+            DrawArc(new Vector2(0,-22),4,Mathf.Pi,Mathf.Tau,8,Ep("E7D19B"),2);
+            if (Unlock > 0)
+            {
+                DrawArc(new Vector2(0,-16),9,-Mathf.Pi/2,-Mathf.Pi/2+Mathf.Tau*Unlock,24,SUPPLY_COL,2);
+                DrawRect(new Rect2(-25,-43,50,5),Ep("202826"));
+                DrawRect(new Rect2(-25,-43,50*Unlock,5),SUPPLY_COL);
+            }
+        }
+        DrawSetTransform(Vector2.Zero);
+        if (((Vector2)LocalPos).DistanceSquaredTo(At) <= 56 * 56)
+            Text(Gd.Wrap(this), At + new Vector2(-100,Unlock > 0 ? -51 : -45), Open ? (Empty ? "EMPTY - E: STORAGE" : "UNLOCKED - E: STORAGE")
+                : Unlock > 0 ? $"UNLOCKING {Unlock*100:F0}% - HOLD E" : "LOCKED - KEY + HOLD E (2s)", 10,
+                Open ? Colors.LightGreen : SUPPLY_COL, 1, 200, true);
     }
-
-    // a small pixel drawing of each supply, S screen pixels per art pixel, centred on At
-    public static void DrawSupplyIcon(CanvasItem C, int Kind, Vector2 At, float S, float A = 1.0f)
+    public static void DrawSupplyIcon(CanvasItem C, int Kind, Vector2 At, float S, float A = 1)
     {
-        var Ink = new Color(0.08f, 0.07f, 0.1f, A);
-        void Box(float X, float Y, float W, float H, string Hex, bool Rim = false)
-        {
-            var R = new Rect2(At + new Vector2(X, Y) * S, new Vector2(W, H) * S);
-            if (Rim)
-            {
-                C.DrawRect(R.Grow(S), Ink);
-            }
-            C.DrawRect(R, new Color(new Color(Hex), A));
-        }
-        switch (Kind)
-        {
-            case 0:
-                // radio battery: a chunky cell with a bright band and terminals
-                Box(-1.5f, -6, 3, 2, "C9CDD2", true);
-                Box(-3.5f, -4, 7, 9, "3E4A3C", true);
-                Box(-3.5f, -1, 7, 2, "F2C230");
-                Box(-2.5f, -3, 1, 6, "6E7E66");
-                Box(-0.5f, 2, 1, 2, "F2C230");
-                break;
-            case 1:
-                // signal flare: a red tube with a pale cap and a spark
-                Box(-1.5f, -4, 3, 9, "D8402E", true);
-                Box(-1.5f, -6, 3, 2, "F3E6C8", true);
-                Box(-1.5f, 0, 3, 1, "8E2A20");
-                Box(-0.5f, -8, 1, 1, "FFE38A");
-                Box(-1.5f, -9, 1, 1, "FF9B45");
-                Box(0.5f, -9, 1, 1, "FF9B45");
-                break;
-            default:
-                // lab data drive: a slate case with a label and a green light
-                Box(-5, -3.5f, 10, 7, "56636F", true);
-                Box(-3.5f, -2, 6, 2, "9FD3DB");
-                Box(-3.5f, 1, 4, 1, "3A444D");
-                Box(2.5f, 1, 1, 1, "6CE48A");
-                Box(4, -1, 2, 2, "8C969F");
-                break;
-        }
+        C.DrawRect(new Rect2(At + new Vector2(-8,-6)*S, new Vector2(16,12)*S), new Color(.13f,.2f,.2f,A));
+        C.DrawRect(new Rect2(At + new Vector2(-6,-4)*S, new Vector2(7,4)*S), new Color(.55f,.8f,.55f,A));
+        C.DrawRect(new Rect2(At + new Vector2(5,-12)*S, new Vector2(1,8)*S), new Color(.8f,.82f,.72f,A));
+        C.DrawCircle(At + new Vector2(4,2)*S, 2*S, new Color(.9f,.73f,.37f,A));
     }
-
+    void DrawInstalledRadio()
+    {
+        Vector2 At = (Vector2)GameSim.WORKBENCH_POS - new Vector2(0,24);
+        DrawSupplyIcon(this, 0, At, 2);
+        DrawCircle(At + new Vector2(-8,-3), 2, Ep("8FFF9C"));
+    }
     public static void DrawComponentIcon(CanvasItem C, int Kind, Vector2 At, float Scale)
     {
         void Box(float X, float Y, float W, float H, string Hex) =>
@@ -134,9 +88,9 @@ public partial class Main : Node2D
         }
         else if (Kind == 1)
         {
-            Box(-5, -3, 10, 9, "4A3527"); Box(-4, -2, 8, 7, "B8955C");
-            Box(-3, -5, 6, 4, "6A4940"); Box(-2, -3, 4, 2, "E7B24F");
-            Box(-1, 1, 2, 3, "E7B24F");
+            Box(-5, 1, 10, 5, "3B4D51"); Box(-3, 2, 6, 3, "C3CCB2");
+            Box(-1, -7, 2, 9, "B9C6C3"); Box(-6, -5, 12, 2, "9CADA8");
+            Box(-4, -8, 8, 2, "D5DED0");
         }
         else
         {
@@ -147,25 +101,25 @@ public partial class Main : Node2D
         }
     }
 
-    // top right at night, under the timer: three slots, lit as each comes in. Right is the panel's right edge.
     public void DrawSupplyRow(CanvasItem C, float Right, float Y)
     {
         var Rescue = Gd.Get(Snap, "rescue", null) as GArray;
         if (Rescue == null) return;
-        var Box = new Rect2(Right - 174, Y + 12, 174, 44);
+        bool Built = Gd.Truth(Rescue[1]);
+        var Box = new Rect2(Right - 232, Y + 12, 232, 66);
         dynamic Cw = Gd.Wrap(C);
-        C.DrawRect(Box, new Color("192027"));
-        C.DrawRect(Box, SUPPLY_COL, false, 1);
-        Text(Cw, Box.Position + new Vector2(6, 12), "RESCUE - craft all 3 by day", 10, SUPPLY_COL);
+        C.DrawRect(Box, Ep("192027")); C.DrawRect(Box, SUPPLY_COL, false, 1);
+        Text(Cw, Box.Position + new Vector2(6,13), Built ? "LOCATOR RADIO: ONLINE" : "LOCATOR RADIO: BEFORE NIGHT 5", 10, SUPPLY_COL);
         for (int I = 0; I < 3; I++)
         {
-            bool Done = Gd.Truth(Gd.At(Rescue[1], I));
             bool Found = Gd.Int(Gd.At(Rescue[0], I)) > 0;
-            var Slot = new Rect2(Box.Position + new Vector2(6 + I * 55, 18), new Vector2(51, 22));
-            C.DrawRect(Slot, Done ? new Color("285637") : new Color("30363D"));
-            DrawSupplyIcon(C, I, Slot.Position + new Vector2(11, 11), 1, Done || Found ? 1 : .4f);
-            Text(Cw, Slot.Position + new Vector2(22, 15), Done ? "OK" : Found ? "C" : "?", 10, Done ? Colors.LightGreen : SUPPLY_COL);
+            var Slot = new Rect2(Box.Position + new Vector2(6 + I * 74,19), new Vector2(70,22));
+            C.DrawRect(Slot, Found ? Ep("285637") : Ep("30363D"));
+            DrawComponentIcon(C, I, Slot.Position + new Vector2(11,11), 1);
+            Text(Cw, Slot.Position + new Vector2(24,15), Found ? "FOUND" : "?", 10, Found ? Colors.LightGreen : SUPPLY_COL);
         }
-
+        float Progress = Gd.Float(Rescue[2]);
+        Text(Cw, Box.Position + new Vector2(6,57), Built ? "Defend a landing pad on night 5" : Progress > 0 ? "ASSEMBLING " + (int)(Progress*100) + "%"
+            : "Find 3 parts; hold E at the workbench", 10, Colors.White);
     }
 }

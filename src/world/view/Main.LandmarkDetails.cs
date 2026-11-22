@@ -8,17 +8,9 @@ using HoldTilDawn;
 public partial class Main
 {
     const double LandmarkGroundBudgetMs = 1.0;
-    static readonly (int Id, float Rx, float Ry, string Hex)[] LandmarkSoils = {
-        (2, 5.7f, 3.7f, "A39761"), (3, 6.5f, 4.1f, "B7B098"),
-        (4, 7.0f, 4.7f, "77965B"), (5, 3.5f, 2.3f, "897C59"),
-        (7, 5.5f, 3.7f, "736347"), (9, 4.7f, 3.5f, "9C9781"),
-        (11, 4.3f, 3.0f, "AAA38A"), (15, 5.5f, 3.5f, "60804B"),
-        (16, 4.9f, 2.5f, "B1A68B"), (18, 5.0f, 3.7f, "796347")
-    };
-
     sealed class LandmarkSoilJob
     {
-        public int Id, X, Y, MinX, MaxX, MaxY, Track;
+        public int Id, X, Y, MinX, MaxX, MaxY;
         public float Rx, Ry;
         public Vector2 Centre;
         public Rect2 Area;
@@ -26,6 +18,7 @@ public partial class Main
         public Image Image;
         public ImageTexture Texture;
         public LandmarkGroundMask Mask;
+        public WorldGeometry.LandmarkSoil Surface;
         public long WorkTicks;
         public int Slices;
     }
@@ -50,9 +43,12 @@ public partial class Main
             LandmarkSoilJobs.Clear();
             LandmarkSoilWorld = W;
         }
-        foreach (var (Id, Rx, Ry, Hex) in LandmarkSoils)
+        foreach (var Surface in WorldGeometry.LandmarkSoils)
         {
-            if (!W.LmAt.TryGetValue(Id, out Vector2 C) || !View.Grow(Rx * 32).HasPoint(C)) continue;
+            var (Id, Rx, Ry, Hex, _) = Surface;
+            if (!W.LmAt.ContainsKey(Id)) continue;
+            Vector2 C = W.SoilCentre(Surface);
+            if (!View.Grow(Rx * 32).HasPoint(C)) continue;
             if (!LandmarkSoilCache.TryGetValue(Id, out var Job))
             {
                 // Queue work while the location is still in the camera's off-screen culling margin.
@@ -60,8 +56,8 @@ public partial class Main
                 Vector2 Origin = (C - new Vector2(Rx * 32, Ry * 32)).Floor();
                 int Bottom = Id is 5 or 7 ? Math.Max((int)(Ry * 32), 112) : (int)(Ry * 32);
                 Job = new LandmarkSoilJob {
-                    Id = Id, Centre = C, Rx = Rx, Ry = Ry, Soil = new Color(Hex),
-                    Fleck = new Color(new Color(Hex).Lightened(0.15f), 0.35f),
+                    Id = Id, Centre = C, Rx = Rx, Ry = Ry, Soil = new Color(Hex), Surface = Surface,
+                    Fleck = new Color(new Color(Hex).Lightened(0.15f), 0.7f),
                     MinX = -(int)(Rx * 32), X = -(int)(Rx * 32), MaxX = (int)(Rx * 32),
                     Y = -(int)(Ry * 32), MaxY = (int)(Ry * 32),
                     Area = new Rect2(Origin, new Vector2((int)(Rx * 64) + 8, Bottom + (int)(Ry * 32) + 8))
@@ -90,15 +86,6 @@ public partial class Main
                 Job.X += 4;
                 if (Job.X > Job.MaxX) { Job.X = Job.MinX; Job.Y += 4; }
             }
-            else if (Job.Id is 5 or 7 && Job.Track < 28)
-            {
-                // Cache tyre marks too: their terrain queries used to run on every draw.
-                int I = Job.Track / 2, Side = Job.Track % 2 == 0 ? -1 : 1;
-                Vector2 P = (Job.Centre + new Vector2(Side * 19 + MathF.Sin(I * 0.12f) * 16, 25 + I * 6)).Round();
-                if (Job.Mask.CanPaint(P, 4))
-                    FillLandmark(Job, P, new Vector2I(5, 2), new Color("554A36", 0.38f));
-                Job.Track++;
-            }
             else
             {
                 Job.Texture = ImageTexture.CreateFromImage(Job.Image);
@@ -119,13 +106,16 @@ public partial class Main
     void PaintLandmarkCell(LandmarkSoilJob Job)
     {
         Vector2 P = (Job.Centre + new Vector2(Job.X, Job.Y)).Round();
-        float D = new Vector2(Job.X / (Job.Rx * 32), Job.Y / (Job.Ry * 32)).Length();
+        float Coverage = WorldGeometry.SoilCoverage(Job.Surface, P - Job.Centre);
         float Noise = H01((int)P.X, (int)P.Y);
-        if (D > 0.72f + 0.28f * Noise || !IslandMap.OnGrass(P, 12) || !Job.Mask.CanPaint(P, 8)) return;
-        Color Patch = Job.Soil;
-        Patch.A = (1 - D * 0.8f) * 0.34f;
+        if (Coverage <= 0 || !Job.Mask.CanPaint(P, 3, AllowBeach: true, PreserveTrails: false)) return;
+        Color Base = Job.Id == 16 ? LandmarkSoilWorld.CaveGroundColour(P) : Job.Soil;
+        Color Patch = Noise > .72f ? Base.Lightened(.035f) : Noise < .22f ? Base.Darkened(.035f) : Base;
+        Patch.A = Coverage;
         FillLandmark(Job, P, new Vector2I(4, 4), Patch);
-        if (Noise > 0.92f) FillLandmark(Job, P + new Vector2(1, 2), new Vector2I(2, 1), Job.Fleck);
+        if (Noise > 0.92f) FillLandmark(Job, P + new Vector2(1, 2), new Vector2I(2, 1), new Color(Job.Fleck, Job.Fleck.A * Coverage));
+        if (Job.Id == 16 && Noise < .025f)
+            FillLandmark(Job, P, new Vector2I(4, 1), new Color(Base.Darkened(.18f), Coverage));
     }
 
     static void FillLandmark(LandmarkSoilJob Job, Vector2 P, Vector2I Size, Color Colour)

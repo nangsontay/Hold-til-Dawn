@@ -24,6 +24,8 @@ public partial class GameSim
         "healing_flask" => new[] { "Heals 8 HP/s for 5 s" },
         "haste_tonic" => new[] { "+20% speed for 8 s" },
         "gathering_kit" => new[] { "Gather 20% faster" },
+        "crafting_kit" => new[] { "Craft 20% faster while carried", "Passive; one kit is enough" },
+        "chest_key" => new[] { "Unlocks one expedition chest", "Hold E for 2 s; consumed on completion", "Unlocked chests reopen for free" },
         "explosive_arrow" => new[] { "32 blast damage" },
         "repair_kit" => new[] { "+100 HP to a door, wall or tower" },
         _ => Array.Empty<string>()

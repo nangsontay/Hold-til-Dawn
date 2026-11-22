@@ -6,7 +6,7 @@ using HoldTilDawn;
 // Owner: Vu Duc Viet Anh. Draws the island of src/world/IslandMap.cs and the terrain of src/world/WorldTerrain.cs on
 // the ground layer (under everything with height): the sea stepping up through the shallows, the beach with its
 // wet edge and a line of surf, the grass (lighter in the safe zone), darker woodland floor, hills with contour
-// steps, the dirt routes, trails and door roads, the Rainwater Pond and the Mangrove Swamp. Same pixel-art palette
+// contours, the Rainwater Pond and the Mangrove Swamp. Route surfaces are hidden. Same pixel-art palette
 // as art/nature (tools/PixelNature.cs); light from the upper left.
 public partial class Main : Node2D
 {
@@ -15,7 +15,6 @@ public partial class Main : Node2D
     static readonly Color SAND = new Color("CDB688"), WET_SAND = new Color("A99872"), FOAM = new Color(0.92f, 0.97f, 1.0f, 0.55f);
     static readonly Color OUTER_GRASS = new Color("5B7434") * 1.1f, SAFE_GRASS = new Color("728C40") * 1.1f, WOOD_FLOOR = new Color("4C6530") * 1.1f;
     static readonly Color HILL_FOOT = new Color("6E8048"), HILL_TOP = new Color("A49C7E"), CONTOUR = new Color(0.93f, 0.92f, 0.8f, 0.45f);
-    static readonly Color TRAIL_EDGE = new Color("75694A"), TRAIL_MID = new Color("8C7F5B"), TRAIL_LIT = new Color("9C8F69");
     static readonly Color BANK = new Color("4A5638"), WATER = new Color("3B6A86"), DEEP = new Color("2F5A75"), RIPPLE = new Color(0.62f, 0.8f, 0.88f, 0.75f);
     static readonly Color MUD = new Color("4F5233"), MUD_DARK = new Color("3E4129");
     // the coast pushed out a little, for the surf
@@ -50,9 +49,6 @@ public partial class Main : Node2D
         RenderingServer.CanvasItemAddTriangleArray(GetCanvasItem(), F.Idx, Pts, new[] { Col }, Textured ? F.Uv : null, null, null, Textured ? GroundRid : default);
     }
 
-    // a trail's box and its two wheel ruts, worked out once
-    readonly Dictionary<Vector2[], (Rect2 Box, Vector2[] Lit, Vector2[] Edge)> TrailLook = new();
-    readonly List<(Vector2[] Path, float Width, Vector2[] Lit, Vector2[] Edge)> Seen = new();
     Vector2[] SafeRing;
     readonly Dictionary<Vector2[], (Vector2[] Ring, Vector2[] Low)> HillRing = new();
     readonly Dictionary<Vector2[], (Vector2[] Bank, Vector2[] Deep, Vector2[] Rim)> PondLook = new();
@@ -152,47 +148,11 @@ public partial class Main : Node2D
         // the Mangrove Swamp's mud, under the paths through it
         if (new Rect2(W.SwampCentre - Vector2.One * W.SwampR, Vector2.One * 2 * W.SwampR).Intersects(View))
             DrawSwamp(W);
-        // edges of every path first, then the middles, then the wear, so crossings join cleanly
+        // Route data still reserves clear walking corridors; their yellow surface is no longer rendered.
         DrawLandmarkSoils(W, View);
-        Seen.Clear();
-        foreach (var (Path, Width) in W.Trails)
-        {
-            if (Path.Length < 2) continue;
-            if (!TrailLook.TryGetValue(Path, out var Look))
-            {
-                // wheel ruts / footpath wear
-                float Rut = (Width > WorldGeometry.TRAIL_W) ? 0.45f * Tl : 0.2f * Tl;
-                Look = (Bounds(Path, Tl * 2), Offset(Path, -Rut), Offset(Path, Rut));
-                TrailLook[Path] = Look;
-            }
-            if (!Look.Box.Intersects(View)) continue;
-            // only the stretch in view (the trails cross the whole island): runs of segments near the view, one
-            // more point each side so the bends at the cut are worked out off screen as before
-            Rect2 Near = View.Grow(Width);
-            int Start = -1;
-            for (int I = 0; I < Path.Length - 1; I++)
-            {
-                bool In = new Rect2(Path[I], Vector2.Zero).Expand(Path[I + 1]).Intersects(Near, true);
-                if (In && Start < 0) Start = Math.Max(0, I - 1);
-                else if (!In && Start >= 0)
-                {
-                    int End = Math.Min(Path.Length - 1, I + 1);
-                    Seen.Add((Path[Start..(End + 1)], Width, Look.Lit[Start..(End + 1)], Look.Edge[Start..(End + 1)]));
-                    Start = -1;
-                }
-            }
-            if (Start >= 0) Seen.Add((Path[Start..], Width, Look.Lit[Start..], Look.Edge[Start..]));
-        }
-        foreach (var (Path, Width, _, _) in Seen) DrawPolyline(Path, TRAIL_EDGE, Width);
-        foreach (var (Path, Width, _, _) in Seen) DrawPolyline(Path, TRAIL_MID, Width - 6);
-        foreach (var (_, Width, Lit, Edge) in Seen)
-        {
-            DrawPolyline(Lit, new Color(TRAIL_LIT, 0.8f), 2);
-            DrawPolyline(Edge, new Color(TRAIL_EDGE, 0.6f), (Width > WorldGeometry.TRAIL_W) ? 2 : 1);
-        }
-        // the rivers over the paths they cut, and their bridges (Main.Rivers.cs)
+        // Rivers and their functional crossing bridges remain visible.
         DrawRivers(View);
-        // the landmarks' floors, the pier, the platform, steps and coral (Main.LandmarkView.cs)
+        // the landmarks' floors, the pier, the platform and coral (Main.LandmarkView.cs)
         DrawLandmarkGround(W, View);
         for (int I = 0; I < W.Ponds.Count; I++)
             if (Bounds(W.Ponds[I].Edge, Tl * 2).Intersects(View)) DrawPond(W.Ponds[I], I == 0);

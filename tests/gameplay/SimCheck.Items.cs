@@ -72,27 +72,29 @@ public partial class SimCheck : Node
         this.Run(S, 0.1f);
         Eng.Inter = false;
         this.Check(((S.Count(Eng, "herb") == 3) && Gd.Truth(Gd.IsEmpty(S.Drops))), "E picks a dropped item back up");
+        S.SetCount(Eng, "wood", 1);
         // Crafting is a 3 s channel at the workbench; leaving cancels it (BAL-19)
         Eng.Pos = (GameSim.STORAGE_POS + Gd.MakeVector2(0, 24));
         S.SetCount(Eng, "herb", 2);
-        this.Check(!Gd.Truth(S.CanCraft(Eng, 1, false)), "no crafting in the base away from the workbench");
+        this.Check(!Gd.Truth(S.CanCraft(Eng, 0, false)), "no crafting in the base away from the workbench");
         Eng.Pos = (GameSim.WORKBENCH_POS + Gd.MakeVector2(0, 24));
-        S.Action(1, "craft", 1);
+        S.Action(1, "craft", 0);
         this.Run(S, 1.0f);
         Eng.Pos = Gd.MakeVector2(0, (15 * 32));
         this.Run(S, 2.5f);
-        this.Check(((S.Count(Eng, "bandage") == 0) && (S.Count(Eng, "herb") == 2) && (Eng.CraftIdx == (-1))), "leaving the workbench cancels a craft and keeps the materials");
+        this.Check(((S.Count(Eng, "arrow") == 0) && (S.Count(Eng, "wood") == 1) && (Eng.CraftIdx == (-1))), "leaving the workbench cancels a craft and keeps the materials");
         // Bow and arrows (MEC-03, BAL-10, BAL-42)
         S.Unlock = 1;
         Eng.Pos = (GameSim.WORKBENCH_POS + Gd.MakeVector2(0, 24));
-        S.SetCount(Eng, "wood", 7);
+        S.SetCount(Eng, "wood", 8);
         S.SetCount(Eng, "titanium", 2);
-        S.Action(1, "craft", 6);
+        S.Action(1, "craft", 2);
         this.Run(S, 3.1f);
-        this.Check(((S.Count(Eng, "bow") == 1) && (S.Count(Eng, "arrow") == 5) && (S.Count(Eng, "wood") == 1)), "Bow + 5 arrows costs 6 wood + 2 titanium");
-        S.Action(1, "craft", 7);
+        this.Check(((S.Count(Eng, "bow") == 1) && (S.Count(Eng, "arrow") == 0) && (S.Count(Eng, "wood") == 2)), "Bow alone costs 6 wood + 2 titanium");
+        S.Action(1, "craft", 0);
         this.Run(S, 3.1f);
-        this.Check(((S.Count(Eng, "arrow") == 10) && (S.Count(Eng, "wood") == 0)), "5 arrows cost 1 wood");
+        this.Check(((S.Count(Eng, "arrow") == 5) && (S.Count(Eng, "wood") == 1)), "5 arrows cost 1 wood separately");
+        S.Action(1, "craft", 0); this.Run(S,3.1f);
         dynamic TheBow = Gd.At(Gd.Filter(Eng.Inv, (Func<dynamic, dynamic>)((X) => GameSim.IsBow(X))), 0);
         this.Check(((GameSim.Loaded(TheBow) == 10) && !Gd.Truth(Gd.Any(Eng.Inv, (Func<dynamic, dynamic>)((X) => ((X != null) && Gd.Equal(Gd.At(X, 0), "arrow")))))), "the bow holds its arrows: all 10 loaded, no slot spent on arrows");
         Gd.Clear(S.Nodes);
@@ -183,7 +185,7 @@ public partial class SimCheck : Node
         Gd.At(S.BuiltWalls, 0).Hp = 5.0f;
         this.Run(S, 2.5f);
         this.Check((Gd.Size(S.BuiltWalls) == 1), "a wall at 0 HP is destroyed");
-        // Revival kit: crafted into the bag, carried to the dead teammate and used there (hold E)
+        // Revival kit: looted into the bag, carried to the dead teammate and used there (hold E)
         S = this.NewMatch();
         dynamic Dead = Gd.At(S.Players, 2);
         Dead.State = 2;
@@ -191,11 +193,9 @@ public partial class SimCheck : Node
         Vector2 Fell = (Vector2)Dead.Pos;
         dynamic Crafter = Gd.At(S.Players, 1);
         Crafter.Pos = (GameSim.WORKBENCH_POS + Gd.MakeVector2(0, 24));
-        S.SetCount(Crafter, "herb", 4);
-        S.SetCount(Crafter, "titanium", 4);
-        S.Action(1, "craft", 2);
-        this.Run(S, 3.1f);
-        this.Check(((Dead.State == 2) && (S.Count(Crafter, "revive") == 1)), "a crafted Revival kit goes into the bag and revives nobody by itself");
+        S.SetCount(Crafter,"herb",4); S.SetCount(Crafter,"titanium",4);
+        S.Craft(Crafter,9); this.Run(S,3.1f);
+        this.Check(((Dead.State == 2) && (S.Count(Crafter,"revive") == 1)), "a crafted Revival kit is carried and revives nobody by itself");
         Crafter.Pos = (Fell + Gd.MakeVector2(24, 0));
         Crafter.Inter = true;
         this.Run(S, 1.0f);

@@ -62,7 +62,7 @@ public partial class WorldGeometry
         CutPathsAtRivers();
         // the Rainwater Pond, just off the trail at landmark 15
         var Rain = IslandMap.ById(15);
-        if (Rain != null) Ponds.Add(MakePond(R, Rain.Pos + Tiles(4.2f, 0.8f) * S, 2.8f * 1.25f));
+        if (Rain != null) Ponds.Add(MakePond(R, Rain.Pos + Tiles(4.2f, 0.8f) * S, 2.8f * 1.25f * LANDMARK_SCALE));
         // the Mangrove Swamp: muddy ground with small pools, kept off the paths
         var Swamp = IslandMap.ById(8);
         if (Swamp != null)
@@ -81,7 +81,7 @@ public partial class WorldGeometry
                         SwampCentre = P;
                     }
                 }
-            SwampR = Math.Clamp(IslandMap.GrassIn(SwampCentre) - TL, 3 * TL, 7 * S * TL);
+            SwampR = Math.Clamp(IslandMap.GrassIn(SwampCentre) - TL, 3 * TL, 7 * S * TL * LANDMARK_SCALE);
         }
         if (Swamp != null)
         {
@@ -97,18 +97,7 @@ public partial class WorldGeometry
                 I++;
             }
         }
-        // the Southwest Cave: rock spires in an arc behind its mouth
-        var Cave = IslandMap.ById(16);
-        if (Cave != null)
-        {
-            Vector2 Mouth = Cave.Pos + Tiles(1.5f, -2.5f) * S;
-            for (int I = 0; I < 13; I++)
-            {
-                float A = Mathf.DegToRad(-170 + I * 14);
-                Vector2 P = Mouth + new Vector2(MathF.Cos(A) * 3.6f, MathF.Sin(A) * 2.4f) * S * TL;
-                if (IslandMap.OnGrass(P, 0.5f * TL) && !NearPath(P, 1.2f * TL)) Crags.Add(P);
-            }
-        }
+        // Southwest Cave now owns its walkable chamber and rock perimeter (WorldCave.cs).
     }
 
     static Pond MakePond(Random R, Vector2 Centre, float RadiusTiles)
@@ -158,6 +147,8 @@ public partial class WorldGeometry
     // True where scenery (trees, rocks, grass tufts) must not be placed.
     public bool TerrainBlocked(Vector2 P, float Margin)
     {
+        if (InCaveRegion(P, Margin)) return true;
+        if (IslandMap.InBridgeApproach(P, Margin)) return true;
         int K = TerrainAt(P, Margin);
         if (K != 0 && K != 4 && K != 9) return true;
         foreach (Vector2 C in Crags)
@@ -175,5 +166,14 @@ public partial class WorldGeometry
         // the landmarks' big structures (WorldLandmarks.cs)
         foreach (var (C, Rr) in LmSolids)
             Gd.Append(Into, new GArray(C, Rr, true));
+        // Continuous rail colliders include the dry abutments: land checks alone cannot stop side entry there.
+        foreach (var (_, At) in IslandMap.Bridges)
+            foreach (int Side in new[] { -1, 1 })
+            {
+                float Reach = IslandMap.BRIDGE_HALF_LEN - 10;
+                int Steps = (int)MathF.Ceiling(Reach * 2 / (IslandMap.BRIDGE_RAIL_RADIUS * 1.4f));
+                for (int I = 0; I <= Steps; I++)
+                    Gd.Append(Into, new GArray(At + new Vector2(Mathf.Lerp(-Reach, Reach, I / (float)Steps), Side * IslandMap.BRIDGE_RAIL_OFFSET), IslandMap.BRIDGE_RAIL_RADIUS, false));
+            }
     }
 }

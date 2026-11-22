@@ -264,11 +264,11 @@ public partial class Main : Node2D
             }
             else if (Gd.Truth(Gd.BeginsWith(A, "--goto=sup:")))
             {
-                // --goto=sup:N: two tiles south of tonight's supply N (after --night)
+                // --goto=sup:N: two tiles south of exploration chest N
                 int N = Gd.ToInt(Gd.Substr(A, 11));
-                if (N >= 0 && N < Sim.Supplies.Count)
+                if (N >= 0 && N < Sim.ExplorationChests.Count)
                 {
-                    Sim.Teleport(Me, IslandMap.PullInland((Vector2)((GArray)Sim.Supplies[N])[1] + new Vector2(0, (2.0f * T)), T));
+                    Sim.Teleport(Me, IslandMap.PullInland(Sim.ExplorationChests[N].Pos + new Vector2(0, (2.0f * T)), T));
                 }
             }
             else if (Gd.Truth(Gd.BeginsWith(A, "--goto=lm:")))
@@ -416,7 +416,7 @@ public partial class Main : Node2D
             dynamic Atk = (Gd.Truth(Playing) && !this.UiCapturesMouse() && Gd.Truth(Gd.Static(typeof(Input), "is_mouse_button_pressed", 1)));
             dynamic HandItem = Gd.At(Gd.At(Me, 7), Gd.Int(Gd.At(Me, 25)));
             if (HandItem != null && GameSim.IsTacticalUse(Gd.Str(Gd.At(HandItem, 0)))) Atk = false;
-            dynamic Inter = (Gd.Truth(Playing) && Gd.Truth(Gd.Static(typeof(Input), "is_physical_key_pressed", 69)));
+            dynamic Inter = (Gd.Truth(Playing) && !UiCapturesMouse() && Gd.Truth(Gd.Static(typeof(Input), "is_physical_key_pressed", 69)));
             dynamic Ent = (Gd.Truth(Playing) && Gd.Truth(Gd.Static(typeof(Input), "is_physical_key_pressed", 70)));
             InputSequence += 1;
             PendingInputs[InputSequence] = LocalPos;
@@ -603,6 +603,7 @@ public partial class Main : Node2D
             }
         }
         Snap = D;
+        SyncChestPanel(Mine, OldMe);
     }
 
     public void Popup(dynamic Pos, dynamic Text, dynamic Col, dynamic Size)
@@ -780,7 +781,6 @@ public partial class Main : Node2D
             L.Position = Gd.At(Tw, 1);
             L.Energy = ((0.85f * Night) * ((Gd.At(Tw, 2) < (0.3f * GameSim.TOWER_HP)) ? (dynamic)((float)GD.RandRange(0.45f, 1.0f)) : 1.0f));
         }
-        this.TickSupplyLights((float)Night);
         MyLight.Position = LocalPos;
         if ((Me != null))
         {
@@ -873,6 +873,8 @@ public partial class Main : Node2D
         // ground layer: flat, nothing here hides anything
         // the island from the level-design map: sea, shallows, beach, grass, safe zone, woods and hills; then the
         // swamp, routes, trails, door roads and the pond (src/world/view/Main.TerrainView.cs)
+        CaveInteriorActive = ((WorldGeometry)Geometry).IsCaveInterior((Vector2)LocalPos);
+        WeatherInteriorActive = ((WorldGeometry)Geometry).IsWeatherInterior((Vector2)LocalPos);
         this.DrawIsland((Rect2)View);
         this.DrawTerrain((Rect2)View);
         // grass tufts and pebbles: thousands on the island, so a typed copy is checked against the view
@@ -885,7 +887,7 @@ public partial class Main : Node2D
         Color ColdTyped = (Color)COLD;
         foreach (var (Sp, Sn) in ScatterTyped)
         {
-            if (SeenRect.HasPoint(Sp))
+            if (SeenRect.HasPoint(Sp) && !HiddenOutsideInterior(Sp))
             {
                 this.Sprite(Sn, Sp, 1.0f, ColdTyped);
             }
@@ -912,7 +914,6 @@ public partial class Main : Node2D
         this.DrawBaseFloor();
         this.DrawTelegraphs();
         DrawTacticalAreas();
-        DrawSupplies();
         DrawConstructionGround();
         // from outside, the inside of the base is fogged over (src/world/view/Main.BaseFog.cs)
         this.TickBaseFog();
@@ -1018,6 +1019,13 @@ public partial class Main : Node2D
         {
             Gd.Append(Items, new GArray(Gd.At(D, 0).Y, 5, D));
         }
+        GardenFenceItems((GArray)Items, (Rect2)View);
+        WeatherWallItems((GArray)Items, (Rect2)View);
+        FishingRodItems((GArray)Items, (Rect2)View);
+        ExpeditionItems((GArray)Items, (Rect2)View);
+        CompoundBoundaryItems((GArray)Items, (Rect2)View);
+        LookoutItems((GArray)Items, (Rect2)View);
+        ExplorationItems((GArray)Items, (Rect2)View);
         Gd.SortCustom(Items, (Func<dynamic, dynamic, dynamic>)((A, B) => (Gd.At(A, 0) < Gd.At(B, 0))));
         dynamic Tnow = (Gd.Static(typeof(Time), "get_ticks_msec") / 1000.0f);
         foreach (dynamic It in Gd.Iter(Items))
@@ -1028,7 +1036,17 @@ public partial class Main : Node2D
             }
             // the kind once, not one dynamic compare per branch (hundreds of items a frame)
             int Kind = Gd.Int(Gd.At(It, 1));
-            if ((Kind == 0))
+            if (Kind == 13) DrawGardenFence(Gd.Int(Gd.At(It, 2)));
+            else if (Kind == 14) DrawWeatherWall(Gd.Int(Gd.At(It, 2)));
+            else if (Kind == 15) DrawFishingRod(Gd.Int(Gd.At(It, 2)));
+            else if (Kind == 16) DrawExpeditionVehicle(Gd.Int(Gd.At(It, 2)));
+            else if (Kind == 17) DrawExpeditionCliff(Gd.Int(Gd.At(It, 2)));
+            else if (Kind == 18) DrawCompoundBoundary(Gd.Int(Gd.At(It, 2)));
+            else if (Kind == 19) DrawLookoutObject(Gd.Int(Gd.At(It, 2)));
+            else if (Kind == 20) DrawLookoutRail(Gd.Int(Gd.At(It, 2)));
+            else if (Kind == 21) DrawExplorationChest((GArray)Gd.At(It, 2));
+            else if (Kind == 22) DrawInstalledRadio();
+            else if ((Kind == 0))
             {
                 this.Sprite(Gd.At(It, 2), Gd.At(It, 3), Gd.At(It, 4), Gd.At(It, 5));
                 this.DrawOreGlow(Gd.Str(Gd.At(It, 2)), (Vector2)Gd.At(It, 3), Gd.Float(Gd.At(It, 4)));
@@ -1114,6 +1132,8 @@ public partial class Main : Node2D
         // chips flying off nodes being gathered
         this.DrawChips();
         this.DrawHarvestFeedback();
+        DrawCaveRoof((WorldGeometry)Geometry, (Rect2)View);
+        DrawWeatherRoof((WorldGeometry)Geometry, (Rect2)View);
         if (Gd.Truth(DebugGeometry))
         {
             foreach (dynamic I in Gd.Iter(Geometry.Candidates(View.Position, View.End, 0.0f)))
@@ -1147,20 +1167,22 @@ public partial class Main : Node2D
         {
             dynamic P = Gd.At(Snap.Ps, Id);
             dynamic Pf = ((Id == MyId) ? (dynamic)(LocalPos) : Gd.Get(ShownP, Id, Gd.At(P, 2)));
-            if (!this.HiddenInBase((Vector2)Pf))
+            if (!this.HiddenInBase((Vector2)Pf) && !HiddenOutsideInterior((Vector2)Pf))
             {
                 this.PlayerUi(Id, P, Pf, Font);
             }
         }
         foreach (dynamic F in Gd.Iter(Fx))
         {
-            if (this.HiddenInBase((Vector2)F.Pos))
+            if (this.HiddenInBase((Vector2)F.Pos) || HiddenOutsideInterior((Vector2)F.Pos))
             {
                 continue;
             }
             Gd.Native(this, "draw_circle", F.Pos, ((F.R * F.Life) / F.Max), F.Col);
         }
         this.DrawBuildPreview();
+        DrawCaveIsolation((WorldGeometry)Geometry);
+        DrawWeatherIsolation((WorldGeometry)Geometry);
     }
 
     public void DrawPlayer(dynamic Id, dynamic P, dynamic Foot)
@@ -1692,7 +1714,7 @@ public partial class Main : Node2D
         {
             this.Text(C, Gd.MakeVector2(0, 40), Gd.Format("EXTENSION %ds", Snap.Ext), 12, NEON_RED, 2, (Vs.X - 12));
         }
-        // under it at night: tonight's three supplies (src/world/view/Main.Supplies.cs)
+        // Locator radio checklist and assembly progress (day and night).
         if ((Ph != "result") && !Gd.Truth(MapBig))
         {
             this.DrawSupplyRow((CanvasItem)Gd.Unwrap(C), (float)Vs.X - 12, (Snap.Ext >= 0) ? 50f : 34f);

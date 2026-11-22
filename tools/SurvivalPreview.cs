@@ -28,7 +28,7 @@ public partial class SurvivalPreview : Node
                     Game.Sim.BuildTower(P, At); Game.Sim.TickTowerConstruction(P, 3);
                 }
                 Game.LocalPos = P.Pos; Game.CraftOpen = Stage == 3;
-                Game.CraftTier = 3; Game.CraftSel = 19;
+                Game.CraftTier = 1; Game.CraftSel = 1;
                 Game.OnSnap(Game.Sim.Snapshot());
                 Game.LocalTp = P.Tp; Game.PendingInputs.Clear();
                 var Camera = (Camera2D)Gd.Unwrap(Game.Cam);

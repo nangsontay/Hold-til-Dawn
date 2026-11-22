@@ -18,12 +18,12 @@ public partial class SurvivalWorldCheck : Node
         using var S = new GameSim(); S.AddPlayer(1, "Engineer", 2); S.AddPlayer(2, "Scout", 0); S.StartMatch();
         var W = (WorldGeometry)S.World;
         Check(IslandMap.ById(8).Pos.Y < -30 * 32 && W.SwampCentre.Y < 0, "swamp marker, pools and scene moved north");
-        Check(W.HarvestSites.Count > 850, $"denser harvestable world: {W.HarvestSites.Count} sites");
-        Check(IslandMap.Rivers.Count == 2 && IslandMap.Bridges.Count == 4 && W.Ramps.Count >= 3, $"two rivers with {IslandMap.Bridges.Count} bridges and {W.Ramps.Count} slopes");
+        Check(W.HarvestSites.Count > 650 && W.OutsideAfter.Sum() < W.OutsideBefore.Sum(), $"concentrated home farms and sparser outer world: {W.HarvestSites.Count} sites");
+        Check(IslandMap.Rivers.Count == 2 && IslandMap.Bridges.Count == 5 && W.Ramps.Count >= 3, $"two rivers with {IslandMap.Bridges.Count} bridges and {W.Ramps.Count} slopes");
         for (int R = 0; R < 2; R++)
         {
             var Path = IslandMap.Rivers[R];
-            Check(IslandMap.Bridges.Count(B => B.River == R) == 2, $"river {R} has two bridges");
+            Check(IslandMap.Bridges.Count(B => B.River == R) == (R == 0 ? 3 : 2), $"river {R} has its exploration bridges");
             Check(IslandMap.Depth(Path[0]) < 0 && IslandMap.Depth(Path[^1]) < 0 && Path[0].Y < -60 * 32 && Path[^1].Y > 60 * 32, $"river {R} runs from the north coast to the south coast");
             Check(R == 0 ? Path.All(P => P.X < -25 * 32) : Path.All(P => P.X > 25 * 32), $"river {R} keeps to its side of the island");
         }
@@ -37,7 +37,16 @@ public partial class SurvivalWorldCheck : Node
             var Way = W.WaypointFast(Near, Far, 0.5f * 32, new[] { new Rect2(-(Vector2)GameSim.HALF, (Vector2)GameSim.HALF * 2) });
             Check(Way.DistanceTo(Near) > 1 && Mathf.Abs(Way.Y - At.Y) < IslandMap.BRIDGE_HALF_W, "enemies route straight over a bridge");
         }
-        Check(!W.LmAt.Values.Any(P => IslandMap.InRiver(P, 6 * 32)), "no landmark stands in or by a river");
+        Check(!W.LmAt.Any(L => IslandMap.InRiver(L.Key == 16 ? W.CaveCentre : L.Value, 6 * 32)), "no landmark structure stands in or by a river");
+        Check(!IslandMap.InRiver(W.CaveEntrance, IslandMap.RIVER_BANK + 10), "the eastern cave mouth stays on dry land beside the bridge approach");
+        var WithoutBridges = ReachableLand(false);
+        var WithBridges = ReachableLand(true);
+        foreach (int Id in new[] { 5, 9 })
+        {
+            Vector2I Cell = (Vector2I)(W.LmAt[Id] / 32).Round();
+            Check(!WithoutBridges.Contains(Cell) && WithBridges.Contains(Cell), IslandMap.ById(Id).Name + " is across the river and reachable by bridge");
+        }
+        Check(WithBridges.Contains((Vector2I)(W.SwampCentre / 32).Round()) && !IslandMap.InRiver(W.SwampCentre, W.SwampR), "relocated swamp leaves the expedition crossing clear");
         Check(!W.LmProps.Any(P => IslandMap.InRiver(P.Pos)) && !W.HarvestSites.Any(S => IslandMap.InRiver(S.Pos, 8)), "no prop, tree or rock stands in a river");
         int Wet = 0;
         foreach (var (Path, Width) in W.Trails)
@@ -62,45 +71,23 @@ public partial class SurvivalWorldCheck : Node
         }
         Check(Main.LowHealthStrength(90, 100) == 0 && Main.LowHealthStrength(10, 100) > Main.LowHealthStrength(35, 100), "red border increases as health falls");
         Check(GameSim.ROAM_CHECK < 15 && GameSim.ROAM_MAX > 8 && GameSim.RoamChance(new Vector2(0, 2200)) > .3f, "daytime encounters are more frequent and bounded");
-        var Seen = new HashSet<int>();
-        for (int Seed = 0; Seed < 64; Seed++)
-        {
-            S.Rng.Seed = (ulong)Seed; S.PlaceSupplies();
-            var ThisRun = new HashSet<int>();
-            foreach (GArray Sup in S.Supplies)
-            {
-                int Id = Gd.Int(Sup[2]); Seen.Add(Id); ThisRun.Add(Id);
-                Vector2 At = (Vector2)Sup[1];
-                if (Id == 1 || !IslandMap.OnLand(At, 32) || !W.ResolveFast(At, 10).IsEqualApprox(At)) throw new Exception("Component inaccessible");
-            }
-            if (ThisRun.Count != 3) throw new Exception("Component sites must be different");
-        }
-        Check(Seen.Count == 17, "random components can use every one of the 17 landmarks");
+        Check(S.ExplorationChests.Count == 20 && S.ExplorationChests.Count(C => C.Landmark > 4) == 14, "20 chests, 14 at expedition landmarks and six scattered");
         dynamic P = Gd.At(S.Players, 1), Q = Gd.At(S.Players, 2);
-        S.Phase = "night"; P.Pos = ((GArray)S.Supplies[0])[1]; S.TickSupplies();
-        Check(S.SuppliesGot() == 0 && S.SupplySnapshot().Count == 0, "no collecting or objective markers at night");
-        S.Phase = "day";
-        foreach (GArray Sup in S.Supplies) { P.Pos = Sup[1]; S.TickSupplies(); }
-        Check(S.SuppliesGot() == 3 && !S.SuppliesAllIn(), "finding components alone does not unlock extraction");
-        S.Dawn(); Check(S.SuppliesGot() == 3 && S.RescueComponents.All(N => N == 1), "components persist through dawn");
-        P.Pos = GameSim.WORKBENCH_POS + new Vector2(0, 24);
-        foreach (string Id in new[] { "wood", "stone", "herb" }) S.SetCount(P, Id, 30);
-        S.Phase = "night"; P.Inside = true;
-        Check(!S.CanCraft(P, 19, false), "Engineer cannot craft rescue equipment at night");
-        S.Phase = "day"; P.Inside = false;
-        for (int I = 19; I < 22; I++)
+        foreach (var C in S.ExplorationChests.Where(C => C.Component >= 0).ToList())
         {
-            Check(S.CanCraft(P, I, false), "rescue recipe available from day one with its component");
-            S.Craft(P, I); S.TickCraft(P, 2.9f);
-            Check(!S.RescueCrafted[I - 19], "rescue equipment requires its full crafting time");
-            S.TickCraft(P, .2f);
-            Check(S.RescueCrafted[I - 19] && S.RescueComponents[I - 19] == 0 && !S.CanCraft(P, I, false), "team installs equipment once and spends component once");
+            P.Pos = C.Pos; P.Inter = true; S.SetCount(P,"chest_key",1); S.Interact(P,2f);
+            int Slot = Enumerable.Range(0,8).First(I => C.Slots[I] is GArray A && Array.IndexOf(GameSim.COMPONENT_IDS,Gd.Str(A[0])) >= 0);
+            S.MoveSlot(P,new GArray("chest:"+C.Id,Slot,"inv",0));
         }
-        Check(S.SuppliesAllIn(), "all three crafted items unlock rescue");
-        S.K = 5; S.Phase = "night"; S.TimeLeft = 0f; S.Enemies = new GArray(); S.CheckEnd(.05f);
-        Check(S.Phase == "result" && Gd.Truth(Gd.At(S.Result, 0)), "complete equipment and a clear pad allow helicopter rescue");
-        S.StartMatch(); S.K = 5; S.Phase = "night"; S.TimeLeft = 0f; S.CheckEnd(.05f);
-        Check(S.Phase == "result" && !Gd.Truth(Gd.At(S.Result, 0)) && Gd.Str(Gd.At(S.Result, 1)).Contains("equipment"), "missing equipment prevents rescue even with clear pads");
+        Check(S.SuppliesGot() == 3 && !S.SuppliesAllIn(), "finding parts requires assembling the radio");
+        S.Dawn(); Check(S.SuppliesGot() == 3, "radio parts persist through dawn");
+        P.Pos = GameSim.WORKBENCH_POS + new Vector2(0,24);
+        S.TryBuildRadio(P, 3.1f);
+        Check(S.RadioBuilt, "radio is assembled at the workbench");
+        S.K = 5; S.Night(); S.TimeLeft = 0f; S.Enemies = new GArray(); S.CheckEnd(.05f);
+        Check(S.Phase == "result" && Gd.Truth(Gd.At(S.Result,0)), "radio and clear pad allow night 5 rescue");
+        S.StartMatch(); S.K = 5; S.Night();
+        Check(S.Phase == "result" && !Gd.Truth(Gd.At(S.Result,0)), "missing radio at the start of night 5 prevents rescue");
         S.ToLobby(); S.StartMatch(); P = Gd.At(S.Players, 1); Q = Gd.At(S.Players, 2);
         // Isolate construction geometry from resource collisions.
         S.Nodes = new GArray(); W.Rebuild(S.Nodes, S.Towers); P.Pos = S.FreeTowerSpot(0); Q.Pos = Vector2.Zero;
@@ -117,5 +104,24 @@ public partial class SurvivalWorldCheck : Node
         int Before = S.EnemyBodySteps;
         for (int I = 0; I < 60; I++) S.TickEnemySimulation(1f / 60);
         Check(S.EnemyBodySteps - Before == 20, "60Hz simulation runs expensive body/AI work only 20 times per second");
+    }
+
+    // Flood-fill land with and without decks: moving a map dot alone must not satisfy the crossing requirement.
+    static HashSet<Vector2I> ReachableLand(bool Bridges)
+    {
+        var Seen = new HashSet<Vector2I> { Vector2I.Zero };
+        var Queue = new Queue<Vector2I>(); Queue.Enqueue(Vector2I.Zero);
+        Vector2I[] Dirs = { Vector2I.Left, Vector2I.Right, Vector2I.Up, Vector2I.Down };
+        while (Queue.Count > 0)
+        {
+            Vector2I At = Queue.Dequeue();
+            foreach (var Dir in Dirs)
+            {
+                Vector2I Next = At + Dir; Vector2 P = (Vector2)Next * 32;
+                if (Seen.Contains(Next) || !IslandMap.OnLand(P, 10) || (!Bridges && IslandMap.InRiver(P, 10))) continue;
+                Seen.Add(Next); Queue.Enqueue(Next);
+            }
+        }
+        return Seen;
     }
 }

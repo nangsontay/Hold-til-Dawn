@@ -20,6 +20,8 @@ public static class Harvestables
 
     public static string StageSprite(string Sprite, int Stage)
     {
+        if (Stage == 5 && Sprite.StartsWith("node_titanium_", StringComparison.Ordinal)) return "ore_left_0";
+        if (Stage == 5 && Sprite.StartsWith("node_herb_", StringComparison.Ordinal)) return "herb_cut_0";
         int Split = Sprite.LastIndexOf('_');
         return Sprite[..Split] + (Stage == 5 ? "_empty_" : "_dmg" + Stage + "_") + Sprite[(Split + 1)..];
     }

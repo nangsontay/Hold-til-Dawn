@@ -227,7 +227,7 @@ public partial class Main : Node2D
     // whether a depth item (see Main._Draw) stands inside the base and is hidden from you
     public bool HiddenItem(dynamic It)
     {
-        if (BaseFog <= 0.5f)
+        if (BaseFog <= 0.5f && !InteriorActive)
         {
             return false;
         }
@@ -258,6 +258,12 @@ public partial class Main : Node2D
             case 11:
                 Pos = (Vector2)Gd.At(Gd.At(It, 2), 0);
                 break;
+            case 21:
+                Pos = (Vector2)Gd.At(Gd.At(It, 2), 1);
+                break;
+            case 22:
+                Pos = GameSim.WORKBENCH_POS;
+                break;
             case 12:
                 Pos = Corpses[Gd.Int(Gd.At(It, 2))].Foot;
                 break;
@@ -265,6 +271,6 @@ public partial class Main : Node2D
             default:
                 return false;
         }
-        return this.HiddenInBase(Pos);
+        return this.HiddenInBase(Pos) || HiddenOutsideInterior(Pos);
     }
 }

@@ -37,6 +37,9 @@ public partial class WorldGeometry
     void BuildLandmarks()
     {
         LmProps.Clear();
+        Compounds.Clear();
+        CompoundEntrances.Clear();
+        CompoundBoundaries.Clear(); CompoundGates.Clear();
         LmGround.Clear();
         Floors.Clear();
         Steps.Clear();
@@ -45,27 +48,30 @@ public partial class WorldGeometry
         LmClear.Clear();
         IslandMap.Docks.Clear();
         LmAt.Clear();
+        ExpeditionSites.Clear(); ExpeditionVehicles.Clear(); ExpeditionCliffs.Clear();
+        Lookouts.Clear(); LookoutObjects.Clear(); LookoutRails.Clear(); LookoutPlacements.Clear(); ReefBeds.Clear(); CapeGulls.Clear();
+        LmAt[1] = Vector2.Zero;
         var R = new Random(31);
-        Grove(R);
-        LimestoneFlats(R);
-        HerbMeadow(R);
-        BaysideWreck();
+        BuildHomeFarmLandmarks();
+        BuildBaysideScene();
         RuinedBase(R);
-        Convoy();
+        BuildConvoyScene();
         Mangroves(R);
-        WeatherStation(R);
-        Pier();
-        Northwind(R);
-        CoralLookout(R);
+        BuildWeatherStation();
+        BuildExpandedSite(10, Pier);
+        BuildNorthwindScene();
+        BuildCoralLookout();
         ContainerYard();
-        Shipwreck(R);
+        BuildExpandedSite(14, () => Shipwreck(R));
         PondBanks(R);
         Cave();
-        SouthCape(R);
+        BuildSouthCapeLookout();
         HerbGarden(R);
         DressLandmarks();
         BuildRamps();
         DressExploration();
+        // Compound entrances join the existing trail network after their larger footprints have been placed.
+        ConnectCompounds();
     }
 
     static Vector2 Tl(float X, float Y) => new Vector2(X, Y) * TL;
@@ -207,55 +213,10 @@ public partial class WorldGeometry
         }
     }
 
-    // --- 05 Bayside Wreck: the vehicle slid off the road, beside it
-    void BaysideWreck()
-    {
-        var (On, Along) = OnPath(At(5));
-        Vector2 Off = Along.Orthogonal();
-        if (Off.Y < 0) Off = -Off;
-        Vector2 P = Spot(On + Off * 3.0f * TL, 1.6f * TL, 0.3f, 6);
-        Prop(P, "lm_jeep_0");
-        LmAt[5] = P;
-        Solid(P + Tl(-0.7f, -0.3f), 0.75f * TL);
-        Solid(P + Tl(0.7f, -0.4f), 0.75f * TL);
-        Clear(P, 2.0f * TL);
-    }
-
     // --- 06 Ruined Base: a concrete floor, broken walls behind and to the left, shelves and crates, the mast
     void RuinedBase(Random R)
     {
-        Vector2 C = Spot(At(6), 4.5f * TL, 0.6f, 10).Round();
-        Floors.Add((new Rect2(C - Tl(4.5f, 3.4f), Tl(9, 6.4f)), true));
-        LmAt[6] = C;
-        Prop(C + Tl(-2.1f, -2.8f), "lm_ruin_h_0");
-        Prop(C + Tl(2.1f, -2.8f), "lm_ruin_h_1");
-        for (float X = -4.0f; X <= 3.4f; X += 0.8f)
-            if (X < 3.0f || X > 3.4f) Solid(C + Tl(X, -3.1f), 0.5f * TL);
-        Prop(C + Tl(-4.3f, 2.2f), "lm_ruin_v_0");
-        for (float Y = -1.0f; Y <= 2.0f; Y += 0.8f) Solid(C + Tl(-4.3f, Y), 0.5f * TL);
-        Prop(C + Tl(-2.4f, -2.2f), "lm_rack_0");
-        Solid(C + Tl(-2.4f, -2.5f), 0.7f * TL);
-        Prop(C + Tl(0.8f, 0.4f), "lm_crate_0");
-        Prop(C + Tl(1.6f, 1.2f), "lm_crate_0");
-        Prop(C + Tl(-1.2f, 1.8f), "lm_crate_0");
-        Prop(C + Tl(5.1f, -3.4f), "lm_mast_0");
-        Clear(C, 5.6f * TL);
-    }
-
-    // --- 07 Stranded Convoy: three trucks pulled off along the forest track
-    void Convoy()
-    {
-        var (On, Along) = OnPath(At(7));
-        Vector2 Off = Along.Orthogonal();
-        for (int I = 0; I < 3; I++)
-        {
-            Vector2 Want = On + Along * (I - 1) * 5.0f * TL + Off * ((I % 2 == 0) ? 3.0f : -3.0f) * TL;
-            Vector2 P = Spot(Want, 2.4f * TL, 0.3f, 6);
-            Prop(P, "lm_truck_" + (I == 1 ? 1 : 0));
-            if (I == 1) LmAt[7] = P;
-            foreach (float X in new[] { -1.4f, 0.0f, 1.4f }) Solid(P + Tl(X, -0.5f), 0.85f * TL);
-            Clear(P, 2.6f * TL);
-        }
+        BuildRuinedCompound();
     }
 
     // --- 08 Mangrove Swamp: mangroves on their stilt roots round the pools
@@ -273,18 +234,6 @@ public partial class WorldGeometry
         }
     }
 
-    // --- 09 Weather Station: the hut on the ridge, rocks round it
-    void WeatherStation(Random R)
-    {
-        Vector2 P = Spot(At(9), 2.2f * TL, 0.5f, 8);
-        Prop(P, "lm_station_0");
-        LmAt[9] = P;
-        Solid(P + Tl(-0.6f, -0.5f), 0.7f * TL);
-        Solid(P + Tl(0.6f, -0.5f), 0.7f * TL);
-        Clear(P, 2.6f * TL);
-        Footpath(At(9), P + Tl(-0.5f, 0.6f));
-    }
-
     // --- 10 Old Fishing Pier: out to sea from the west shore, fish traps on the beach
     void Pier()
     {
@@ -296,82 +245,19 @@ public partial class WorldGeometry
         LmGround.Add((Land, "lm_pier_0"));
         LmAt[10] = Land;
         // the deck: 224 px out from the land end, 48 px across (tools/PixelLandmarks.cs)
-        IslandMap.Docks.Add(new Rect2(Land + new Vector2(-224, -24), new Vector2(226, 48)));
+        IslandMap.Docks.Add(new Rect2(Land + new Vector2(-224, -24) * LANDMARK_SCALE, new Vector2(226, 48) * LANDMARK_SCALE));
         Prop(Land + Tl(1.0f, 1.6f), "lm_trap_0");
         Prop(Land + Tl(1.9f, -1.5f), "lm_trap_1");
         Prop(Land + Tl(2.6f, 1.2f), "lm_trap_0");
         Clear(Land + Tl(1.5f, 0), 2.5f * TL);
         Footpath(M, Land + Tl(0.6f, 0));
-    }
-
-    // --- 11 Northwind Slope: stone steps up the trail between two rocky shoulders
-    void Northwind(Random R)
-    {
-        var (On, Along) = OnPath(At(11));
-        Vector2 Off = Along.Orthogonal();
-        for (float D = -3.5f; D <= 3.5f; D += 0.8f) Steps.Add((On + Along * D * TL, Off));
-        LmAt[11] = On;
-        for (int I = 0; I < 3; I++)
-            foreach (int Side in new[] { -1, 1 })
-            {
-                Vector2 P = On + Along * (I - 1) * 2.4f * TL + Off * Side * (2.6f + (I % 2) * 0.8f) * TL;
-                if (!IslandMap.OnGrass(P, 0.6f * TL)) continue;
-                Prop(P, (I == 1) ? "crag_" + ((I + Side + 3) % 3) : "rock_" + ((I * 2 + Side + 4) % 4));
-                Clear(P, 1.2f * TL);
-            }
-    }
-
-    // --- 12 Coral Lookout: the shelter on the headland, the reef in the shallows below
-    void CoralLookout(Random R)
-    {
-        Vector2 M = At(12);
-        Vector2 Best = M;
-        float BestD = float.PositiveInfinity;
-        for (int Y = -14; Y <= 14; Y++)
-            for (int X = -14; X <= 14; X++)
-            {
-                Vector2 P = M + Tl(X, Y);
-                if (P.DistanceTo(M) > 14 * TL || !Room(P, 1.8f * TL, 0.5f)) continue;
-                float D = IslandMap.Depth(P);
-                if (D < BestD)
-                {
-                    BestD = D;
-                    Best = P;
-                }
-            }
-        Prop(Best, "lm_lookout_0");
-        LmAt[12] = Best;
-        Solid(Best + Tl(-1.0f, -0.4f), 0.45f * TL);
-        Solid(Best + Tl(1.0f, -0.4f), 0.45f * TL);
-        Clear(Best, 2.2f * TL);
-        Footpath(M, Best + Tl(-1.4f, 0.4f));
-        for (int I = 0; I < 400 && Coral.Count < 46; I++)
-        {
-            Vector2 P = Best + Vector2.FromAngle((float)R.NextDouble() * Mathf.Tau) * (float)R.NextDouble() * 13 * TL;
-            float D = IslandMap.Depth(P);
-            if (D < -1.0f * TL && D > -7.5f * TL) Coral.Add(P);
-        }
+        BuildFishingDetails(Land);
     }
 
     // --- 13 Container Yard: a concrete yard, containers along the back, one open, drums and pallets
     void ContainerYard()
     {
-        Vector2 C = Spot(At(13), 5.0f * TL, 0.6f, 10).Round();
-        Floors.Add((new Rect2(C - Tl(6.2f, 4.0f), Tl(12.4f, 7.6f)), true));
-        LmAt[13] = C;
-        Prop(C + Tl(-3.2f, -2.4f), "lm_container_1");
-        Prop(C + Tl(0.5f, -2.4f), "lm_container_end_0");
-        Prop(C + Tl(3.9f, -2.4f), "lm_container_0");
-        for (float X = -5.2f; X <= 6.0f; X += 0.9f)
-            if (X < -0.8f || X > 1.8f) Solid(C + Tl(X, -2.8f), 0.6f * TL);
-        Solid(C + Tl(-0.2f, -2.9f), 0.6f * TL);
-        Solid(C + Tl(1.1f, -2.9f), 0.6f * TL);
-        Prop(C + Tl(-0.6f, 1.2f), "lm_drum_0");
-        Prop(C + Tl(0.1f, 1.6f), "lm_drum_1");
-        Prop(C + Tl(4.9f, 1.4f), "lm_drum_0");
-        Prop(C + Tl(-3.1f, 1.9f), "lm_pallet_0");
-        Prop(C + Tl(2.2f, 2.4f), "lm_pallet_0");
-        Clear(C, 6.8f * TL);
+        BuildContainerCompound();
     }
 
     // --- 14 Beached Shipwreck: on the sand, the bow in the shallows, machinery washed up round it
@@ -435,63 +321,12 @@ public partial class WorldGeometry
     // --- 16 Southwest Cave: the bluff over the mouth (the spires of WorldTerrain flank it)
     void Cave()
     {
-        var Cv = IslandMap.ById(16);
-        if (Cv == null) return;
-        Vector2 Mouth = (Cv.Pos + Tl(1.5f, -2.5f) * S_).Round();
-        Crags.RemoveAll(P => MathF.Abs(P.X - Mouth.X) < 4.4f * TL && P.Y > Mouth.Y - 5.6f * TL && P.Y < Mouth.Y + 1.6f * TL);
-        Prop(Mouth, "lm_bluff_0");
-        LmAt[16] = Mouth;
-        foreach (var (X, Y, Rr) in new[] { (-2.7f, 0.0f, 1.0f), (2.7f, 0.0f, 1.0f), (0.0f, -1.0f, 0.8f), (-1.6f, -1.7f, 1.1f), (1.6f, -1.7f, 1.1f), (0.0f, -2.1f, 1.1f), (-3.3f, -1.8f, 1.1f), (3.3f, -1.8f, 1.1f) })
-            Solid(Mouth + Tl(X, Y), Rr * TL);
-        Clear(Mouth + Tl(0, -1.2f), 4.2f * TL);
-    }
-
-    // --- 17 South Cape Lookout: the platform at the tip of the cape
-    void SouthCape(Random R)
-    {
-        Vector2 M = At(17);
-        Vector2 Best = M;
-        float Far = float.NegativeInfinity;
-        for (int Y = -18; Y <= 18; Y++)
-            for (int X = -18; X <= 18; X++)
-            {
-                Vector2 P = M + Tl(X, Y);
-                if (P.DistanceTo(M) > 18 * TL || !IslandMap.OnLand(P, 2.6f * TL)) continue;
-                if (P.Length() > Far)
-                {
-                    Far = P.Length();
-                    Best = P;
-                }
-            }
-        Best = Best.Round();
-        LmGround.Add((Best, "lm_platform_0"));
-        LmAt[17] = Best;
-        Floors.Add((new Rect2(Best - Tl(1.9f, 1.3f), Tl(3.8f, 2.6f)), false));
-        Clear(Best, 2.6f * TL);
-        foreach (int Side in new[] { -1, 1 })
-        {
-            Vector2 P = Best + Tl(Side * 3.4f, 0.6f);
-            if (IslandMap.OnLand(P, 0.5f * TL)) Prop(P, "rock_" + (Side + 1));
-        }
-        Footpath(M, Best + (M - Best).Normalized() * 1.2f * TL);
+        BuildCaveCompound();
     }
 
     // --- 18 Abandoned Herb Garden: raised beds in a broken fence, a watering can left behind
     void HerbGarden(Random R)
     {
-        Vector2 C = Spot(At(18), 3.4f * TL, 0.6f, 10).Round();
-        LmAt[18] = C;
-        foreach (var (X, Y, K) in new[] { (-1.5f, -0.9f, 0), (1.5f, -0.9f, 1), (-1.5f, 1.1f, 1), (1.5f, 1.1f, 0) })
-        {
-            Prop(C + Tl(X, Y), "lm_bed_" + K);
-            Solid(C + Tl(X - 0.6f, Y - 0.5f), 0.55f * TL);
-            Solid(C + Tl(X + 0.6f, Y - 0.5f), 0.55f * TL);
-        }
-        Prop(C + Tl(-1.7f, -2.6f), "lm_fence_0");
-        Prop(C + Tl(1.9f, -2.5f), "lm_fence_0");
-        Prop(C + Tl(0.1f, 0.2f), "lm_can_0");
-        Prop(C + Tl(-3.4f, 0.4f), "lm_broadleaf_1");
-        Prop(C + Tl(3.5f, -0.2f), "lm_broadleaf_0");
-        Clear(C, 3.8f * TL);
+        BuildAbandonedGarden();
     }
 }

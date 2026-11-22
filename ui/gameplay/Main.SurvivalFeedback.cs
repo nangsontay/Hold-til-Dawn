@@ -41,21 +41,20 @@ public partial class Main
     }
     void DrawRescueChecklist(dynamic C, Rect2 Panel)
     {
-        Vector2 At = Panel.Position + new Vector2(20, 260);
-        Text(C, At, "DAYTIME EXPEDITION", 12, GOLD, 0, -1, true);
-        Text(C, At + new Vector2(0, 20), "M: gold markers show the missing components.", 11, Colors.White);
-        Text(C, At + new Vector2(0, 36), "Collected components are shared by the team.", 11, Colors.White);
+        Vector2 At = Panel.Position + new Vector2(20, 316);
+        Text(C, At, "EXPEDITION / LOCATOR RADIO", 12, GOLD, 0, -1, true);
+        Text(C, At + new Vector2(0, 20), "Craft keys, then hold E for 2s to unlock chests.", 11, Colors.White);
+        Text(C, At + new Vector2(0, 36), "Explore landmarks; chests are hidden on the map.", 11, Colors.White);
         var Rescue = Gd.Get(Snap, "rescue", null) as GArray;
         if (Rescue == null) return;
         for (int I = 0; I < 3; I++)
         {
-            bool Done = Gd.Truth(Gd.At(Rescue[1], I)), Found = Gd.Int(Gd.At(Rescue[0], I)) > 0;
-            string Where = "Explore a marked landmark by day";
-            foreach (GArray S in SupplyRows())
-                if (Gd.Int(S[0]) == I && S.Count > 3) Where = IslandMap.ById(Gd.Int(S[3]))?.Name ?? Where;
-            Text(C, At + new Vector2(0, 65 + I * 38), GameSim.SUPPLY_NAMES[I] + ": " + (Done ? "INSTALLED" : Found ? "READY TO CRAFT" : Where), 11,
-                Done ? Colors.LightGreen : GOLD);
+            bool Found = Gd.Int(Gd.At(Rescue[0], I)) > 0;
+            Text(C, At + new Vector2(0, 62 + I * 20), GameSim.SUPPLY_NAMES[I] + ": " + (Found ? "FOUND" : "SEARCH CHESTS"), 11,
+                Found ? Colors.LightGreen : GOLD);
         }
+        Text(C, At + new Vector2(0, 130), Gd.Truth(Rescue[1]) ? "RADIO ONLINE - defend a pad on night 5"
+            : "Hold E at the bench for 3s, before night 5.", 11, GOLD);
     }
     void DrawDirtFoundation(Vector2 At, float Progress)
     {

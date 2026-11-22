@@ -161,6 +161,7 @@ public partial class WorldGeometry : RefCounted
                 continue;
             }
             int Kind = this.TerrainAt(P, 4.0f);
+            if (BareLandmarkGround(P)) continue;
             if (Kind is 0 or 4 or 9)
             {
                 Gd.Append(Scatter, new GArray(P, Variant(Gd.At(Flat, (Random.Randi() % Gd.Size(Flat))), Random.Randi()), 1.0f));
@@ -188,6 +189,9 @@ public partial class WorldGeometry : RefCounted
         }
         FillResourceGaps(Variants);
         ExtractHarvestables(Variants);
+        AddCaveResources();
+        AddGardenHerbs();
+        EnsureHomeFarmResources();
         // a landmark's own props are added after the resources are picked out: they stay as scenery and cannot be
         // gathered, so each place keeps its look when everything round it has been cut down
         foreach (var (Lp, Ls) in this.LmProps)
@@ -227,6 +231,7 @@ public partial class WorldGeometry : RefCounted
             }
         }
         Layout.Free();
+        ThinOutsideResources();
         Gd.Append(StaticSolids, new GArray(Gd.MakeVector2(0, ((0.3f * T) - 6)), 22.0f, true));
         // the workbench and the storage chest (GameSim.World.cs)
         foreach (dynamic S in Gd.Iter(GameSim.FurnitureSolids()))
