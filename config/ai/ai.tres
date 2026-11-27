@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="AiSettings" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://config/ai/ai_settings.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+enemy_speed = 1.0
+first_wave = 15.0
+wave_interval = 45.0
+final_wave_interval = 30.0
+spawn_multiplier = 1.0
+roamer_multiplier = 1.0
+drop_multiplier = 1.0
+early_night_first_wave = 20.0
+early_night_wave_interval = 60.0
+spawn_spacing = 2.0
+max_night_enemies = 40

@@ -90,7 +90,7 @@
         "leader": {"type": "integer", "minimum": 0},
         "pid": {"type": "integer", "minimum": 1},
         "protocol": {"const": 1},
-        "content": {"const": "island-1"}
+        "content": {"const": "island-2"}
       }
     },
     "heartbeat": {
@@ -111,7 +111,7 @@
         "leader": {"type": "integer", "minimum": 0},
         "pid": {"type": "integer", "minimum": 1},
         "protocol": {"const": 1},
-        "content": {"const": "island-1"},
+        "content": {"const": "island-2"},
         "sequence": {"type": "integer", "minimum": 1},
         "maxFrameMs": {"type": "integer", "minimum": 0}
       }
@@ -266,8 +266,8 @@
     "reservationCodes": ["reserved", "invalid_request", "expired", "recovering", "request_conflict", "room_started", "creator_pending", "creator_exists", "full", "identity_in_use", "busy", "unavailable", "cancelled", "admitted", "insertion_failed"],
     "enetAdmission": {
       "version": 1,
-      "content": "island-1-client-2",
-      "versionPolicy": "The admission content string identifies the client build, including map compatibility and the required input acknowledgement field. Bump the protocol on incompatible ENet wire changes.",
+      "content": "island-2-client-1",
+      "versionPolicy": "The admission content string identifies the client build, including map compatibility and the format of admitted gameplay payloads. Bump the protocol on incompatible changes to the admission exchange.",
       "rpcRoot": "/root/Main",
       "procedure": [
         "After connecting, c_admission_begin(protocol, content, ticketId, clientNonce). ticketId is 16 bytes and clientNonce is 32 fresh random bytes, both lowercase hex. One challenge attempt per ENet connection.",
@@ -276,7 +276,7 @@
         "The worker sends s_admission_result(admitted) after inserting the player. Failure codes are invalid_attempt, incompatible_content, room_unavailable, invalid_ticket, unavailable, invalid_proof, insertion_failed.",
         "A connection has 5000 ms to admit; a challenge has at most 3000 ms within that deadline. There are 13 ENet transport slots to serve up to five humans and bound unadmitted connections. In active play and technical timeouts continue sending c_input on the existing 20 Hz cadence for liveness."
       ],
-      "actions": "c_action continues to carry (kind, arg). Ready uses (ready, bool); technical timeout votes use (timeout_vote, [step, bool]) where step is continue or bot and true selects Continue or Bot. A vote can change until its stage closes. The admitted s_snap dictionary retains existing fields and adds seed, result, storage and room. room contains name, state, ready and bots (peer-ID arrays), timeout, remainingMs, vacancies (names), votes (affirmative), votesCast, noEngineer and inputAcks (highest received input sequence by admitted peer, including while frozen). Clients continue sending c_input while admitted and use the transport acknowledgement independently of the simulated movement acknowledgement in ps. Resume increments the teleport serial to reject inputs sampled before the pause."
+      "actions": "c_action continues to carry (kind, arg). Ready uses (ready, bool); technical timeout votes use (timeout_vote, [step, bool]) where step is continue or bot and true selects Continue or Bot. A vote can change until its stage closes. The admitted s_snap envelope carries snapshot (Godot Variant bytes compressed with FastLZ) and size (uncompressed byte length). The decoded dictionary includes seed, result, storage and room. room contains name, state, ready and bots (peer-ID arrays), timeout, remainingMs, vacancies (names), votes (affirmative), votesCast, noEngineer and inputAcks (highest received input sequence by admitted peer, including while frozen). Clients continue sending c_input while admitted and use the transport acknowledgement independently of the simulated movement acknowledgement in ps. Resume increments the teleport serial to reject inputs sampled before the pause."
     }
   }
 }

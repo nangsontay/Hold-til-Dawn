@@ -1,0 +1,1007 @@
+{
+	"lm_anchor_0": [
+		30,
+		39,
+		0
+	],
+	"lm_arch_0": [
+		60,
+		105,
+		0
+	],
+	"lm_barricade_0": [
+		45,
+		27,
+		0
+	],
+	"lm_bed_0": [
+		42,
+		42,
+		0
+	],
+	"lm_bed_1": [
+		42,
+		42,
+		0
+	],
+	"lm_bed_dmg1_0": [
+		42,
+		42,
+		0
+	],
+	"lm_bed_dmg1_1": [
+		42,
+		42,
+		0
+	],
+	"lm_bed_dmg2_0": [
+		42,
+		42,
+		0
+	],
+	"lm_bed_dmg2_1": [
+		42,
+		42,
+		0
+	],
+	"lm_bed_dmg3_0": [
+		42,
+		42,
+		0
+	],
+	"lm_bed_dmg3_1": [
+		42,
+		42,
+		0
+	],
+	"lm_bed_dmg4_0": [
+		42,
+		42,
+		0
+	],
+	"lm_bed_dmg4_1": [
+		42,
+		42,
+		0
+	],
+	"lm_bed_empty_0": [
+		42,
+		42,
+		0
+	],
+	"lm_bed_empty_1": [
+		42,
+		42,
+		0
+	],
+	"lm_bluff_0": [
+		164,
+		172,
+		0
+	],
+	"lm_boat_0": [
+		62,
+		35,
+		0
+	],
+	"lm_broadleaf_0": [
+		19,
+		35,
+		0
+	],
+	"lm_broadleaf_1": [
+		19,
+		35,
+		0
+	],
+	"lm_broadleaf_dmg1_0": [
+		19,
+		35,
+		0
+	],
+	"lm_broadleaf_dmg1_1": [
+		19,
+		35,
+		0
+	],
+	"lm_broadleaf_dmg2_0": [
+		19,
+		35,
+		0
+	],
+	"lm_broadleaf_dmg2_1": [
+		19,
+		35,
+		0
+	],
+	"lm_broadleaf_dmg3_0": [
+		19,
+		35,
+		0
+	],
+	"lm_broadleaf_dmg3_1": [
+		19,
+		35,
+		0
+	],
+	"lm_broadleaf_dmg4_0": [
+		19,
+		35,
+		0
+	],
+	"lm_broadleaf_dmg4_1": [
+		19,
+		35,
+		0
+	],
+	"lm_broadleaf_empty_0": [
+		19,
+		35,
+		0
+	],
+	"lm_broadleaf_empty_1": [
+		19,
+		35,
+		0
+	],
+	"lm_buoys_0": [
+		34,
+		57,
+		7
+	],
+	"lm_cable_0": [
+		22,
+		33,
+		9
+	],
+	"lm_cairn_0": [
+		22,
+		55,
+		7
+	],
+	"lm_cairn_dmg1_0": [
+		22,
+		55,
+		7
+	],
+	"lm_cairn_dmg2_0": [
+		22,
+		55,
+		7
+	],
+	"lm_cairn_dmg3_0": [
+		22,
+		55,
+		7
+	],
+	"lm_cairn_dmg4_0": [
+		22,
+		55,
+		7
+	],
+	"lm_cairn_empty_0": [
+		22,
+		55,
+		0
+	],
+	"lm_can_0": [
+		12,
+		18,
+		0
+	],
+	"lm_cargo_stack_0": [
+		42,
+		61,
+		12
+	],
+	"lm_cart_0": [
+		41,
+		46,
+		10
+	],
+	"lm_chainfence_0": [
+		79,
+		55,
+		0
+	],
+	"lm_coconuts_0": [
+		19,
+		19,
+		0
+	],
+	"lm_console_0": [
+		33,
+		57,
+		12
+	],
+	"lm_container_0": [
+		89,
+		70,
+		0
+	],
+	"lm_container_1": [
+		89,
+		126,
+		0
+	],
+	"lm_container_end_0": [
+		52,
+		133,
+		0
+	],
+	"lm_crane_0": [
+		48,
+		184,
+		0
+	],
+	"lm_crate_0": [
+		15,
+		22,
+		8
+	],
+	"lm_drum_0": [
+		10,
+		25,
+		6
+	],
+	"lm_drum_1": [
+		10,
+		25,
+		6
+	],
+	"lm_expedition_0": [
+		36,
+		36,
+		0
+	],
+	"lm_fence_0": [
+		54,
+		38,
+		0
+	],
+	"lm_fern_0": [
+		28,
+		36,
+		0
+	],
+	"lm_fern_dmg1_0": [
+		28,
+		36,
+		0
+	],
+	"lm_fern_dmg2_0": [
+		28,
+		36,
+		0
+	],
+	"lm_fern_dmg3_0": [
+		28,
+		36,
+		0
+	],
+	"lm_fern_dmg4_0": [
+		28,
+		36,
+		0
+	],
+	"lm_fern_empty_0": [
+		28,
+		36,
+		0
+	],
+	"lm_flowers_0": [
+		27,
+		27,
+		0
+	],
+	"lm_flowers_1": [
+		27,
+		27,
+		0
+	],
+	"lm_flowers_2": [
+		27,
+		27,
+		0
+	],
+	"lm_flowers_dmg1_0": [
+		27,
+		27,
+		0
+	],
+	"lm_flowers_dmg1_1": [
+		27,
+		27,
+		0
+	],
+	"lm_flowers_dmg1_2": [
+		27,
+		27,
+		0
+	],
+	"lm_flowers_dmg2_0": [
+		27,
+		27,
+		0
+	],
+	"lm_flowers_dmg2_1": [
+		27,
+		27,
+		0
+	],
+	"lm_flowers_dmg2_2": [
+		27,
+		27,
+		0
+	],
+	"lm_flowers_dmg3_0": [
+		27,
+		27,
+		0
+	],
+	"lm_flowers_dmg3_1": [
+		27,
+		27,
+		0
+	],
+	"lm_flowers_dmg3_2": [
+		27,
+		27,
+		0
+	],
+	"lm_flowers_dmg4_0": [
+		27,
+		27,
+		0
+	],
+	"lm_flowers_dmg4_1": [
+		27,
+		27,
+		0
+	],
+	"lm_flowers_dmg4_2": [
+		27,
+		27,
+		0
+	],
+	"lm_flowers_empty_0": [
+		27,
+		27,
+		0
+	],
+	"lm_flowers_empty_1": [
+		27,
+		27,
+		0
+	],
+	"lm_flowers_empty_2": [
+		27,
+		27,
+		0
+	],
+	"lm_forklift_0": [
+		47,
+		74,
+		0
+	],
+	"lm_fossil_0": [
+		47,
+		41,
+		0
+	],
+	"lm_fossil_dmg1_0": [
+		47,
+		41,
+		0
+	],
+	"lm_fossil_dmg2_0": [
+		47,
+		41,
+		0
+	],
+	"lm_fossil_dmg3_0": [
+		47,
+		41,
+		0
+	],
+	"lm_fossil_dmg4_0": [
+		47,
+		41,
+		0
+	],
+	"lm_fossil_empty_0": [
+		47,
+		41,
+		0
+	],
+	"lm_gear_0": [
+		19,
+		25,
+		8
+	],
+	"lm_generator_0": [
+		34,
+		40,
+		12
+	],
+	"lm_ginger_0": [
+		15,
+		36,
+		0
+	],
+	"lm_ginger_dmg1_0": [
+		15,
+		36,
+		0
+	],
+	"lm_ginger_dmg2_0": [
+		15,
+		36,
+		0
+	],
+	"lm_ginger_dmg3_0": [
+		15,
+		36,
+		0
+	],
+	"lm_ginger_dmg4_0": [
+		15,
+		36,
+		0
+	],
+	"lm_ginger_empty_0": [
+		15,
+		36,
+		0
+	],
+	"lm_jeep_0": [
+		48,
+		57,
+		0
+	],
+	"lm_lifering_0": [
+		17,
+		22,
+		0
+	],
+	"lm_log_0": [
+		42,
+		22,
+		0
+	],
+	"lm_log_dmg1_0": [
+		42,
+		22,
+		0
+	],
+	"lm_log_dmg2_0": [
+		42,
+		22,
+		0
+	],
+	"lm_log_dmg3_0": [
+		42,
+		22,
+		0
+	],
+	"lm_log_dmg4_0": [
+		42,
+		22,
+		0
+	],
+	"lm_log_empty_0": [
+		42,
+		22,
+		0
+	],
+	"lm_lookout_0": [
+		52,
+		118,
+		0
+	],
+	"lm_mangrove_0": [
+		36,
+		75,
+		7
+	],
+	"lm_mangrove_1": [
+		36,
+		75,
+		7
+	],
+	"lm_mangrove_2": [
+		36,
+		75,
+		7
+	],
+	"lm_mangrove_dmg1_0": [
+		36,
+		75,
+		7
+	],
+	"lm_mangrove_dmg1_1": [
+		36,
+		75,
+		7
+	],
+	"lm_mangrove_dmg1_2": [
+		36,
+		75,
+		7
+	],
+	"lm_mangrove_dmg2_0": [
+		36,
+		75,
+		7
+	],
+	"lm_mangrove_dmg2_1": [
+		36,
+		75,
+		7
+	],
+	"lm_mangrove_dmg2_2": [
+		36,
+		75,
+		7
+	],
+	"lm_mangrove_dmg3_0": [
+		36,
+		75,
+		7
+	],
+	"lm_mangrove_dmg3_1": [
+		36,
+		75,
+		7
+	],
+	"lm_mangrove_dmg3_2": [
+		36,
+		75,
+		7
+	],
+	"lm_mangrove_dmg4_0": [
+		36,
+		75,
+		7
+	],
+	"lm_mangrove_dmg4_1": [
+		36,
+		75,
+		7
+	],
+	"lm_mangrove_dmg4_2": [
+		36,
+		75,
+		7
+	],
+	"lm_mangrove_empty_0": [
+		36,
+		75,
+		0
+	],
+	"lm_mangrove_empty_1": [
+		36,
+		75,
+		0
+	],
+	"lm_mangrove_empty_2": [
+		36,
+		75,
+		0
+	],
+	"lm_mast_0": [
+		20,
+		146,
+		6
+	],
+	"lm_pallet_0": [
+		20,
+		15,
+		0
+	],
+	"lm_palm_0": [
+		38,
+		84,
+		6
+	],
+	"lm_palm_1": [
+		38,
+		92,
+		6
+	],
+	"lm_palm_2": [
+		38,
+		100,
+		6
+	],
+	"lm_palm_3": [
+		38,
+		84,
+		6
+	],
+	"lm_palm_dmg1_0": [
+		38,
+		84,
+		6
+	],
+	"lm_palm_dmg1_1": [
+		38,
+		92,
+		6
+	],
+	"lm_palm_dmg1_2": [
+		38,
+		100,
+		6
+	],
+	"lm_palm_dmg1_3": [
+		38,
+		84,
+		6
+	],
+	"lm_palm_dmg2_0": [
+		38,
+		84,
+		6
+	],
+	"lm_palm_dmg2_1": [
+		38,
+		92,
+		6
+	],
+	"lm_palm_dmg2_2": [
+		38,
+		100,
+		6
+	],
+	"lm_palm_dmg2_3": [
+		38,
+		84,
+		6
+	],
+	"lm_palm_dmg3_0": [
+		38,
+		84,
+		6
+	],
+	"lm_palm_dmg3_1": [
+		38,
+		92,
+		6
+	],
+	"lm_palm_dmg3_2": [
+		38,
+		100,
+		6
+	],
+	"lm_palm_dmg3_3": [
+		38,
+		84,
+		6
+	],
+	"lm_palm_dmg4_0": [
+		38,
+		84,
+		6
+	],
+	"lm_palm_dmg4_1": [
+		38,
+		92,
+		6
+	],
+	"lm_palm_dmg4_2": [
+		38,
+		100,
+		6
+	],
+	"lm_palm_dmg4_3": [
+		38,
+		84,
+		6
+	],
+	"lm_palm_empty_0": [
+		38,
+		84,
+		0
+	],
+	"lm_palm_empty_1": [
+		38,
+		92,
+		0
+	],
+	"lm_palm_empty_2": [
+		38,
+		100,
+		0
+	],
+	"lm_palm_empty_3": [
+		38,
+		84,
+		0
+	],
+	"lm_pier_0": [
+		296,
+		40,
+		0
+	],
+	"lm_platform_0": [
+		75,
+		54,
+		0
+	],
+	"lm_pots_0": [
+		30,
+		32,
+		0
+	],
+	"lm_pots_dmg1_0": [
+		30,
+		32,
+		0
+	],
+	"lm_pots_dmg2_0": [
+		30,
+		32,
+		0
+	],
+	"lm_pots_dmg3_0": [
+		30,
+		32,
+		0
+	],
+	"lm_pots_dmg4_0": [
+		30,
+		32,
+		0
+	],
+	"lm_pots_empty_0": [
+		30,
+		32,
+		0
+	],
+	"lm_rack_0": [
+		26,
+		56,
+		0
+	],
+	"lm_radar_0": [
+		50,
+		120,
+		12
+	],
+	"lm_radio_0": [
+		27,
+		45,
+		0
+	],
+	"lm_rainbarrel_0": [
+		22,
+		40,
+		10
+	],
+	"lm_roof_fallen_0": [
+		58,
+		54,
+		0
+	],
+	"lm_rope_0": [
+		22,
+		16,
+		0
+	],
+	"lm_rubble_0": [
+		41,
+		33,
+		0
+	],
+	"lm_rubble_1": [
+		41,
+		33,
+		0
+	],
+	"lm_ruin_h_0": [
+		77,
+		96,
+		0
+	],
+	"lm_ruin_h_1": [
+		77,
+		96,
+		0
+	],
+	"lm_ruin_v_0": [
+		29,
+		146,
+		0
+	],
+	"lm_scope_0": [
+		26,
+		55,
+		6
+	],
+	"lm_scrap_0": [
+		35,
+		26,
+		0
+	],
+	"lm_shelf_0": [
+		52,
+		44,
+		18
+	],
+	"lm_shelf_1": [
+		60,
+		44,
+		21
+	],
+	"lm_shelf_2": [
+		68,
+		44,
+		24
+	],
+	"lm_shelf_dmg1_0": [
+		52,
+		44,
+		18
+	],
+	"lm_shelf_dmg1_1": [
+		60,
+		44,
+		21
+	],
+	"lm_shelf_dmg1_2": [
+		68,
+		44,
+		24
+	],
+	"lm_shelf_dmg2_0": [
+		52,
+		44,
+		18
+	],
+	"lm_shelf_dmg2_1": [
+		60,
+		44,
+		21
+	],
+	"lm_shelf_dmg2_2": [
+		68,
+		44,
+		24
+	],
+	"lm_shelf_dmg3_0": [
+		52,
+		44,
+		18
+	],
+	"lm_shelf_dmg3_1": [
+		60,
+		44,
+		21
+	],
+	"lm_shelf_dmg3_2": [
+		68,
+		44,
+		24
+	],
+	"lm_shelf_dmg4_0": [
+		52,
+		44,
+		18
+	],
+	"lm_shelf_dmg4_1": [
+		60,
+		44,
+		21
+	],
+	"lm_shelf_dmg4_2": [
+		68,
+		44,
+		24
+	],
+	"lm_shelf_empty_0": [
+		52,
+		44,
+		0
+	],
+	"lm_shelf_empty_1": [
+		60,
+		44,
+		0
+	],
+	"lm_shelf_empty_2": [
+		68,
+		44,
+		0
+	],
+	"lm_ship_0": [
+		235,
+		206,
+		0
+	],
+	"lm_signpost_0": [
+		24,
+		55,
+		4
+	],
+	"lm_solar_0": [
+		37,
+		51,
+		12
+	],
+	"lm_station_0": [
+		46,
+		114,
+		0
+	],
+	"lm_sticks_0": [
+		18,
+		12,
+		0
+	],
+	"lm_sticks_dmg1_0": [
+		18,
+		12,
+		0
+	],
+	"lm_sticks_dmg2_0": [
+		18,
+		12,
+		0
+	],
+	"lm_sticks_dmg3_0": [
+		18,
+		12,
+		0
+	],
+	"lm_sticks_dmg4_0": [
+		18,
+		12,
+		0
+	],
+	"lm_sticks_empty_0": [
+		18,
+		12,
+		0
+	],
+	"lm_tent_0": [
+		51,
+		66,
+		12
+	],
+	"lm_trap_0": [
+		15,
+		20,
+		0
+	],
+	"lm_trap_1": [
+		15,
+		20,
+		0
+	],
+	"lm_truck_0": [
+		72,
+		84,
+		0
+	],
+	"lm_truck_1": [
+		72,
+		84,
+		0
+	],
+	"lm_warning_0": [
+		24,
+		58,
+		3
+	],
+	"lm_waterpump_0": [
+		29,
+		64,
+		8
+	],
+	"lm_windsock_0": [
+		22,
+		99,
+		4
+	]
+}

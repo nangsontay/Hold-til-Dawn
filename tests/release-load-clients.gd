@@ -6,6 +6,7 @@ class Client extends "res://main.gd":
 	var role: int
 	var proxy_base: int
 	var port := 0
+	var directory_opened_at := 0
 	var admitted_at := 0
 	var collecting := false
 	var snapshots := []
@@ -25,6 +26,7 @@ class Client extends "res://main.gd":
 		for label in ["Scout", "Healer", "Engineer"]:
 			role_opt.add_item(label)
 		role_opt.select(role)
+		directory_opened_at = Time.get_ticks_msec()
 		_open_directory()
 
 	func _key(key: Key) -> float:
@@ -124,7 +126,6 @@ func _state(client: Client, state: String) -> bool:
 
 
 func _run() -> void:
-	var opened_at := Time.get_ticks_msec()
 	var observer := _client("Observer", 0, 15)
 	var published := {}
 	observer.directory.changed.connect(func():
@@ -133,7 +134,7 @@ func _run() -> void:
 				published[room_id] = Time.get_ticks_msec()
 	)
 	await _wait_for("initial directory", func(): return observer.directory.state == Client.LobbyClient.State.ONLINE)
-	var list_ms := Time.get_ticks_msec() - opened_at
+	var list_ms := Time.get_ticks_msec() - observer.directory_opened_at
 	var crews := []
 	var leads := []
 	for room_index in 3:

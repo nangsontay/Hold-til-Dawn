@@ -1,0 +1,10 @@
+Projectile sprites in this folder
+=================================
+arrow (players' bow arrows, MEC-03; drawn turned to the flight direction), spit (Spitter, AGT-02),
+orb (Bio-Cannon spore, AGT-07).
+
+Original pixel art for Hold 'til Dawn, drawn by tools/PixelItems.cs. No third-party asset and no
+AI image generator was used.
+
+AI disclosure: written by an AI coding assistant (Claude) from the team's GDD; declare them in
+GDD Appendix B as AI-made assets. The PNGs can be repainted by hand.

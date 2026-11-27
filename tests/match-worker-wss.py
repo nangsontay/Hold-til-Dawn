@@ -61,8 +61,8 @@ def main(godot):
         certs(directory)
         project = directory / "project"
         project.mkdir()
-        for name in (".godot", "addons", "art", "config", "maps", "multiplayer", "tests",
-                     "match-worker.gd", "worker-control.gd", "game.gd", "bots.gd", "world_geometry.gd"):
+        for name in (".godot", "addons", "art", "config", "fonts", "maps", "multiplayer", "src", "tests",
+                     "match-worker.gd", "worker-control.gd", "game_sim.gd"):
             (project / name).symlink_to(ROOT / name)
         key = directory / "control.key"
         key.touch(mode=0o600)

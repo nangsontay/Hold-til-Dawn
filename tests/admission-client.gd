@@ -78,7 +78,8 @@ class Client extends "res://main.gd":
 			get_tree().quit(0)
 			set_physics_process(false)
 			return
-		if time >= 90:
+		# The directory suite can keep this peer alive through a full 60 s empty-room check.
+		if time >= 150:
 			get_tree().quit(1)
 		var me: Array = snap.get("ps", {}).get(my_id, [])
 		if not me.is_empty() and snap.room.state in ["playing", "timeout"] and frame % 3 == 0:

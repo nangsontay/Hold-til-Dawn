@@ -1,19 +1,23 @@
 @tool
+class_name MapProp
 extends Sprite2D
-## Position is the foot/growth point, not the centre of the image.
-@export var solid_radius: float = 20.0
+## Position is the ground anchor of the nature sprite.
+
+@export var solid_radius: float = 20
+
 @export var blocks_attacks: bool = true
 
-
 func _ready() -> void:
-	texture_changed.connect(_align_feet)
-	_align_feet()
+	texture_changed.connect(align_feet)
+	align_feet()
 
-
-func _align_feet() -> void:
-	if texture == null: return
-	var index: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://art/nature/index.json"))
-	var name_key := texture.resource_path.get_file().get_basename()
-	if index.has(name_key):
-		centered = false
-		offset = -Vector2(index[name_key][0], index[name_key][1])
+func align_feet() -> void:
+	if texture == null:
+		return
+	var index = JSON.parse_string(FileAccess.get_file_as_string("res://art/nature/index.json"))
+	var key = texture.resource_path.get_file().get_basename()
+	if not index.has(key):
+		return
+	var anchor = index[key]
+	centered = false
+	offset = -Vector2(float(anchor[0]), float(anchor[1]))

@@ -3,8 +3,8 @@ extends RefCounted
 
 const Protocol = preload("res://worker-control.gd")
 const PROTOCOL := 1
-const CONTENT := "island-1"
-const CLIENT_BUILD := CONTENT + "-client-2"
+const CONTENT := "island-2"
+const CLIENT_BUILD := CONTENT + "-client-1"
 const CAPACITY := 5
 const TRANSPORT_PEERS := 13
 const HANDSHAKE_MS := 5000
@@ -84,6 +84,7 @@ static func _valid_name(value: Variant) -> bool:
 func _init(game: GameSim, config: Dictionary, now: int) -> void:
 	sim = game
 	sim.managed = true
+	sim.result = ""
 	development = OS.is_debug_build() and config.get("development", false)
 	control = Protocol.new(config.roomId, config.generation, config.udp, config.tcp, config.key)
 	empty_since = now
@@ -397,9 +398,10 @@ func action(peer: int, kind: String, arg: Variant, now := 0) -> void:
 								_release(ticket, "room_started", now)
 								_send("reservation_cancelled", {"requestId": started_tickets[ticket].request, "reason": "room_started"}, now)
 						else:
-							sim._say(error)
+							sim.say(error)
 		"playing":
-			if kind in ["craft", "tower", "bandage", "flask", "vote"]:
+			if kind in ["craft", "cancel_craft", "tower", "build", "bandage", "flask", "use_item", "select",
+					"move_item", "open_chest", "give", "vote"]:
 				sim.action(peer, kind, arg)
 		"timeout":
 			if kind == "timeout_vote" and arg is Array and arg.size() == 2 and timeout in ["continue", "bot"] \
@@ -436,7 +438,7 @@ func update_game(dt: float, now: int) -> Array:
 			return timed_out
 		if connection_paused:
 			_resume()
-		var was_result := sim.phase == "result"
+		var was_result: bool = sim.phase == "result"
 		sim.tick(dt)
 		if was_result and sim.phase == "lobby":
 			ready.clear()
@@ -491,7 +493,7 @@ func _end_timeout(why: String) -> void:
 
 
 func snapshot(now: int) -> Dictionary:
-	var data := sim.snapshot()
+	var data: Dictionary = sim.snapshot()
 	data.room = {"name": last_name, "state": state(), "ready": ready.keys(), "bots": sim.players.values().filter(func(p): return p.bot).map(func(p): return p.id),
 		"timeout": "connection" if connection_paused else timeout, "remainingMs": maxi(0, deadline - now) if not timeout.is_empty() else 0, "vacancies": vacancies.values(),
 		"votes": votes.values().count(true), "votesCast": votes.size(), "inputAcks": input_acks,

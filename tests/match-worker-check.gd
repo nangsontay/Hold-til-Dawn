@@ -17,7 +17,9 @@ var failures := 0
 func _initialize() -> void:
 	_check_admission()
 	_check_demo_bots()
+	_check_sim_action_guards()
 	_check_match()
+	_check_chest_snapshots()
 	_check_timeout_paths()
 	_check_stalled_input()
 	_check_resume_interactions()
@@ -41,6 +43,72 @@ func _worker() -> Worker:
 	worker.control.status = "online"
 	worker.started = true
 	return worker
+
+
+func _check_sim_action_guards() -> void:
+	var sim := GameSim.new()
+	sim.add_player(1, "Lead", 2)
+	sim.add_player(2, "Engineer", 2)
+	for value in [0, 2]:
+		sim.action(1, "role", value)
+		sim.action(1, "mode", value)
+		check(sim.players[1].role == value and sim.mode == value, "integer role and mode are accepted")
+		for arg in ["2", true, null, 1.5, [], {}]:
+			sim.action(1, "role", arg)
+			sim.action(1, "mode", arg)
+			var type := type_string(typeof(arg))
+			check(sim.players[1].role == value, "role rejects " + type)
+			check(sim.mode == value, "mode rejects " + type)
+	sim.action(1, "start", 0)
+	sim.mark_vacant(2)
+	sim.resolve_vacancy(2, true)
+	var bot: Dictionary = sim.players[2]
+	sim.set_count(bot, "wood", 10)
+	bot.pos = GameSim.WORKBENCH_POS
+	sim.action(2, "craft", 0)
+	check(bot.craft_idx == -1, "GameSim rejects replacement crafting")
+	sim.nodes.clear()
+	sim.world.rebuild(sim.nodes, sim.towers)
+	var tower_spot: Vector2 = sim.free_tower_spot(0)
+	bot.pos = tower_spot
+	sim.action(2, "tower", 0)
+	check(sim.construction.is_empty(), "GameSim rejects replacement tower construction")
+	var wall_spot := GameSim.snap_to_tile(GameSim.DOOR_POS[0] + GameSim.DOOR_DIR[0] * 6 * GameSim.T)
+	bot.pos = wall_spot - GameSim.DOOR_DIR[0] * 2 * GameSim.T
+	sim.action(2, "build", ["wood", wall_spot, true])
+	check(sim.built_walls.is_empty() and sim.count(bot, "wood") == 10, "GameSim rejects replacement wall construction")
+	bot.replacement = false
+	sim.action(2, "build", ["wood", wall_spot, true])
+	check(sim.built_walls.size() == 1, "the wall request is valid for an ordinary Engineer")
+	bot.pos = tower_spot
+	sim.action(2, "tower", 0)
+	check(sim.construction.size() == 1, "the tower request is valid for an ordinary Engineer")
+	bot.pos = GameSim.WORKBENCH_POS
+	sim.action(2, "craft", 0)
+	check(bot.craft_idx == 0, "the craft request is valid for an ordinary Engineer")
+
+
+func _check_chest_snapshots() -> void:
+	var w := _worker()
+	for peer in [2, 3, 4]:
+		_join(w, peer)
+	_ready_all(w)
+	w.action(2, "start", 0)
+	for peer in [2, 3]:
+		var player: Dictionary = w.sim.players[peer]
+		var chest = w.sim.exploration_chests[peer - 2]
+		player.pos = chest.pos
+		chest.opened = true
+		w.sim.action(peer, "open_chest", chest.id)
+	var data := w.snapshot(0)
+	for peer in [2, 3]:
+		var chest = w.sim.exploration_chests[peer - 2]
+		var scoped := GameSim.snapshot_for(data, peer)
+		check(scoped.chests == {peer: [chest.id, chest.slots]}, "chest viewer receives only their own open chest")
+		check(scoped.room == data.room and scoped.sup == data.sup, "chest scoping preserves public room and supply state")
+	check(GameSim.snapshot_for(data, 4).chests.is_empty(), "a distant peer receives no chest contents")
+	check(GameSim.snapshot_for(data, 0).chests.is_empty(), "the shared packet contains no chest contents")
+	check(data.chests.size() == 2, "scoping a snapshot preserves the original views for other recipients")
 
 
 func _request(id: int, creator := false, role := 2, ttl := 10000) -> Dictionary:
@@ -203,14 +271,14 @@ func _check_match() -> void:
 	w.sim.input(2, start, 0, true, true, true, hero.tp, 1)
 	check(not hero.atk, "replayed input ignored")
 	hero.hp = 17
-	hero.inv.wood = 11
-	hero.weapon = 2
+	w.sim.set_count(hero, "wood", 11)
+	hero.weapon = "stone_spear"
 	hero.armour = 1
 	var position: Vector2 = hero.pos
 	w.sim.players[3].channel = 1.0
 	w.sim._spawn(0, w.sim.active[0], 10.0)
 	w.sim.proj.append({"pos": Vector2.ONE})
-	var t := w.sim.t
+	var t: float = w.sim.t
 	var enemies := w.sim.enemies.duplicate(true)
 	w.disconnected(2, 100)
 	w.action(2, "timeout_vote", ["continue", false])
@@ -242,25 +310,26 @@ func _check_match() -> void:
 	check(w.state() == "playing" and w.sim.players[2].bot and w.sim.players[4].bot, "one replacement per vacancy")
 	w.sim.input(3, Vector2.ZERO, 0, true, true, true, old_tp, 2)
 	check(w.sim.players[3].tp > old_tp and not w.sim.players[3].atk, "resume ignores pre-pause input")
-	check(hero.pos == position and hero.hp == 17 and hero.inv.wood == 11 and hero.weapon == 2 and hero.armour == 1
+	check(hero.pos == position and hero.hp == 17 and w.sim.count(hero, "wood") == 11 and hero.weapon == "stone_spear" and hero.armour == 1
 		and hero.role == 0 and hero.maxhp == GameSim.ROLE_HP[0], "replacement preserves state and equipment")
 	check(w.snapshot(4102).room.name.length() == 16 and w.snapshot(4102).room.name == w.sim.players[3].name,
 		"room name follows the successor with a 16-character cap")
 	check(w.sim.players.size() == 3 and w._report().bots == 2 and w.sim.leader() == 3, "replacement counts in population and cannot lead")
 	w.sim.proj.clear()
+	w.sim.boss_plan = [0, 1]
 	w.sim._spawn_boss()
 	var hp: float = w.sim.enemies.back().maxhp
 	check(is_equal_approx(hp, 3900.0 * 2.6 / 3.4 * GameSim.MODE_MUL[w.sim.mode][1]), "boss scaling includes replacements")
 	w.sim.enemies.clear()
 	w.sim.wave = 1
-	w.sim._spawn_wave()
-	var with_bots := w.sim.enemies.size()
+	var with_bots := _drain_wave(w.sim, true)
 	w.sim.enemies.clear()
 	w.sim.carry = 0
 	w.sim._remove_character(2)
 	w.sim._remove_character(4)
-	w.sim._spawn_wave()
-	check(with_bots > w.sim.enemies.size(), "wave scaling includes replacements")
+	w.sim.wave = 1
+	var without_bots := _drain_wave(w.sim, false)
+	check(with_bots > without_bots and without_bots > 0, "wave scaling includes replacements (%d > %d)" % [with_bots, without_bots])
 	w.disconnected(3, 4200)
 	check(w.state() == "result" and w.sim.result == "no_winner" and not w.sim.frozen, "last human leaves, match ends immediately")
 	w.update_game(10, 14200)
@@ -274,8 +343,10 @@ func _check_timeout_paths() -> void:
 	_ready_all(w)
 	w.action(2, "start", 0)
 	check(w.state() == "playing", "five humans can start")
-	w.sim.players[2].inv.herb = 9
-	w.sim.players[6].inv.wood = 4
+	w.sim.set_count(w.sim.players[2], "herb", 9)
+	w.sim.set_count(w.sim.players[6], "wood", 4)
+	var bow_slot: int = w.sim.players[6].inv.find(null)
+	w.sim.players[6].inv[bow_slot] = GameSim.bow_slot(3)
 	var drop_position: Vector2 = w.sim.players[2].pos
 	var second_position: Vector2 = w.sim.players[6].pos
 	w.disconnected(2, 100)
@@ -287,18 +358,20 @@ func _check_timeout_paths() -> void:
 	check(w.timeout == "bot", "step two before deadline")
 	w.update_game(0, 60100)
 	w.update_game(0, 63100)
-	check(w.sim.drops.size() == 2 and w.sim.drops.any(func(d): return d.item == "herb" and d.n == 9 and d.pos == drop_position)
-		and w.sim.drops.any(func(d): return d.item == "wood" and d.n == 4 and d.pos == second_position)
+	check(w.sim.drops.any(func(d): return d.item == "herb" and d.n == 9 and d.pos == drop_position and d.get("from_leaver", false))
+		and w.sim.drops.any(func(d): return d.item == "wood" and d.n == 4 and d.pos == second_position and d.get("from_leaver", false))
+		and w.sim.drops.any(func(d): return d.item == "arrow" and d.n == 3 and d.pos == second_position and d.get("from_leaver", false))
 		and not w.sim.players.has(2) and not w.sim.players.has(6),
-		"no votes resumes, dropping both inventories at their last positions")
+		"no votes resumes, dropping both inventories and loaded arrows at their last positions")
 	w.disconnected(3, 64000)
 	for peer in w.admitted:
 		w.action(peer, "timeout_vote", ["continue", false])
 	w.update_game(0, 64000)
 	check(w.sim.result == "no_winner" and w.state() == "result" and w.sim.players.size() == 2, "End majority yields neutral result")
 	check(w.reserve(_request(20, false, 2, 70000), 64000, WALL + 64000).code == "room_started", "result has no admission")
+	w.sim.built_walls.append({"pos": Vector2(320, 320), "vert": true})
 	w.update_game(10, 74000)
-	check(w.ready.is_empty() and w.state() == "waiting" and w.sim.players.size() == 2, "humans return to same lobby")
+	check(w.ready.is_empty() and w.state() == "waiting" and w.sim.players.size() == 2 and w.sim.built_walls.is_empty(), "humans return to same lobby with a cleared world")
 
 
 func _check_stalled_input() -> void:
@@ -370,9 +443,9 @@ func _check_replacement() -> void:
 	w._resume()
 	var bot: Dictionary = sim.players[2]
 	bot.pos = GameSim.Bots.WORKBENCH
-	bot.inv.wood = 240
+	sim.set_count(bot, "wood", 140)
 	GameSim.Bots._think_replacement(sim, bot, 0.1)
-	check(sim.storage.wood == 240 and bot.inv.wood == 0, "full replacement stores resources at the bench")
+	check(GameSim.count_in(sim.storage, "wood") == 140 and sim.count(bot, "wood") == 0, "full replacement stores resources at the bench")
 	var outside := Vector2(GameSim.HALF.x + GameSim.SAFE_D + GameSim.T, 0)
 	var safe := Vector2(GameSim.HALF.x + 4 * GameSim.T, 0)
 	bot.pos = safe
@@ -381,8 +454,8 @@ func _check_replacement() -> void:
 	GameSim.Bots._think_replacement(sim, bot, 0.1)
 	check(bot.bot_node == 2 and bot.inter, "daytime replacement gathers safe resources only")
 	sim.nodes.append({"type": 2, "pos": safe + Vector2.RIGHT * GameSim.T, "amount": 5})
-	bot.inv.wood = 220
-	bot.inv.herb = 1
+	sim.set_count(bot, "wood", 120)
+	sim.set_count(bot, "herb", 1)
 	GameSim.Bots._think_replacement(sim, bot, 0.1)
 	check(bot.bot_node == 3, "replacement switches from a full wood stack to a resource it can carry")
 	sim.phase = "night"
@@ -396,7 +469,7 @@ func _check_replacement() -> void:
 	check(bot.atk and is_equal_approx(bot.aim, -PI / 2), "replacement guards the least defended attacked door")
 	sim.enemies[0].pos = GameSim.DOOR_POS[1] + Vector2.UP * 6.25 * GameSim.T
 	check(GameSim.Bots._foe(sim, bot, GameSim.DOOR_POS[1]) == null, "replacement ignores targets outside six tiles")
-	bot.inv.wood = 1
+	sim.set_count(bot, "wood", 1)
 	bot.atk = false
 	bot.pos = GameSim.DOOR_POS[0] + GameSim.DOOR_DIR[0] * GameSim.T
 	sim.doors = [100.0, 300.0, 500.0]
@@ -411,26 +484,41 @@ func _check_replacement() -> void:
 	check(bot.inter, "Healer replacement prioritizes a nearby downed teammate")
 	sim.players[3].state = 0
 	bot.hp = 20
-	bot.inv.bandage = 1
+	sim.set_count(bot, "bandage", 1)
 	GameSim.Bots._think_replacement(sim, bot, 0.1)
 	check(bot.channel == 2.0, "replacement bandages below 40 percent HP")
 	bot.role = 2
 	bot.pos = Vector2.ZERO
 	bot.inside = true
-	bot.inv.wood = 10
+	sim.set_count(bot, "wood", 10)
 	var towers := sim.towers.duplicate()
 	w.action(2, "craft", 0)
 	w.action(2, "tower", 0)
-	check(bot.armour == 0 and bot.inv.wood == 10 and sim.towers == towers, "replacement cannot use craft or build RPCs")
+	check(bot.armour == 0 and sim.count(bot, "wood") == 10 and sim.towers == towers, "replacement cannot use craft or build RPCs")
 	GameSim.Bots._think_replacement(sim, bot, 0.1)
 	check(not bot.inside and not GameSim.inside_base(bot.pos), "Engineer replacement stays outside at night")
 	bot.pos = Vector2(GameSim.HALF.x + GameSim.SAFE_D + 3 * GameSim.T, 0)
-	var distance := GameSim.wall_dist(bot.pos)
+	var distance: float = GameSim.wall_dist(bot.pos)
 	GameSim.Bots._think_replacement(sim, bot, 0.1)
 	check(GameSim.wall_dist(bot.pos) < distance, "replacement moves back toward the twenty-tile safe zone")
 	w.disconnected(4, 1200)
 	w.action(2, "timeout_vote", ["continue", false], 1201)
 	check(w.votes.is_empty(), "replacement cannot vote")
+
+
+# Each night wave is paced one enemy per director tick; run it out and count what arrived.
+func _drain_wave(sim: GameSim, night_phase: bool) -> int:
+	if night_phase:
+		sim.phase = "night"
+		sim.reset_night_spawns()
+		sim.plan_night_quota()
+	sim.plan_night_wave()
+	for step in 4000:
+		sim.elapsed += 0.05
+		sim.tick_pending_night_spawn()
+		if sim.pending_wave_budget <= 0 and sim.enemies.size() > 0:
+			break
+	return sim.enemies.size()
 
 
 func _check_five_night_transitions() -> void:
@@ -442,20 +530,27 @@ func _check_five_night_transitions() -> void:
 	w.action(2, "start", 0)
 	for night in range(1, 6):
 		check(w.sim.phase == "day" and w.sim.k == night, "dawn before night %d" % night)
+		# the skip vote only counts once DAY_MIN of daylight has passed (FML-14)
+		w.sim.t = GameSim.DAY_MAX - GameSim.DAY_MIN
 		w.action(2, "vote", 0)
 		w.action(3, "vote", 0)
 		w.update_game(0.02, night * 100)
 		check(w.sim.phase == "dusk", "crew vote advances to dusk")
+		# night 5 refuses to start without the assembled locator radio (FML-13)
+		if night == 5:
+			w.sim.radio_built = true
 		w.sim.t = 0
 		w.update_game(0.02, night * 100 + 1)
 		check(w.sim.phase == "night" and w.snapshot(0).k == night, "worker publishes night %d" % night)
 		if night in [2, 4]:
-			w.sim.elapsed = 300
+			# the boss is planned at dawn, so pin the archetype before it spawns
+			w.sim.boss_plan = [0, 1]
+			w.sim.elapsed = GameSim.BOSS_AT
 			w.update_game(0.02, night * 100 + 2)
 			check(w.sim._boss() != null, "specimen spawns on night %d" % night)
 			w.sim.boss_dead = true
-		else:
-			w.sim.t = 0
+		w.sim.t = 0
+		w.sim.enemies.clear()
 		w.update_game(0.02, night * 100 + 3)
 	check(w.state() == "result" and w.snapshot(0).result == "won", "night five reaches extraction")
 
